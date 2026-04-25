@@ -28,3 +28,6 @@ alias fcr='fc -R'
 # Print current working directory
 alias p='pwd'
 alias pp='pwd -P'
+
+alias cbr='clipboard read'
+alias cbw='clipboard write'
