@@ -2,7 +2,6 @@
     name = Nicola De Angeli
     # email = "someemail@somedomain.com"
 [core]
-    editor = nvim
     excludesfile = ~/.gitignore  # Global gitignore
 [merge]
     conflictstyle = diff3  # Also show common ancestor in conflicts

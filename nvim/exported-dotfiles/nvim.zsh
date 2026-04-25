@@ -1,3 +1,5 @@
+export EDITOR='nvim'
+
 alias v='nvim'
 alias vd='v -c DevStart'
 alias vdsa='vd --headless -c DevStartupAssemble -c q'
