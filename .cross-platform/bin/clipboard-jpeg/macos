@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -eq 0 ]; then
+    >&2 echo "Error: no command specified"
+    exit 1
+fi
+
+command="$1"
+shift
+
+image_path="$(mktemp /tmp/clipboard-XXXX.jpeg)"
+trap "rm '$image_path'" EXIT
+
+if [ "$command" = 'read' ]; then
+    osascript -e "
+set jpeg_data to the clipboard as JPEG picture
+set open_file to open for access POSIX file \"$image_path\" with write permission
+write jpeg_data to open_file
+close access open_file"
+    cat "$image_path"
+elif [ "$command" = 'write' ]; then
+    cat > "$image_path"
+    osascript -e "set the clipboard to (read (POSIX file \"$image_path\") as JPEG picture)"
+else
+    >&2 echo "Error: unknown command $command"
+    exit 1
+fi
