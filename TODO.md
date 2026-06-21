@@ -38,3 +38,4 @@
 - Find alternatives to copilot that do not rely on node
 - Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier
 - Add `lm` as an utils command
+- Move all nvim custom configuration to Developer mode, maybe rename it to something else like @-mode, own mode or something
