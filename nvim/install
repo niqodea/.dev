@@ -3,31 +3,32 @@ set -eux
 
 root="$(dirname "$(realpath "$0")")"
 install_path="$1"
+platform="$2"
 
-nvim_version='v0.11.5'
-nvim_tar_file='nvim-linux-x86_64.tar.gz'
+nvim_version='v0.12.3'
+treesitter_version='v0.26.9'
+node_version='v26.3.1'
+
+case "$platform" in
+  'debian') os='linux';  node_os='linux'  ;;
+  'macos')  os='macos';  node_os='darwin' ;;
+  *) >&2 echo "Unsupported platform: '$platform'"; exit 1 ;;
+esac
+
+nvim_tar_file="nvim-$os-x86_64.tar.gz"
 nvim_tar_url="https://github.com/neovim/neovim/releases/download/$nvim_version/$nvim_tar_file"
-wget -P '/tmp' "$nvim_tar_url"
+curl -L -o "/tmp/$nvim_tar_file" "$nvim_tar_url"
 tar -xf "/tmp/$nvim_tar_file" -C "$install_path" --strip-components=1
 
-treesitter_version='v0.26.3'
-treesitter_gz_file='tree-sitter-linux-x64.gz'
+treesitter_gz_file="tree-sitter-$os-x64.gz"
 treesitter_gz_url="https://github.com/tree-sitter/tree-sitter/releases/download/$treesitter_version/$treesitter_gz_file"
 treesitter_bin_path="$install_path/bin/tree-sitter"
-wget -P '/tmp' $treesitter_gz_url
+curl -L -o "/tmp/$treesitter_gz_file" "$treesitter_gz_url"
 gunzip --to-stdout "/tmp/$treesitter_gz_file" > "$treesitter_bin_path"
 chmod +x "$treesitter_bin_path"
 
-nvim --headless \
-    --cmd "set runtimepath^=$root/bin-submodules/nvim-treesitter" \
-    -c 'packadd nvim-treesitter' \
-    -c "lua require('nvim-treesitter').install({ 'python', 'rust' }, { force = true }):wait()" \
-    -c 'q'
-
 # Required for copilot plugin
-node_version='v22.12.0'
-node_tar_file="node-$node_version-linux-x64.tar.xz"
+node_tar_file="node-$node_version-$node_os-x64.tar.xz"
 node_tar_url="https://nodejs.org/dist/$node_version/$node_tar_file"
-wget -P '/tmp' "$node_tar_url"
+curl -L -o "/tmp/$node_tar_file" "$node_tar_url"
 tar -xf "/tmp/$node_tar_file" -C "$install_path" --strip-components=1
-

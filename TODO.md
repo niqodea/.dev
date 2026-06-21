@@ -37,3 +37,4 @@
   - Do not install if program is already available in the path (perhaps opt-in)
 - Find alternatives to copilot that do not rely on node
 - Fix treesitter queries in ~/.local/share/nvim/site/queries being linked to local nvim-treesitter repo
+- Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier

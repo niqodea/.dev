@@ -15,8 +15,10 @@ git submodule update --init "$ropify_path"
 ln -s "$tooling_venv_path/bin/ropify" "$install_path/bin/"
 
 # Ref: https://docs.astral.sh/uv/getting-started/installation
-uv_version='0.9.18'
+uv_version='0.11.23'
 curl -LsSf "https://astral.sh/uv/$uv_version/install.sh" | sh
 
-ty_version='0.0.7'
+ty_version='0.0.51'
 uv tool install "ty==$ty_version"
+
+tree-sitter build "$root/bin-submodules/tree-sitter-python" -o "$root/exported-bin/python.so"
