@@ -27,7 +27,7 @@ function() {
 
 
     # HISTORY
-    HISTFILE="$ZSH_ROOT/.zsh_history"
+    HISTFILE="$ZSH_ROOT/$ATDIR/history.zsh"
     HISTSIZE=100000  # Num commands stored in the file
     SAVEHIST=100000  # Num commands loaded into memory from history file
     setopt HIST_IGNORE_ALL_DUPS  # Don't store duplicate commands
