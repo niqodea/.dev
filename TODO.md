@@ -37,3 +37,4 @@
   - Do not install if program is already available in the path (perhaps opt-in)
 - Find alternatives to copilot that do not rely on node
 - Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier
+- Add `lm` as an utils command
