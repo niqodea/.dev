@@ -15,20 +15,23 @@ case "$platform" in
   *) >&2 echo "Unsupported platform: '$platform'"; exit 1 ;;
 esac
 
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
 nvim_tar_file="nvim-$os-x86_64.tar.gz"
 nvim_tar_url="https://github.com/neovim/neovim/releases/download/$nvim_version/$nvim_tar_file"
-curl -L -o "/tmp/$nvim_tar_file" "$nvim_tar_url"
-tar -xf "/tmp/$nvim_tar_file" -C "$install_path" --strip-components=1
+curl -L -o "$tmp/$nvim_tar_file" "$nvim_tar_url"
+tar -xf "$tmp/$nvim_tar_file" -C "$install_path" --strip-components=1
 
 treesitter_gz_file="tree-sitter-$os-x64.gz"
 treesitter_gz_url="https://github.com/tree-sitter/tree-sitter/releases/download/$treesitter_version/$treesitter_gz_file"
 treesitter_bin_path="$install_path/bin/tree-sitter"
-curl -L -o "/tmp/$treesitter_gz_file" "$treesitter_gz_url"
-gunzip --to-stdout "/tmp/$treesitter_gz_file" > "$treesitter_bin_path"
+curl -L -o "$tmp/$treesitter_gz_file" "$treesitter_gz_url"
+gunzip --to-stdout "$tmp/$treesitter_gz_file" > "$treesitter_bin_path"
 chmod +x "$treesitter_bin_path"
 
 # Required for copilot plugin
 node_tar_file="node-$node_version-$node_os-x64.tar.xz"
 node_tar_url="https://nodejs.org/dist/$node_version/$node_tar_file"
-curl -L -o "/tmp/$node_tar_file" "$node_tar_url"
-tar -xf "/tmp/$node_tar_file" -C "$install_path" --strip-components=1
+curl -L -o "$tmp/$node_tar_file" "$node_tar_url"
+tar -xf "$tmp/$node_tar_file" -C "$install_path" --strip-components=1
