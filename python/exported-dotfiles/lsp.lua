@@ -10,7 +10,7 @@ return function(cmp_nvim_lsp)
     })
     vim.lsp.enable('ty')
 
-    local ropefolder = require('dev.core.utils').get_atdir() .. '/ropeproject'
+    local ropefolder = require('own.core.utils').get_atdir() .. '/ropeproject'
 
     vim.api.nvim_create_user_command('PythonRopifyMoveModule', function()
         local resource = vim.fn.expand('%')

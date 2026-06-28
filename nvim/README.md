@@ -18,12 +18,12 @@ In fact, we extend this property by also remapping <kbd>ctrl</kbd> + <kbd>Space<
 
 Since the `leader` key becomes quite central to our workflow, we also disable its timeout for ease of mind.
 
-### Developer mode
+### Own mode
 
-By running the `DevStart` command we configure our current Neovim to operate in developer mode and provide additional functionalities.
+By running the `OwnStart` command we configure our current Neovim to operate in developer mode and provide additional functionalities.
 This lets us have access to advanced features like LSP without bloating the experience of the vanilla text editor.
 Upon entering developer mode, the runtime is augmented with a set of core functionalities.
-If needed, additional optional lua modules can be imported with commands of the form `DevModuleStart`.
+If needed, additional optional lua modules can be imported with commands of the form `OwnModuleStart`.
 
 Since running Neovim in developer mode might be a recurrent need in our workflow, we define an alias `vd` to immediately launch Neovim in developer mode.
-Moreover, we provide a mechanism to configure workspace-specific startup lua modules with the `DevCreateStartup` / `DevRunStartup` command and define an alias `vds` to automatically import them at startup.
+Moreover, we provide a mechanism to configure workspace-specific startup lua modules with the `OwnCreateStartup` / `OwnRunStartup` command and define an alias `vds` to automatically import them at startup.

@@ -1,7 +1,7 @@
 export EDITOR='nvim'
 
 alias v='nvim'
-alias vd='v -c DevStart'
-alias vdsa='vd --headless -c DevStartupAssemble -c q'
-alias vdse='vd -c DevStartupEdit'
-alias vdsr='vd -c DevStartupRun'
+alias vo='v -c OwnStart'
+alias vosa='vd --headless -c OwnStartupAssemble -c q'
+alias vose='vd -c OwnStartupEdit'
+alias vosr='vd -c OwnStartupRun'
