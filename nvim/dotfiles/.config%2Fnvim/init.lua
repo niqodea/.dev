@@ -1,4 +1,5 @@
 -- Use space as leader
+-- NOTE: Modules downstream depend on vim.g.mapleader being set!
 vim.g.mapleader = '<Space>'
 vim.keymap.set('', '<Space>', '')
 -- Enable comfy leader + ctrl commands
@@ -81,10 +82,11 @@ vim.o.number = true
 vim.o.relativenumber = true
 
 -- Color scheme
-vim.cmd('colorscheme retrobox')
+vim.cmd('colorscheme quiet')
 
 
--- Dev module
-vim.api.nvim_create_user_command('DevStart', function()
-    require('dev')
+-- Extra module
+vim.api.nvim_create_user_command('X', function()
+    x = require('x')
+    x.load_auto_modules()
 end, {})

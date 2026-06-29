@@ -11,7 +11,7 @@ vim.api.nvim_set_hl(0, "GitSignsDelete", { ctermfg = 'DarkRed' })
 -- TODO: Add gitsigns keybindings for hunks
 
 -- Fuzzy find through git files
-local fzf_lua = require('dev.core').fuzzy.fzf_lua
+local fzf_lua = require('x.core').fuzzy.fzf_lua
 
 vim.keymap.set('n', vim.g.mapleader..'fg-', function()
     fzf_lua.git_files()
@@ -40,4 +40,4 @@ vim.keymap.set('v', vim.g.mapleader..'Fg*', function()
 end)
 
 -- Add git commands to the command palette
-require('dev.modules.git-commands')
+require('x.modules.git-commands')

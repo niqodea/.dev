@@ -2,10 +2,10 @@
 vim.cmd('packadd cmp-nvim-lsp')
 local cmp_nvim_lsp = require('cmp_nvim_lsp')
 cmp_nvim_lsp.setup()
-local language_files = vim.api.nvim_get_runtime_file('lua/dev/modules/lsp-languages/*.lua', true)
+local language_files = vim.api.nvim_get_runtime_file('lua/x/modules/lsp-languages/*.lua', true)
 for _, language_file in ipairs(language_files) do
     local language = language_file:match(".+/([^/]+)%.lua")
-    require('dev.modules.lsp-languages.' .. language)(cmp_nvim_lsp)
+    require('x.modules.lsp-languages.' .. language)(cmp_nvim_lsp)
 end
 
 -- Mnemonics: a staple symbol of many languages, also easy to type
@@ -47,7 +47,7 @@ cmp.setup {
     ),
     snippet = {
         expand = function(args)
-            require('dev.core').snippet.snippy.expand_snippet(args.body)
+            require('x.core').snippet.snippy.expand_snippet(args.body)
         end,
     },
 }

@@ -12,10 +12,10 @@ function M.set_loclist(title, command)
     vim.cmd('lopen')
 end
 
-local language_files = vim.api.nvim_get_runtime_file('lua/dev/core/fix-languages/*.lua', true)
+local language_files = vim.api.nvim_get_runtime_file('lua/x/core/fix-languages/*.lua', true)
 for _, language_file in ipairs(language_files) do
     local language = language_file:match(".+/([^/]+)%.lua")
-    require('dev.core.fix-languages.' .. language)(M.set_qflist, M.set_loclist)
+    require('x.core.fix-languages.' .. language)(M.set_qflist, M.set_loclist)
 end
 
 return M

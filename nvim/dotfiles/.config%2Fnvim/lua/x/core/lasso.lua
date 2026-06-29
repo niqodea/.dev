@@ -2,7 +2,7 @@ local M = {}
 
 vim.cmd('packadd lasso.nvim')
 M.lasso = require('lasso')
-M.lasso.setup{marks_tracker_path = require('dev.core.utils').get_atdir() .. '/lasso-marks-tracker'}
+M.lasso.setup{marks_tracker_path = require('x.core.utils').get_atdir() .. '/lasso-marks-tracker'}
 
 vim.keymap.set('n', vim.g.mapleader..'m', function() M.lasso.mark_file() end)
 vim.keymap.set('n', vim.g.mapleader..'M', function() M.lasso.open_marks_tracker() end)
