@@ -1,5 +1,6 @@
 local M = {}
 
+
 function M.get_atdir()
     local atdir = vim.fn.getenv('ATDIR')
     if atdir == vim.NIL or atdir == '' then
@@ -7,5 +8,6 @@ function M.get_atdir()
     end
     return atdir
 end
+
 
 return M

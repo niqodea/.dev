@@ -13,4 +13,4 @@ require('copilot').setup({
     },
 })
 
-vim.keymap.set('n', vim.g.mapleader..'?', '<cmd>Copilot panel<cr>')
+vim.keymap.set('n', '<leader>?', '<cmd>Copilot panel<cr>')

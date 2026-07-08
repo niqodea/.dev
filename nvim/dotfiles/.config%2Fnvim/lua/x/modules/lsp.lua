@@ -9,7 +9,7 @@ for _, language_file in ipairs(language_files) do
 end
 
 -- Mnemonics: a staple symbol of many languages, also easy to type
-local lsp_prefix = vim.g.mapleader..';'
+local lsp_prefix = '<leader>;'
 
 vim.keymap.set('n', lsp_prefix..'d', vim.lsp.buf.definition)
 vim.keymap.set('n', lsp_prefix..'D', vim.lsp.buf.declaration)
@@ -47,7 +47,7 @@ cmp.setup {
     ),
     snippet = {
         expand = function(args)
-            require('x.core').snippet.snippy.expand_snippet(args.body)
+            require('x.core.snippet').snippy.expand_snippet(args.body)
         end,
     },
 }

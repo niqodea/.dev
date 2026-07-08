@@ -11,31 +11,31 @@ vim.api.nvim_set_hl(0, "GitSignsDelete", { ctermfg = 'DarkRed' })
 -- TODO: Add gitsigns keybindings for hunks
 
 -- Fuzzy find through git files
-local fzf_lua = require('x.core').fuzzy.fzf_lua
+local fzf_lua = require('x.core.fuzzy').fzf_lua
 
-vim.keymap.set('n', vim.g.mapleader..'fg-', function()
+vim.keymap.set('n', '<leader>fg-', function()
     fzf_lua.git_files()
 end)
-vim.keymap.set('n', vim.g.mapleader..'fg/', function()
+vim.keymap.set('n', '<leader>fg/', function()
     fzf_lua.live_grep({ cmd = "git grep --line-number --column" })
 end)
-vim.keymap.set('n', vim.g.mapleader..'fg*', function()
+vim.keymap.set('n', '<leader>fg*', function()
     fzf_lua.grep_cword({ cmd = "git grep --line-number --column" })
 end)
-vim.keymap.set('v', vim.g.mapleader..'fg*', function()
+vim.keymap.set('v', '<leader>fg*', function()
     fzf_lua.grep_visual({ cmd = "git grep --line-number --column" })
 end)
 
 -- Fuzzy find through git files in the current directory
-vim.keymap.set('n', vim.g.mapleader..'Fg-', function()
+vim.keymap.set('n', '<leader>Fg-', function()
     fzf_lua.git_files({ cwd = vim.fn.expand('%:p:h') }) end)
-vim.keymap.set('n', vim.g.mapleader..'Fg/', function()
+vim.keymap.set('n', '<leader>Fg/', function()
     fzf_lua.live_grep({ cwd = vim.fn.expand('%:p:h'), cmd = "git grep --line-number --column" })
 end)
-vim.keymap.set('n', vim.g.mapleader..'Fg*', function()
+vim.keymap.set('n', '<leader>Fg*', function()
     fzf_lua.grep_cword({ cwd = vim.fn.expand('%:p:h'), cmd = "git grep --line-number --column" })
 end)
-vim.keymap.set('v', vim.g.mapleader..'Fg*', function()
+vim.keymap.set('v', '<leader>Fg*', function()
     fzf_lua.grep_visual({ cwd = vim.fn.expand('%:p:h'), cmd = "git grep --line-number --column" })
 end)
 
