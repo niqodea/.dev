@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+if [ ! -d "$ATDIR" ]; then
+    >&2 echo "Directory not found: $ATDIR"
+    exit 1
+fi
+
+auto_path="$ATDIR/vx-autoload"
+
+if [ -e "$auto_path" ]; then
+    >&2 echo "File already exists: $auto_path"
+    exit 1
+fi
+
+modules_="$(find "$HOME/.config/nvim/lua/x/modules" -maxdepth 1 -name '*.lua' -exec basename {} '.lua' \;)"
+selected_modules="$(fzf --multi --sync --bind start:select-all --layout=reverse <<< "$modules_")"
+
+echo "$selected_modules" > "$auto_path"
