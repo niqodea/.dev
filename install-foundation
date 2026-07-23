@@ -15,14 +15,17 @@ fi
 bin_path="$HOME/.local/bin"
 mkdir -p "$bin_path"
 for command in "$cross_platform_path/bin/"*; do
-    command_name=$(basename "$command")
-    cp "$command/$os" "$bin_path/$command_name"
+    command_name="$(basename "$command")"
+    command_path="$command/$os"
+    if [ -e "$command_path" ]; then
+        cp "$command/$os" "$bin_path/$command_name"
+    fi
 done
 
 source_profile_path="$root/.profile"
 target_profile_path="$HOME/.profile"
 
-if [ -e "target_profile_path" ]; then
+if [ -e "$target_profile_path" ]; then
     profile_backups_path="$HOME/.profile-backups"
     mkdir -p "$profile_backups_path"
 
