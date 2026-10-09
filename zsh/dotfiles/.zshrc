@@ -21,9 +21,9 @@ function() {
     # SHELL VARIABLE
     # The zsh we use might be /bin/zsh or, if we manage to compile it, $HOME/.local/bin/zsh
     # Changing SHELL to refer to a locally installed one using chsh is risky, so we dynamically
-    # update it to refer to the currently running zsh instead
-    # Ref: https://www.cyberciti.biz/tips/how-do-i-find-out-what-shell-im-using.html
-    export SHELL="$(readlink "/proc/$$/exe")"
+    # update it to refer to the zsh found in PATH instead, which prefers the local one
+    # NOTE: /proc/$$/exe would give the running zsh, but /proc does not exist on MacOS
+    export SHELL="$(whence -p zsh)"
 
 
     # HISTORY
