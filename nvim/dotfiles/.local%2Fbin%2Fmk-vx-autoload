@@ -14,6 +14,6 @@ if [ -e "$auto_path" ]; then
 fi
 
 modules_="$(find "$HOME/.config/nvim/lua/x/modules" -maxdepth 1 -name '*.lua' -exec basename {} '.lua' \;)"
-selected_modules="$(fzf --multi --sync --bind start:select-all --layout=reverse <<< "$modules_")"
+selected_modules="$(printf '%s\n' "$modules_" | fzf --multi --sync --bind start:select-all --layout=reverse)"
 
 echo "$selected_modules" > "$auto_path"
