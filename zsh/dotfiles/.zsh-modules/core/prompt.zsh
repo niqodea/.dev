@@ -2,11 +2,11 @@ setopt PROMPT_SUBST
 
 # TODO: Change to prepend/append to prompt base
 function setup_prompt_base() {
-    export PROMPT_BASE="$1"
+    export DOTDEV_PROMPT_BASE="$1"
 
     local COLOR_OFF='%f'
     local SHELL_STATE='%#'
-    export PROMPT="$PROMPT_BASE$COLOR_OFF$SHELL_STATE "
+    export PROMPT="$DOTDEV_PROMPT_BASE$COLOR_OFF$SHELL_STATE "
 }
 
 # TODO: Rename this function (does not necessarily compress)
@@ -19,9 +19,9 @@ function format_path() {
     local num_start_components="$2"
     local num_end_components="$3"
 
-    if [[ "$input" == "$ZSH_ROOT" || "$input" == "$ZSH_ROOT/"* ]]; then
+    if [[ "$input" == "$DOTDEV_SESSION_ROOT" || "$input" == "$DOTDEV_SESSION_ROOT/"* ]]; then
         printf "."
-        local relpath="${input#$ZSH_ROOT}"
+        local relpath="${input#$DOTDEV_SESSION_ROOT}"
     elif [[ "$input" == "$HOME" || "$input" == "$HOME/"* ]]; then
         printf "~"
         local relpath="${input#$HOME}"
@@ -53,7 +53,7 @@ function prompt_cwd() {
 }
 
 function() {
-    if [ -n "${PROMPT_BASE:+x}" ]; then
+    if [ -n "${DOTDEV_PROMPT_BASE:+x}" ]; then
         return
     fi
 
@@ -64,11 +64,11 @@ function() {
 }
 
 function() {
-    if [ -z "${PROMPT_BASE:+x}" ]; then
+    if [ -z "${DOTDEV_PROMPT_BASE:+x}" ]; then
         local color_userhost='%F{099}'  # Purple
         local color_cwd='%F{220}'  # Yellow
-        export PROMPT_BASE="$color_userhost"'$(prompt_userhost)'"$color_cwd"'[$(prompt_cwd)]'
+        export DOTDEV_PROMPT_BASE="$color_userhost"'$(prompt_userhost)'"$color_cwd"'[$(prompt_cwd)]'
     fi
 
-    setup_prompt_base "$PROMPT_BASE"
+    setup_prompt_base "$DOTDEV_PROMPT_BASE"
 }

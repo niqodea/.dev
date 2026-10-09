@@ -10,7 +10,7 @@ fi
 command="$1"
 shift
 
-shortcuts_path="$ZSH_ROOT/.pass-shortcuts"
+shortcuts_path="$DOTDEV_SESSION_ROOT/.pass-shortcuts"
 
 if [ "$command" = 'add' ]; then
     item="$1"

@@ -3,19 +3,19 @@ function() {
     # ROOT
     # We can inject zsh with a root
     # Ideally, zsh should always operate inside the root
-    if [ -z "$ZSH_ROOT" ]; then
-        export ZSH_ROOT="$HOME"
+    if [ -z "$DOTDEV_SESSION_ROOT" ]; then
+        export DOTDEV_SESSION_ROOT="$HOME"
     fi
 
-    alias cdr='cd "$ZSH_ROOT"'
+    alias cdr='cd "$DOTDEV_SESSION_ROOT"'
 
 
-    # ATDIR
+    # DOTDEV_ATDIR
     # We can create an atdir from a handle inside a working directory
     # Programs can use the atdir to store state and contextualize their operation,
     # allowing them to tailor their behavior based on the originating working directory
-    # NOTE: ATDIR is a first-class citizen in our dotfiles, many configs rely on it
-    alias mk@='mkdir "$ATDIR"'
+    # NOTE: DOTDEV_ATDIR is a first-class citizen in our dotfiles, many configs rely on it
+    alias mk@='mkdir "$DOTDEV_ATDIR"'
 
 
     # SHELL VARIABLE
@@ -27,7 +27,7 @@ function() {
 
 
     # HISTORY
-    HISTFILE="$ZSH_ROOT/$ATDIR/history.zsh"
+    HISTFILE="$DOTDEV_SESSION_ROOT/$DOTDEV_ATDIR/history.zsh"
     HISTSIZE=100000  # Num commands stored in the file
     SAVEHIST=100000  # Num commands loaded into memory from history file
     setopt HIST_IGNORE_ALL_DUPS  # Don't store duplicate commands

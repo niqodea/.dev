@@ -1,12 +1,12 @@
 #!/bin/sh
 set -eu
 
-if [ ! -d "$ATDIR" ]; then
-    >&2 echo "Directory not found: $ATDIR"
+if [ ! -d "$DOTDEV_ATDIR" ]; then
+    >&2 echo "Directory not found: $DOTDEV_ATDIR"
     exit 1
 fi
 
-auto_path="$ATDIR/vx-autoload"
+auto_path="$DOTDEV_ATDIR/vx-autoload"
 
 if [ -e "$auto_path" ]; then
     >&2 echo "File already exists: $auto_path"

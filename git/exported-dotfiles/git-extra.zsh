@@ -38,11 +38,11 @@ function prompt_git() {
 }
 
 function () {
-    if [ "$ZSH_GIT_SETUP" = 'true' ]; then
+    if [ "$DOTDEV_ZSH_GIT_SETUP" = 'true' ]; then
         return
     fi
-    export ZSH_GIT_SETUP='true'
+    export DOTDEV_ZSH_GIT_SETUP='true'
 
     local color_git='%F{034}'  # Green
-    setup_prompt_base "$PROMPT_BASE$color_git"'($(prompt_git))'
+    setup_prompt_base "$DOTDEV_PROMPT_BASE$color_git"'($(prompt_git))'
 }

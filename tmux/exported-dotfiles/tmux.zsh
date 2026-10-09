@@ -16,7 +16,7 @@ function set_tmux_pane_cwd() {
 }
 
 function set_tmux_pane_zsh_extra_modules {
-    tmux set-option -t "$TMUX_PANE" -p @zsh_extra_modules "$ZSH_EXTRA_MODULES"
+    tmux set-option -t "$TMUX_PANE" -p @zsh_extra_modules "$DOTDEV_ZSH_EXTRA_MODULES"
 }
 
 function set_tmux_ssh_workstation () {
@@ -29,10 +29,10 @@ function unset_tmux_ssh_workstation () {
 }
 
 function () {
-    if [ "$ZSH_TMUX_SETUP" = 'true' ]; then
+    if [ "$DOTDEV_ZSH_TMUX_SETUP" = 'true' ]; then
         return
     fi
-    export ZSH_TMUX_SETUP='true'
+    export DOTDEV_ZSH_TMUX_SETUP='true'
 
     if [ -z "$TMUX_PANE" ]; then
         >&2 echo 'Error: not in a TMUX pane'

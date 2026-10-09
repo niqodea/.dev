@@ -6,8 +6,8 @@ function cdv () {
         return 1
     fi
 
-    if [[ "$venv_path" == *"/$ATDIR/venv" ]]; then
-        local base_path="${venv_path%/$ATDIR/venv}"
+    if [[ "$venv_path" == *"/$DOTDEV_ATDIR/venv" ]]; then
+        local base_path="${venv_path%/$DOTDEV_ATDIR/venv}"
     elif [[ "$venv_path" == *"/.venv"  ]]; then
         local base_path="${venv_path%/.venv}"
     else
@@ -32,4 +32,4 @@ function _activate_venv() {
     _activate_extra_module venv "{\"path\": \"$venv_path\"}"
 }
 alias amv='_activate_venv .venv'
-alias amv@='_activate_venv $ATDIR/venv'
+alias amv@='_activate_venv $DOTDEV_ATDIR/venv'

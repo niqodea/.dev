@@ -3,4 +3,4 @@ for file in "$HOME/.profile.d/"*; do
 done
 
 export PATH="$HOME/.local/bin:$PATH"
-export ATDIR=".@$USER"
+export DOTDEV_ATDIR=".@$USER"

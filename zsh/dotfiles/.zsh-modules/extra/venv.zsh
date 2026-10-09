@@ -10,8 +10,8 @@ function format_venv_path() {
     if [[ "$venv_path" == *"/.venv"  ]]; then
         local base_path="${venv_path%/.venv}"
         local postfix="."
-    elif [[ "$venv_path" == *"/$ATDIR/venv" ]]; then
-        local base_path="${venv_path%/$ATDIR/venv}"
+    elif [[ "$venv_path" == *"/$DOTDEV_ATDIR/venv" ]]; then
+        local base_path="${venv_path%/$DOTDEV_ATDIR/venv}"
         local postfix="@"
     else
         local base_path="$venv_path"
@@ -22,12 +22,12 @@ function format_venv_path() {
 }
 
 function() {
-    if [ "$ZSH_VENV_SETUP" = 'true' ]; then
+    if [ "$DOTDEV_ZSH_VENV_SETUP" = 'true' ]; then
         return
     fi
-    export ZSH_VENV_SETUP='true'
+    export DOTDEV_ZSH_VENV_SETUP='true'
 
-    local config="$(echo "$ZSH_EXTRA_MODULES" | jq -r '.venv')"
+    local config="$(echo "$DOTDEV_ZSH_EXTRA_MODULES" | jq -r '.venv')"
     local venv_path="$(echo "$config" | jq -r '.path')"
 
     if [ -z "$VIRTUAL_ENV" ]; then
@@ -41,5 +41,5 @@ function() {
     fi
 
     local color_venv='%F{208}'  # Orange
-    setup_prompt_base "$PROMPT_BASE$color_venv"'{$(prompt_venv)}'
+    setup_prompt_base "$DOTDEV_PROMPT_BASE$color_venv"'{$(prompt_venv)}'
 }
