@@ -31,6 +31,9 @@ for _, module in ipairs(modules) do
     end, {})
 end
 
+-- Set before loading modules, as it clears the highlights they set
+vim.cmd('colorscheme retrobox')
+
 -- Startup logic for automatic loading of modules
 local atdir = utils.get_atdir()
 local auto_path = atdir .. '/vx-autoload'
@@ -44,8 +47,6 @@ if vim.fn.filereadable(auto_path) == 1 then
     end
     auto_file:close()
 end
-
-vim.cmd('colorscheme retrobox')
 
 -- Easier split management
 vim.keymap.set('n', '<leader>j', '<C-w>j')
