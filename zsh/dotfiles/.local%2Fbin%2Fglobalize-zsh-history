@@ -1,0 +1,55 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    >&2 echo "Usage: $0 name"
+    exit 1
+fi
+
+# A session's own shell already has its history, so this runs once the session is done
+if [ "${DOTDEV_SESSION_ROOT:-$HOME}" != "$HOME" ]; then
+    >&2 echo 'Run this from outside a session'
+    exit 1
+fi
+
+session_path="$HOME/$1/$DOTDEV_ATDIR/session"
+history_path="$session_path/history.zsh"
+# Timestamp of the newest command already in global, which unlike a line number survives zsh
+# trimming the oldest lines of the session history
+imported_path="$session_path/imported"
+
+if [ ! -d "$session_path" ]; then
+    >&2 echo "No session at $HOME/$1"
+    exit 1
+fi
+
+if [ ! -e "$history_path" ]; then
+    echo 'Nothing to import'
+    exit
+fi
+
+if [ -e "$imported_path" ]; then
+    imported="$(cat "$imported_path")"
+else
+    imported=-1  # Nothing imported yet, so even commands without a timestamp (0) are imported
+fi
+
+# Lines look like ": <timestamp>:<duration>;<command>", continuation lines of a multi-line
+# command have no timestamp of their own, and commands saved without EXTENDED_HISTORY count as 0
+with_timestamp='/^: [0-9]+:[0-9]+;/ { split($0, fields, /[:;]/); timestamp = fields[2] + 0 }'
+
+# Fixed first, so that commands appended while we copy wait for the next import
+newest="$(awk "$with_timestamp"' { if (timestamp > newest) newest = timestamp } END { print newest + 0 }' "$history_path")"
+
+if [ "$newest" -le "$imported" ]; then
+    echo 'Nothing to import'
+    exit
+fi
+
+# awk has no long form of -v, which sets an awk variable from the shell
+awk -v imported="$imported" -v newest="$newest" -v global_path="$HOME/.zsh_history" "$with_timestamp"'
+    timestamp > imported && timestamp <= newest { print >> global_path; count++ }
+    END { printf "Imported %d lines\n", count }
+' "$history_path"
+echo "$newest" > "$imported_path"

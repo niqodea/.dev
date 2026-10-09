@@ -27,11 +27,14 @@ function() {
 
 
     # HISTORY
-    HISTFILE="$DOTDEV_SESSION_ROOT/$DOTDEV_ATDIR/history.zsh"
     HISTSIZE=100000  # Num commands stored in the file
     SAVEHIST=100000  # Num commands loaded into memory from history file
     setopt HIST_IGNORE_ALL_DUPS  # Don't store duplicate commands
     setopt INC_APPEND_HISTORY  # Append to history file immediately
+    setopt EXTENDED_HISTORY  # Timestamps mark how far a session's history has been merged into the global one
+    # zsh reads HISTFILE after this file, so session commands end up on top and match first
+    fc -R "$HOME/.zsh_history"
+    HISTFILE="$DOTDEV_SESSION_ROOT/$DOTDEV_ATDIR/session/history.zsh"
 
 
     # DIRECTORY STACK
