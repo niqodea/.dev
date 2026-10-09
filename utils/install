@@ -5,11 +5,8 @@ set -eux
 root="$(dirname "$(realpath "$0")")"
 install_path="$1"
 
-sudo apt install jq --yes --no-install-recommends
-sudo apt install fzf --yes --no-install-recommends
 sudo apt install make --yes --no-install-recommends
 sudo apt install pass --yes --no-install-recommends
-sudo apt install rsync --yes --no-install-recommends
 
 # Docker
 # Ref: https://docs.docker.com/engine/install/debian#install-using-the-repository
