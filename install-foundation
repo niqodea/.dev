@@ -22,6 +22,9 @@ for command in "$cross_platform_path/bin/"*; do
     fi
 done
 
+# Packages that other modules depend on
+"$cross_platform_path/bin/install-package/$os" rsync jq fzf
+
 source_profile_path="$root/.profile"
 target_profile_path="$HOME/.profile"
 
