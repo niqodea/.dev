@@ -21,6 +21,10 @@ bin_path="$HOME/.local/bin"
 mkdir -p "$bin_path"
 for command in "$cross_platform_path/bin/"*; do
     command_name="$(basename "$command")"
+    if [ -f "$command" ]; then
+        cp "$command" "$bin_path/$command_name"  # Same on every OS
+        continue
+    fi
     command_path="$command/$os"
     if [ -e "$command_path" ]; then
         cp "$command/$os" "$bin_path/$command_name"

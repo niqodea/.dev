@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -eu
+
+root="$(mk-session -e "$1")"
+
+# tmux has no long flags: -d detached, -n window name, -s session name, -c start directory, and
+# -e session environment, so that every pane gets it, not only the first
+tmux new-session -d -n "" -s "$1" -c "$root" -e DOTDEV_SESSION_ROOT="$root"
+tmux switch-client -t "$1"
