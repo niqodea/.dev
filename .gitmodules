@@ -50,8 +50,8 @@
 [submodule "utils/bin-submodules/ffmpeg"]
 	path = utils/bin-submodules/ffmpeg
 	url = https://git.ffmpeg.org/ffmpeg.git
-[submodule "utils/bin-submodules/hburger"]
-	path = utils/bin-submodules/hburger
+[submodule "zsh/bin-submodules/hburger"]
+	path = zsh/bin-submodules/hburger
 	url = https://github.com/niqodea/hburger.git
 [submodule "utils/bin-submodules/password-store"]
 	path = utils/bin-submodules/password-store

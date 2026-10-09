@@ -5,6 +5,16 @@ set -eux
 root="$(dirname "$(realpath "$0")")"
 install_path="$1"
 
+echo 'Downloading and installing hburger...'
+repo_path="$root/bin-submodules/hburger"
+git submodule update --init "$repo_path"
+# TODO: Isolate rust installation if needed elsewhere
+curl 'https://sh.rustup.rs' -sSf | sh -s -- -y --no-modify-path
+ln -fs "$HOME/.cargo/bin/cargo" "$install_path/bin/"
+# TODO: Wrap this behind a Makefile
+cargo build --manifest-path="$repo_path/Cargo.toml" --release
+cp "$repo_path/target/release/hburger" "$install_path/bin/"
+
 echo 'Compiling and installing zsh...'
 
 repo_path="$root/bin-submodules/zsh"
