@@ -1,6 +1,6 @@
 -- NOTE: Leader-prefixed keybind definitions depend on the custom leader key being set!
 -- NOTE: Do _not_ use <Space>, <leader> substitution will consider the string literally!
-leader = ' '  -- Space key. 
+local leader = ' '  -- Space key.
 vim.g.mapleader = leader
 vim.keymap.set('', leader, '')  -- Disable default leader key behavior in all modes.
 vim.keymap.set('', '<C-' .. leader .. '>', leader, {remap = true})  -- Comfy leader + ctrl commands.
@@ -8,8 +8,8 @@ vim.o.timeout = false  -- No leader timeout.
 
 require('x.core')
 
-commands = require('x.commands')
-utils = require('x.utils')
+local commands = require('x.commands')
+local utils = require('x.utils')
 
 -- Extract module names from files
 local modules_path = 'x.modules'
@@ -43,7 +43,6 @@ if vim.fn.filereadable(auto_path) == 1 then
     for module in auto_file:lines() do
         local module_path = modules_path .. '.' .. module
         require(module_path)
-        ::continue::
     end
     auto_file:close()
 end
@@ -70,7 +69,7 @@ vim.keymap.set('n', '<leader><C-p>', ':tabprevious<cr>')
 
 -- Quick common actions
 vim.keymap.set('n', '<leader>q', ':quit<cr>')
-vim.keymap.set('n', vim.g.mapleader .. 'Q', ':quitall<cr>')
+vim.keymap.set('n', '<leader>Q', ':quitall<cr>')
 vim.keymap.set('n', '<leader>w', ':write<cr>')
 vim.keymap.set('n', '<leader>W', ':wall<cr>')
 vim.keymap.set('n', '<leader>e', ':edit<cr>')
