@@ -1,0 +1,5 @@
+#!/bin/sh
+
+set -eu
+
+$EDITOR "$HOME/.tmux-lasso-tracker"

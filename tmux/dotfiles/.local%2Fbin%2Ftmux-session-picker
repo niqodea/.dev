@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+current=$(tmux display-message -p '#{session_name}')
+
+selected=$(tmux list-sessions -F '#{session_last_used} #{session_name}' \
+    | sort -rn \
+    | awk '{print $NF}' \
+    | grep -Fxv "$current" \
+    | fzf --prompt='session > ' --border=rounded --reverse --no-sort)
+
+[ -n "$selected" ] && tmux switch-client -t "$selected"
