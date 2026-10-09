@@ -7,4 +7,5 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-brew install "$@"
+# Not on PATH right after setup installs it
+/opt/homebrew/bin/brew install "$@"

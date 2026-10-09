@@ -12,6 +12,11 @@ if [ -z "$os" ]; then
     exit 1
 fi
 
+setup_path="$cross_platform_path/setup/$os"
+if [ -e "$setup_path" ]; then
+    "$setup_path"
+fi
+
 bin_path="$HOME/.local/bin"
 mkdir -p "$bin_path"
 for command in "$cross_platform_path/bin/"*; do
@@ -21,9 +26,6 @@ for command in "$cross_platform_path/bin/"*; do
         cp "$command/$os" "$bin_path/$command_name"
     fi
 done
-
-# Packages that other modules depend on
-"$cross_platform_path/bin/install-package/$os" rsync jq fzf
 
 source_profile_path="$root/.profile"
 target_profile_path="$HOME/.profile"
@@ -46,3 +48,6 @@ profiled_path_sample="$cross_platform_path/profiled-path-sample/$os"
 if [ -e "$profiled_path_sample" ]; then
     cp "$profiled_path_sample" "$profiled_path/.path.sample"
 fi
+
+# Packages that other modules depend on
+"$cross_platform_path/bin/install-package/$os" rsync jq fzf

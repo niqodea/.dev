@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -eu
+
+# Pinned, so that we run an install script we can review
+# The script is about 35 KB, so a download still running after a minute has stalled
+install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/Homebrew/install/8ab1549dfa1189fd4d818a2116592d8f0ee06d8c/install.sh')"
+/bin/bash -c "$install_script"
