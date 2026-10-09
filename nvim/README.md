@@ -18,12 +18,13 @@ In fact, we extend this property by also remapping <kbd>ctrl</kbd> + <kbd>Space<
 
 Since the `leader` key becomes quite central to our workflow, we also disable its timeout for ease of mind.
 
-### Developer mode
+### X mode
 
-By running the `DevStart` command we configure our current Neovim to operate in developer mode and provide additional functionalities.
-This lets us have access to advanced features like LSP without bloating the experience of the vanilla text editor.
-Upon entering developer mode, the runtime is augmented with a set of core functionalities.
-If needed, additional optional lua modules can be imported with commands of the form `DevModuleStart`.
+By running the `X` command we configure our current Neovim with all of our customizations, from keybinds and options to additional functionalities.
+This lets us have access to advanced features like LSP while keeping plain Neovim vanilla.
+Upon entering X mode, the runtime is augmented with a set of core functionalities.
+If needed, additional optional lua modules can be loaded with commands of the form `XLoadModule`.
 
-Since running Neovim in developer mode might be a recurrent need in our workflow, we define an alias `vd` to immediately launch Neovim in developer mode.
-Moreover, we provide a mechanism to configure workspace-specific startup lua modules with the `DevCreateStartup` / `DevRunStartup` command and define an alias `vds` to automatically import them at startup.
+Since running Neovim in X mode is a recurrent need in our workflow, we define an alias `vx` to immediately launch Neovim in X mode.
+Moreover, X mode automatically loads the modules listed in the `vx-autoload` file of the current atdir.
+We create this file with the `mk-vx-autoload` script, which lets us pick the modules with fzf.
