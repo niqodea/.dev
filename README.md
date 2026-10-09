@@ -53,9 +53,22 @@ To move up in the directory structure, we use a method called [Breadcrumbs](http
 It is better than using lots of `../` in symlinks, which can be hard to read and might break unexpectedly.
 Breadcrumbs are special symlinks named `.*.bc` and are used all over our project.
 
+## Foundation
+
+The `.foundation` directory holds what every module builds on, so it is not a module itself.
+Installing it sets up the shell profile, the commands shared by all modules, Homebrew on macOS, and the packages that modules depend on.
+
+Commands in `.foundation/bin` are either a single file, used on every operating system, or a directory with one file per operating system.
+
 ## Installation
 
-To install programs, run this from the root of the repository:
+To install the foundation, run this from the root of the repository before anything else:
+
+```sh
+./install-foundation
+```
+
+To install programs, run:
 
 ```sh
 ./install-bin [module1] [module2] [...]

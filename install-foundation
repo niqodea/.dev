@@ -4,22 +4,22 @@ set -eu
 
 root="$(dirname "$(realpath "$0")")"
 
-cross_platform_path="$root/.cross-platform"
+foundation_path="$root/.foundation"
 
-os=$("$cross_platform_path/identify")
+os=$("$foundation_path/identify")
 if [ -z "$os" ]; then
     >&2 echo "Error: unknown operating system"
     exit 1
 fi
 
-setup_path="$cross_platform_path/setup/$os"
+setup_path="$foundation_path/setup/$os"
 if [ -e "$setup_path" ]; then
     "$setup_path"
 fi
 
 bin_path="$HOME/.local/bin"
 mkdir -p "$bin_path"
-for command in "$cross_platform_path/bin/"*; do
+for command in "$foundation_path/bin/"*; do
     command_name="$(basename "$command")"
     if [ -f "$command" ]; then
         cp "$command" "$bin_path/$command_name"  # Same on every OS
@@ -31,7 +31,7 @@ for command in "$cross_platform_path/bin/"*; do
     fi
 done
 
-source_profile_path="$root/.profile"
+source_profile_path="$foundation_path/profile"
 target_profile_path="$HOME/.profile"
 
 if [ -e "$target_profile_path" ]; then
@@ -48,10 +48,10 @@ cp "$source_profile_path" "$target_profile_path"
 profiled_path="$HOME/.profile.d"
 mkdir -p "$profiled_path"
 
-profiled_path_sample="$cross_platform_path/profiled-path-sample/$os"
+profiled_path_sample="$foundation_path/profiled-path-sample/$os"
 if [ -e "$profiled_path_sample" ]; then
     cp "$profiled_path_sample" "$profiled_path/.path.sample"
 fi
 
 # Packages that other modules depend on
-"$cross_platform_path/bin/install-package/$os" rsync jq fzf
+"$foundation_path/bin/install-package/$os" rsync jq fzf
