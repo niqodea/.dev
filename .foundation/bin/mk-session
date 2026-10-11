@@ -26,5 +26,3 @@ root="$HOME/$1"
 make_dir "$root"
 make_dir "$root/$DOTDEV_ATDIR"
 make_dir "$root/$DOTDEV_ATDIR/session"  # State of the whole session, rather than of the root directory
-
-echo "$root"  # Like mktemp, so that callers don't build the path themselves

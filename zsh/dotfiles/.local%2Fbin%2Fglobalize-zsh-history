@@ -8,7 +8,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 # A session's own shell already has its history, so this runs once the session is done
-if [ "${DOTDEV_SESSION_ROOT:-$HOME}" != "$HOME" ]; then
+if [ -n "${DOTDEV_SESSION-}" ]; then
     >&2 echo 'Run this from outside a session'
     exit 1
 fi

@@ -1,13 +1,9 @@
 function() {
 
-    # ROOT
-    # We can inject zsh with a root
-    # Ideally, zsh should always operate inside the root
-    if [ -z "$DOTDEV_SESSION_ROOT" ]; then
-        export DOTDEV_SESSION_ROOT="$HOME"
+    # SESSION
+    if [ -n "$DOTDEV_SESSION" ]; then
+        alias cds='cd "$HOME/$DOTDEV_SESSION"'
     fi
-
-    alias cdr='cd "$DOTDEV_SESSION_ROOT"'
 
 
     # DOTDEV_ATDIR
@@ -32,9 +28,14 @@ function() {
     setopt HIST_IGNORE_ALL_DUPS  # Don't store duplicate commands
     setopt INC_APPEND_HISTORY  # Append to history file immediately
     setopt EXTENDED_HISTORY  # Timestamps mark how far a session's history has been merged into the global one
-    # zsh reads HISTFILE after this file, so session commands end up on top and match first
-    fc -R "$HOME/.zsh_history"
-    HISTFILE="$DOTDEV_SESSION_ROOT/$DOTDEV_ATDIR/session/history.zsh"
+    if [ -n "$DOTDEV_SESSION" ]; then
+        # zsh reads HISTFILE after this file, so session commands end up on top and match first
+        fc -R "$HOME/.zsh_history"
+        HISTFILE="$HOME/$DOTDEV_SESSION/$DOTDEV_ATDIR/session/history.zsh"
+    else
+        # zsh saves no history without HISTFILE, and not every OS sets it
+        HISTFILE="$HOME/.zsh_history"
+    fi
 
 
     # DIRECTORY STACK

@@ -19,10 +19,13 @@ function format_path() {
     local num_start_components="$2"
     local num_end_components="$3"
 
-    if [[ "$input" == "$DOTDEV_SESSION_ROOT" || "$input" == "$DOTDEV_SESSION_ROOT/"* ]]; then
+    local session_path="$HOME/$DOTDEV_SESSION"
+
+    # The slashes keep a sibling like ~/devx from matching ~/dev
+    if [[ -n "$DOTDEV_SESSION" && "$input/" == "$session_path/"* ]]; then
         printf "."
-        local relpath="${input#$DOTDEV_SESSION_ROOT}"
-    elif [[ "$input" == "$HOME" || "$input" == "$HOME/"* ]]; then
+        local relpath="${input#$session_path}"
+    elif [[ "$input/" == "$HOME/"* ]]; then
         printf "~"
         local relpath="${input#$HOME}"
     else
