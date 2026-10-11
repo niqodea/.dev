@@ -2,27 +2,16 @@
 
 set -eu
 
-if [ "$#" -ne 1 ]; then
-    >&2 echo "Usage: $0 name"
+if [ -z "${DOTDEV_SESSION-}" ]; then
+    >&2 echo 'Not in a session'
     exit 1
 fi
 
-# A session's own shell already has its history, so this runs once the session is done
-if [ -n "${DOTDEV_SESSION-}" ]; then
-    >&2 echo 'Run this from outside a session'
-    exit 1
-fi
-
-session_path="$HOME/$1/$DOTDEV_ATDIR/session"
+session_path="$HOME/$DOTDEV_SESSION/$DOTDEV_ATDIR/session"
 history_path="$session_path/history.zsh"
 # Timestamp of the newest command already in global, which unlike a line number survives zsh
 # trimming the oldest lines of the session history
 imported_path="$session_path/imported"
-
-if [ ! -d "$session_path" ]; then
-    >&2 echo "No session at $HOME/$1"
-    exit 1
-fi
 
 if [ ! -e "$history_path" ]; then
     echo 'Nothing to import'
