@@ -14,6 +14,8 @@ Since other programs in our workflow do not leverage <kbd>Meta</kbd>, we can omi
 For each session we create a start directory with the same name in the home directory.
 The start directory contains the files needed to carry out the particular project or effort associated with the session.
 
+Session `0` is the home session: it belongs to no project, starts in the home directory, and is created again on demand if it was killed.
+
 ### Pane naming
 
 We leverage shell hooks to display currently running commands as pane names.
