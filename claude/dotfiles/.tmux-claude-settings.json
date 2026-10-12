@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
           }
         ]
       }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
+            "command": "tmux set-option -p -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
           }
         ]
       }
@@ -35,7 +35,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
+            "command": "tmux set-option -p -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
           }
         ]
       }
