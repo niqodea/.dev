@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
           }
         ]
       }
@@ -16,7 +16,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status running \; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status running \\; refresh-client -S"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status running \\; refresh-client -S"
           }
         ]
       }
@@ -26,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
           }
         ]
       }
@@ -36,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
           }
         ]
       }
