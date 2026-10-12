@@ -30,6 +30,11 @@ for module in $modules; do
         continue
     fi
 
+    if [ ! -e "$module_path/install-bin" ]; then
+        echo "Nothing to install for module $module"
+        continue
+    fi
+
     echo "Installing binary for module $module"
     "$module_path/install-bin" "$install_path"
 
