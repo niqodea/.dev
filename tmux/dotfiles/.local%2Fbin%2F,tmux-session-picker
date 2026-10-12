@@ -15,4 +15,4 @@ choices=$(printf '%s\n' "$live" "$by_last_command" "$all" | awk '!seen[$0]++' | 
 
 selected=$(printf '%s\n' "$choices" | fzf --prompt='session > ' --border=rounded --reverse --no-sort)
 
-tmux-open-session "$selected"
+,tmux-open-session "$selected"

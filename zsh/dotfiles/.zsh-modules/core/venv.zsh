@@ -1,4 +1,4 @@
-function cdv () {
+function ,cdv () {
     local venv_path="$VIRTUAL_ENV"
 
     if [ -z "${venv_path+x}" ]; then
@@ -17,7 +17,7 @@ function cdv () {
     cd "$base_path"
 }
 
-alias pv='echo "$VIRTUAL_ENV"'
+alias ,pv='echo "$VIRTUAL_ENV"'
 
 function _activate_venv() {
     local venv_relative_path="$1"
@@ -31,5 +31,5 @@ function _activate_venv() {
 
     _activate_extra_module venv "{\"path\": \"$venv_path\"}"
 }
-alias amv='_activate_venv .venv'
-alias amv@='_activate_venv $DOTDEV_ATDIR/venv'
+alias ,amv='_activate_venv .venv'
+alias ,amv@='_activate_venv $DOTDEV_ATDIR/venv'

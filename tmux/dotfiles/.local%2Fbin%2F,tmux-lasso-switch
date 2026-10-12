@@ -18,4 +18,4 @@ if [ -z "$session" ]; then
     exit
 fi
 
-tmux-open-session "$session"
+,tmux-open-session "$session"

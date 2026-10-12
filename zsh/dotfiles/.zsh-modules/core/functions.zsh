@@ -1,4 +1,4 @@
-function bkp () {
+function ,bkp () {
     local file_path="$1"
     if [ -z "$file_path" ]; then
         >&2 echo "No path provided"
@@ -11,7 +11,7 @@ function bkp () {
 
     local backup_file_path="$file_path.bkp"
     if [ -e "$backup_file_path" ]; then
-        bkp "$backup_file_path"
+        ,bkp "$backup_file_path"
     fi
 
     mv -- "$file_path" "$backup_file_path"
@@ -20,7 +20,7 @@ function bkp () {
 pre_ssh_workstation_functions=()
 post_ssh_workstation_functions=()
 
-function sw () {
+function ,sw () {
     local workstation="$1"
 
     local ssh_command="ssh -t"  # -t to specify a command to run at the end

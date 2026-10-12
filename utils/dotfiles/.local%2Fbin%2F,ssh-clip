@@ -18,9 +18,9 @@ if [ "$command" = 'connect' ]; then
 # NOTE: we need to use a separate background process to release the lock on the ssh controlmaster
 #   this sadly makes the command async, seems to be no way around this though
 elif [ "$command" = 'put' ]; then
-    (clipboard read | ssh "$SSH_DESTINATION" 'source .profile; clipboard write') &
+    (,clipboard read | ssh "$SSH_DESTINATION" 'source .profile; ,clipboard write') &
 elif [ "$command" = 'yank' ]; then
-    (ssh "$SSH_DESTINATION" 'source .profile; clipboard read' | clipboard write) &
+    (ssh "$SSH_DESTINATION" 'source .profile; ,clipboard read' | ,clipboard write) &
 else
     >&2 echo "Error: unknown command $command"
     exit 1

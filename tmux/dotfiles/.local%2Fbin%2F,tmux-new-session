@@ -7,5 +7,5 @@ if [ -d "$HOME/$1/$DOTDEV_ATDIR/session" ]; then
     exit
 fi
 
-mk-session "$1"
-tmux-open-session "$1"
+,mk-session "$1"
+,tmux-open-session "$1"

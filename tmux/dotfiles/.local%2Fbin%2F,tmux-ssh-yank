@@ -9,4 +9,4 @@ if [ -z "$ssh_workstation" ]; then
     exit
 fi
 
-clipboard read | ssh "$ssh_workstation" 'source .profile; clipboard write'
+ssh "$ssh_workstation" 'source .profile; ,clipboard read' | ,clipboard write

@@ -25,6 +25,6 @@ This lets us have access to advanced features like LSP while keeping plain Neovi
 Upon entering X mode, the runtime is augmented with a set of core functionalities.
 If needed, additional optional lua modules can be loaded with commands of the form `XLoadModule`.
 
-Since running Neovim in X mode is a recurrent need in our workflow, we define an alias `vx` to immediately launch Neovim in X mode.
+Since running Neovim in X mode is a recurrent need in our workflow, we define an alias `,vx` to immediately launch Neovim in X mode.
 Moreover, X mode automatically loads the modules listed in the `vx-autoload` file of the current atdir.
-We create this file with the `mk-vx-autoload` script, which lets us pick the modules with fzf.
+We create this file with the `,mk-vx-autoload` script, which lets us pick the modules with fzf.

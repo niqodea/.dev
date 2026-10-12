@@ -1,2 +1,2 @@
-alias v='nvim'
-alias vx='v -c X'
+alias ,v='nvim'
+alias ,vx='nvim -c X'

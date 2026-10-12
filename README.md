@@ -54,6 +54,13 @@ It is better than using lots of `../` in symlinks, which can be hard to read and
 Breadcrumbs are the symlinks named `..root` and `..module`, which point at the root of the repository and of the module they sit in.
 A symlink that points up the directory tree goes through one of them, like `..root/<module>/<file>` or `..module/<file>`, so you can read where it points without counting `../`.
 
+### Command names
+
+Every command of our own starts with a comma, like `,<name>`, whether it is an alias, a function or a script.
+No real command starts with one, so ours can never shadow a command that a package installs, now or later.
+Two kinds of names are exceptions: `git-<name>` scripts, which git only runs as `git <name>` under that exact name, and the `..` aliases, since no command is named with dots alone.
+Ref: [Start all of your commands with a comma](https://rhodesmill.org/brandon/2009/commands-with-comma/)
+
 ## Foundation
 
 The `.foundation` directory holds what every module builds on, so it is not a module itself.

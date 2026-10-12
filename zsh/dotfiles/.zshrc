@@ -2,7 +2,7 @@ function() {
 
     # SESSION
     if [ -n "$DOTDEV_SESSION" ]; then
-        alias cds='cd "$HOME/$DOTDEV_SESSION"'
+        alias ,cds='cd "$HOME/$DOTDEV_SESSION"'
     fi
 
 
@@ -11,7 +11,7 @@ function() {
     # Programs can use the atdir to store state and contextualize their operation,
     # allowing them to tailor their behavior based on the originating working directory
     # NOTE: DOTDEV_ATDIR is a first-class citizen in our dotfiles, many configs rely on it
-    alias mk@='mkdir "$DOTDEV_ATDIR"'
+    alias ,mk@='mkdir "$DOTDEV_ATDIR"'
 
 
     # SHELL VARIABLE
