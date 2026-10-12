@@ -5,7 +5,7 @@ set -eux
 root="$(dirname "$(realpath "$0")")"
 install_path="$1"
 
-sudo apt install --yes python3.11  # TODO: Check if downloading venv is necessary
+sudo apt install --yes python3.11 # TODO: Check if downloading venv is necessary
 
 tooling_venv_path="$HOME/.py-tooling-venv"
 python3.11 -m venv "$tooling_venv_path"

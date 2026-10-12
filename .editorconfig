@@ -1,0 +1,5 @@
+[[shell]]
+indent_style = space
+indent_size = 4
+switch_case_indent = true
+space_redirects = true

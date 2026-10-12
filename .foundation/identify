@@ -2,11 +2,13 @@
 
 case "$(uname -s)" in
     'Darwin')
-        echo 'macos'; exit
+        echo 'macos'
+        exit
         ;;
     'Linux')
         if [ -f /etc/debian_version ]; then
-            echo 'debian'; exit
+            echo 'debian'
+            exit
         fi
         ;;
     *)

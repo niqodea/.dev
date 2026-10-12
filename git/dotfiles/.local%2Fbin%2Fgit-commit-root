@@ -17,9 +17,9 @@ fi
 
 # Perform the empty commit
 GIT_AUTHOR_NAME="_" \
-GIT_AUTHOR_EMAIL="_" \
-GIT_AUTHOR_DATE="1970-01-01T00:00:00Z" \
-GIT_COMMITTER_NAME="_" \
-GIT_COMMITTER_EMAIL="_" \
-GIT_COMMITTER_DATE="1970-01-01T00:00:00Z" \
-git commit --allow-empty-message -m "" --allow-empty
+    GIT_AUTHOR_EMAIL="_" \
+    GIT_AUTHOR_DATE="1970-01-01T00:00:00Z" \
+    GIT_COMMITTER_NAME="_" \
+    GIT_COMMITTER_EMAIL="_" \
+    GIT_COMMITTER_DATE="1970-01-01T00:00:00Z" \
+    git commit --allow-empty-message -m "" --allow-empty

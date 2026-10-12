@@ -96,8 +96,14 @@ Note: both scripts install all the modules if no module is specified.
 
 ## Linting
 
-To check every shell script in the repository with [ShellCheck](https://www.shellcheck.net/), run:
+To check every script in the repository, run:
 
 ```sh
 ./lint
+```
+
+To fix their formatting, run:
+
+```sh
+./format
 ```

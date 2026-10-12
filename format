@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -eu
+
+root="$(dirname "$(realpath "$0")")"
+
+# Our scripts have no extension, so the shebang is what marks one
+git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shfmt --write

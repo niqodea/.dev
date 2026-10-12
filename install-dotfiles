@@ -28,19 +28,19 @@ for module in $modules; do
     if [ -d "$dotfiles_submodules_path" ]; then
         echo "Pulling Git submodules for dotfiles of module $module"
         for submodule_path in "$dotfiles_submodules_path/"*; do
-            submodule_canon_path="$(readlink -f "$submodule_path")"  # solve symlinks if any
+            submodule_canon_path="$(readlink -f "$submodule_path")" # solve symlinks if any
             git submodule update --init "$submodule_canon_path"
         done
     fi
 
     for source_dotfile_path in "$source_dotfiles_path/."[!.]*; do
         target_dotfile_relpath="$(basename "$source_dotfile_path" | sed "s/%2F/\//g")"
-        mkdir -p "$(dirname "$HOME"/"$target_dotfile_relpath")"  # rsync expects parent dir to exist
+        mkdir -p "$(dirname "$HOME"/"$target_dotfile_relpath")" # rsync expects parent dir to exist
 
         if [ -d "$source_dotfile_path" ]; then
             rsync --archive --copy-unsafe-links --delete \
                 --backup --backup-dir="$backup_path/$target_dotfile_relpath" \
-                "$source_dotfile_path/" "$HOME/$target_dotfile_relpath"  # NOTE: trailing / is important
+                "$source_dotfile_path/" "$HOME/$target_dotfile_relpath" # NOTE: trailing / is important
         else
             backup_dir="$backup_path/$(dirname "$target_dotfile_relpath")"
 

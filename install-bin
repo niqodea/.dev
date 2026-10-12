@@ -6,14 +6,17 @@ root="$(dirname "$(realpath "$0")")"
 
 usage="Usage: $0 [-p /install/path] [module1] [module2] [...]"
 
-install_path="$HOME/.local"  # Default option value
+install_path="$HOME/.local" # Default option value
 while getopts "p:" opt; do
     case "$opt" in
-        p) install_path="$OPTARG";;
-        *) >&2 echo "$usage"; exit 1;;
+        p) install_path="$OPTARG" ;;
+        *)
+            >&2 echo "$usage"
+            exit 1
+            ;;
     esac
 done
-shift "$((OPTIND-1))"  # positional arguments follow options
+shift "$((OPTIND - 1))" # positional arguments follow options
 
 if [ "$#" -eq 0 ]; then
     # Install all modules

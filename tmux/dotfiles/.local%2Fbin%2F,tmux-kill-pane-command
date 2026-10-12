@@ -36,7 +36,6 @@ if ! tmux confirm-before -p "Kill process $command_pid in pane?" 'send-keys ""';
     exit
 fi
 
-
 kill -9 "$command_pid" || {
     tmux display-message "Failed to send SIGKILL to process $command_pid"
     exit

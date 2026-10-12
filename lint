@@ -7,3 +7,4 @@ root="$(dirname "$(realpath "$0")")"
 # Our scripts have no extension, so the shebang is what marks one
 # git grep reads only regular tracked files, so symlinks and submodules are left out
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shellcheck
+git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shfmt --diff

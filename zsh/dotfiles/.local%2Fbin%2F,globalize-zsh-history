@@ -21,7 +21,7 @@ fi
 if [ -e "$imported_path" ]; then
     imported="$(cat "$imported_path")"
 else
-    imported=-1  # Nothing imported yet, so even commands without a timestamp (0) are imported
+    imported=-1 # Nothing imported yet, so even commands without a timestamp (0) are imported
 fi
 
 # Lines look like ": <timestamp>:<duration>;<command>", continuation lines of a multi-line

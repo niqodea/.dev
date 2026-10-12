@@ -3,7 +3,7 @@
 set -eu
 
 # "=" for the exact name, since tmux otherwise matches a prefix of another one
-if tmux has-session -t "=$1" 2>/dev/null; then
+if tmux has-session -t "=$1" 2> /dev/null; then
     tmux switch-client -t "=$1"
     exit
 fi

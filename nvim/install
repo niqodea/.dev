@@ -10,9 +10,18 @@ treesitter_version='v0.26.9'
 node_version='v26.3.1'
 
 case "$platform" in
-  'debian') os='linux';  node_os='linux'  ;;
-  'macos')  os='macos';  node_os='darwin' ;;
-  *) >&2 echo "Unsupported platform: '$platform'"; exit 1 ;;
+    'debian')
+        os='linux'
+        node_os='linux'
+        ;;
+    'macos')
+        os='macos'
+        node_os='darwin'
+        ;;
+    *)
+        >&2 echo "Unsupported platform: '$platform'"
+        exit 1
+        ;;
 esac
 
 tmp="$(mktemp -d)"

@@ -22,7 +22,7 @@ mkdir -p "$bin_path"
 for command in "$foundation_path/bin/"*; do
     command_name="$(basename "$command")"
     if [ -f "$command" ]; then
-        cp "$command" "$bin_path/$command_name"  # Same on every OS
+        cp "$command" "$bin_path/$command_name" # Same on every OS
         continue
     fi
     command_path="$command/$os"
@@ -54,4 +54,4 @@ if [ -e "$profiled_path_sample" ]; then
 fi
 
 # Packages that other modules depend on
-"$foundation_path/bin/,install-package/$os" rsync jq fzf shellcheck
+"$foundation_path/bin/,install-package/$os" rsync jq fzf shellcheck shfmt

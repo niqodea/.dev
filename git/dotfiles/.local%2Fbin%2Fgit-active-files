@@ -3,7 +3,7 @@
 origin_head=$(git rev-parse origin/HEAD)
 active_file_paths=$(git diff --name-only "$origin_head"...)
 
-current_path=$(git rev-parse --show-prefix)  # empty if in root of git repo
+current_path=$(git rev-parse --show-prefix) # empty if in root of git repo
 
 for active_file_path in $active_file_paths; do
     # NOTE: This assumes paths do not contain .. or . components
