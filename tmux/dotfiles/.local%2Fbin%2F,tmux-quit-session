@@ -3,6 +3,21 @@
 set -eu
 
 for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
+    pane_type="$(tmux show-options -pv -t $pane_id @pane_type)"
+    case "$pane_type" in
+        shell)
+            ;;
+        claude)
+            # An accidental M-Q must not close Claude
+            tmux display-message "Pane %$pane_id runs Claude, quit it from Claude"
+            exit
+            ;;
+        *)
+            tmux display-message "Pane %$pane_id has unknown type: $pane_type"
+            exit
+            ;;
+    esac
+
     status="$(tmux show-options -pv -t $pane_id @status)"
     if [ "$status" != 'idle' ]; then
         # Prefix pane id with % to escape the leading % character

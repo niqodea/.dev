@@ -1,21 +1,12 @@
 {
   "hooks": {
-    "Stop": [
+    "SessionStart": [
       {
+        "matcher": "startup|resume|clear",
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \; refresh-client -S"
           }
         ]
       }
@@ -25,17 +16,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status running \; refresh-client -S"
           }
         ]
       }
     ],
-    "SessionEnd": [
+    "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \; refresh-client -S"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \; refresh-client -S"
           }
         ]
       }

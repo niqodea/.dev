@@ -5,6 +5,20 @@ set -eu
 pane_options="$(tmux show-options -p)"
 echo "$pane_options"
 
+pane_type="$(tmux show-options -pv @pane_type)"
+case "$pane_type" in
+    shell)
+        ;;
+    claude)
+        # Claude is the pane's process, and the options above already show its status
+        exit
+        ;;
+    *)
+        echo "Unknown pane type: $pane_type"
+        exit 1
+        ;;
+esac
+
 status="$(echo "$pane_options" | awk '$1 == "@status" {print $2}')"
 if [ "$status" = 'idle' ]; then
     # No command information to show

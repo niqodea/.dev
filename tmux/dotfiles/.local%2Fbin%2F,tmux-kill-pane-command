@@ -2,6 +2,21 @@
 
 set -eu
 
+pane_type="$(tmux show-options -pv @pane_type)"
+case "$pane_type" in
+    shell)
+        ;;
+    claude)
+        # Claude is the pane's process, so killing it would close the pane
+        tmux display-message "Pane runs Claude, it has no command to kill"
+        exit
+        ;;
+    *)
+        tmux display-message "Unknown pane type: $pane_type"
+        exit
+        ;;
+esac
+
 if [ $(tmux show-options -pv @status) = 'idle' ]; then
     # Prefix pane id with % to escape the leading % character
     tmux display-message 'Pane is idle'

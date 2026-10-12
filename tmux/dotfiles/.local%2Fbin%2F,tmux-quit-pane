@@ -2,6 +2,21 @@
 
 set -eu
 
+pane_type="$(tmux show-options -pv @pane_type)"
+case "$pane_type" in
+    shell)
+        ;;
+    claude)
+        # An accidental M-q must not close Claude
+        tmux display-message "Pane runs Claude, quit it from Claude"
+        exit
+        ;;
+    *)
+        tmux display-message "Unknown pane type: $pane_type"
+        exit
+        ;;
+esac
+
 status="$(tmux show-options -pv @status)"
 
 if [ "$status" != 'idle' ]; then

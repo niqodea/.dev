@@ -8,7 +8,7 @@ session=$(tmux display-message -p '#{session_name}')
 tmux wait-for -L "claude-$session"
 trap 'tmux wait-for -U "claude-$session"' EXIT
 
-existing_pane=$(tmux list-panes -s -t "=$session" -F '#{pane_id} #{@claude_pane}' | awk '$2 == 1 {print $1}')
+existing_pane=$(tmux list-panes -s -t "=$session" -F '#{pane_id} #{@pane_type}' | awk '$2 == "claude" {print $1}')
 
 if [ -n "$existing_pane" ]; then
     tmux select-window -t "$existing_pane"
@@ -16,7 +16,7 @@ if [ -n "$existing_pane" ]; then
     exit
 fi
 
-# Claude is the pane's process, so the pane and its marker go away when Claude exits
-# Only this Claude gets the hooks that report when it waits
+# Claude is the pane's process, so the pane and its options go away when Claude exits
+# Only this Claude gets the hooks that report its status to the pane
 new_pane=$(tmux split-window -h -P -F '#{pane_id}' -c '#{session_path}' "claude --settings $HOME/.tmux-claude-settings.json")
-tmux set-option -p -t "$new_pane" @claude_pane 1
+tmux set-option -p -t "$new_pane" @pane_type claude
