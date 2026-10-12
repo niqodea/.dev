@@ -5,7 +5,7 @@ set -eu
 for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
     pane_type="$(tmux show-options -pv -t $pane_id @pane_type)"
     case "$pane_type" in
-        shell)
+        zsh)
             ;;
         claude)
             # An accidental M-Q must not close Claude

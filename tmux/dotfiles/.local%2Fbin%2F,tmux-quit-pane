@@ -4,7 +4,7 @@ set -eu
 
 pane_type="$(tmux show-options -pv @pane_type)"
 case "$pane_type" in
-    shell)
+    zsh)
         ;;
     claude)
         # An accidental M-q must not close Claude

@@ -39,8 +39,8 @@ function () {
         return 1
     fi
 
-    tmux set-option -t "$TMUX_PANE" -p @pane_type shell
-    tmux set-option -t "$TMUX_PANE" -p @shell_pid "$$"
+    tmux set-option -t "$TMUX_PANE" -p @pane_type zsh
+    tmux set-option -t "$TMUX_PANE" -p @zsh_pid "$$"
 
     # Initially set the pane to idle
     set_tmux_pane_idle

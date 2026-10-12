@@ -4,7 +4,7 @@ set -eu
 
 pane_type="$(tmux show-options -pv @pane_type)"
 case "$pane_type" in
-    shell)
+    zsh)
         ;;
     claude)
         # Claude is the pane's process, so killing it would close the pane
@@ -23,9 +23,9 @@ if [ $(tmux show-options -pv @status) = 'idle' ]; then
     exit
 fi
 
-shell_pid=$(tmux display-message -p '#{@shell_pid}')
+zsh_pid=$(tmux display-message -p '#{@zsh_pid}')
 # Heuristic: get the oldest child process of the shell
-if ! command_pid=$(pgrep -o -P "$shell_pid"); then
+if ! command_pid=$(pgrep -o -P "$zsh_pid"); then
     tmux display-message 'No command to kill found'
     exit
 fi

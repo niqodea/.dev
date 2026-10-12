@@ -7,7 +7,7 @@ echo "$pane_options"
 
 pane_type="$(tmux show-options -pv @pane_type)"
 case "$pane_type" in
-    shell)
+    zsh)
         ;;
     claude)
         # Claude is the pane's process, and the options above already show its status
@@ -25,8 +25,8 @@ if [ "$status" = 'idle' ]; then
     exit
 fi
 
-shell_pid=$(echo "$pane_options" | awk '$1 == "@shell_pid" {print $2}')
-command_pids=$(pgrep -d , -P "$shell_pid")
+zsh_pid=$(echo "$pane_options" | awk '$1 == "@zsh_pid" {print $2}')
+command_pids=$(pgrep -d , -P "$zsh_pid")
 
 echo
 ps -o %cpu,%mem,stat,etime,args -p "$command_pids"
