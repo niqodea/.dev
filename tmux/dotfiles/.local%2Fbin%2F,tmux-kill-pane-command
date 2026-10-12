@@ -17,7 +17,7 @@ case "$pane_type" in
         ;;
 esac
 
-if [ $(tmux show-options -pv @status) = 'idle' ]; then
+if [ "$(tmux show-options -pv @status)" = 'idle' ]; then
     # Prefix pane id with % to escape the leading % character
     tmux display-message 'Pane is idle'
     exit

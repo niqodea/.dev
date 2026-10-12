@@ -54,4 +54,4 @@ if [ -e "$profiled_path_sample" ]; then
 fi
 
 # Packages that other modules depend on
-"$foundation_path/bin/,install-package/$os" rsync jq fzf
+"$foundation_path/bin/,install-package/$os" rsync jq fzf shellcheck

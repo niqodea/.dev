@@ -1,4 +1,6 @@
 #!/bin/sh
+# ShellCheck cannot read the files this script loads, which exist only on the machine it installs on
+# shellcheck disable=SC1091
 
 set -eux
 

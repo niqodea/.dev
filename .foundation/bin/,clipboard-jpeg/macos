@@ -11,7 +11,7 @@ command="$1"
 shift
 
 image_path="$(mktemp /tmp/clipboard-XXXX.jpeg)"
-trap "rm '$image_path'" EXIT
+trap 'rm "$image_path"' EXIT
 
 if [ "$command" = 'read' ]; then
     osascript -e "

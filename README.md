@@ -93,3 +93,11 @@ To install dotfiles, run:
 The script will move existing, conflicting dotfiles in a backup directory.
 
 Note: both scripts install all the modules if no module is specified.
+
+## Linting
+
+To check every shell script in the repository with [ShellCheck](https://www.shellcheck.net/), run:
+
+```sh
+./lint
+```

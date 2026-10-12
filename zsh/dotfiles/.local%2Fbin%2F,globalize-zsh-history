@@ -26,6 +26,8 @@ fi
 
 # Lines look like ": <timestamp>:<duration>;<command>", continuation lines of a multi-line
 # command have no timestamp of their own, and commands saved without EXTENDED_HISTORY count as 0
+# $0 is awk's current line, so the shell must not expand it
+# shellcheck disable=SC2016
 with_timestamp='/^: [0-9]+:[0-9]+;/ { split($0, fields, /[:;]/); timestamp = fields[2] + 0 }'
 
 # Fixed first, so that commands appended while we copy wait for the next import

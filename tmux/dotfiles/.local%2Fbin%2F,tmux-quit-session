@@ -3,7 +3,7 @@
 set -eu
 
 for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
-    pane_type="$(tmux show-options -pv -t $pane_id @pane_type)"
+    pane_type="$(tmux show-options -pv -t "$pane_id" @pane_type)"
     case "$pane_type" in
         zsh)
             ;;
@@ -18,7 +18,7 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
             ;;
     esac
 
-    status="$(tmux show-options -pv -t $pane_id @status)"
+    status="$(tmux show-options -pv -t "$pane_id" @status)"
     if [ "$status" != 'idle' ]; then
         # Prefix pane id with % to escape the leading % character
         tmux display-message "Pane %$pane_id is not idle"

@@ -11,7 +11,7 @@
 - Write READMEs for all modules
 - (maybe) add configuration for optimized Xournal++ use (one hand for keyboard, other for pen) (if not possible with this tool, find another that best accommodates this workflow)
 - Compile/install ffmpeg and imagemagick and write aliases for it
-- Add automatic linting for sh files, lua files, ...
+- Add linting for lua files, ..., to ./lint
 - Add docker (utils or module)
 - Explore frecency solutions (zsh, nvim, tmux, ...)
 - Look for/implement neovim command that restores all swap files as buffers (useful in case of crashes)
