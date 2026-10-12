@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+root="$(dirname "$(dirname "$(realpath "$0")")")"
+site_path="$1"
+
+grammar_path="$root/bin-submodules/tree-sitter-python"
+git submodule update --init "$grammar_path"
+
+mkdir -p "$site_path/parser" "$site_path/queries/python"
+tree-sitter build "$grammar_path" -o "$site_path/parser/python.so"
+cp "$grammar_path/queries/highlights.scm" "$site_path/queries/python/highlights.scm"

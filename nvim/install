@@ -35,3 +35,5 @@ node_tar_file="node-$node_version-$node_os-x64.tar.xz"
 node_tar_url="https://nodejs.org/dist/$node_version/$node_tar_file"
 curl -L -o "$tmp/$node_tar_file" "$node_tar_url"
 tar -xf "$tmp/$node_tar_file" -C "$install_path" --strip-components=1
+
+"$root/install.d/python-treesitter" "$HOME/.local/share/nvim/site"

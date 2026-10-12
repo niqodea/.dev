@@ -1,1 +1,0 @@
-../../../../..root/python/bin-submodules/tree-sitter-python/queries/highlights.scm

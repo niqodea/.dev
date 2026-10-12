@@ -20,5 +20,3 @@ curl -LsSf "https://astral.sh/uv/$uv_version/install.sh" | sh
 
 ty_version='0.0.51'
 uv tool install "ty==$ty_version"
-
-tree-sitter build "$root/bin-submodules/tree-sitter-python" -o "$root/exported-bin/python.so"
