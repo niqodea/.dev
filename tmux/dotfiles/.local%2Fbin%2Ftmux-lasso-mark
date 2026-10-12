@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+tracker_file="$HOME/.tmux-lasso-tracker"
+
+session="$(tmux display-message -p '#{session_name}')"
+
+if [ -f "$tracker_file" ] && grep -Fxq "$session" "$tracker_file"; then
+    exit
+fi
+
+echo "$session" >> "$tracker_file"
