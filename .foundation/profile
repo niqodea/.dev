@@ -1,5 +1,9 @@
 for file in "$HOME/.profile.d/"*; do
-    source "$file"
+    # An empty directory leaves the pattern itself in $file
+    if [ ! -e "$file" ]; then
+        continue
+    fi
+    . "$file"
 done
 
 export PATH="$HOME/.local/bin:$PATH"
