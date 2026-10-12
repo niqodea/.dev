@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -eu
+
+session=$(tmux display-message -p '#{session_name}')
+
+# Holding M-; repeats it, and two runs could both find no Claude pane
+tmux wait-for -L "claude-$session"
+trap 'tmux wait-for -U "claude-$session"' EXIT
+
+existing_pane=$(tmux list-panes -s -t "=$session" -F '#{pane_id} #{@claude_pane}' | awk '$2 == 1 {print $1}')
+
+if [ -n "$existing_pane" ]; then
+    tmux select-window -t "$existing_pane"
+    tmux select-pane -t "$existing_pane"
+    exit
+fi
+
+# Claude is the pane's process, so the pane and its marker go away when Claude exits
+new_pane=$(tmux new-window -P -F '#{pane_id}' -n claude -c '#{session_path}' claude)
+tmux set-option -p -t "$new_pane" @claude_pane 1
