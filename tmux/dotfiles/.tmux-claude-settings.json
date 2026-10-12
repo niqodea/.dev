@@ -1,0 +1,44 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -t \"$TMUX_PANE\" @claude_waiting 1 \\; refresh-client -S"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -u -t \"$TMUX_PANE\" @claude_waiting \\; refresh-client -S"
+          }
+        ]
+      }
+    ]
+  }
+}

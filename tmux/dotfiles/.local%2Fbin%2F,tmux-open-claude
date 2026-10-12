@@ -17,5 +17,6 @@ if [ -n "$existing_pane" ]; then
 fi
 
 # Claude is the pane's process, so the pane and its marker go away when Claude exits
-new_pane=$(tmux new-window -P -F '#{pane_id}' -n claude -c '#{session_path}' claude)
+# Only this Claude gets the hooks that report when it waits
+new_pane=$(tmux new-window -P -F '#{pane_id}' -n claude -c '#{session_path}' "claude --settings $HOME/.tmux-claude-settings.json")
 tmux set-option -p -t "$new_pane" @claude_pane 1
