@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -eu
+
+waiting=$(tmux list-panes -a -F '#{?#{&&:#{==:#{@pane_type},claude},#{==:#{@status},idle}},#{session_name}	#{pane_id},}' | sed '/^$/d')
+
+if [ -z "$waiting" ]; then
+    tmux display-message "No Claude waits for input"
+    exit
+fi
+
+# fzf shows and searches the session name, and returns the Claude pane after the tab
+pane=$(printf '%s\n' "$waiting" | fzf --prompt='waiting claude > ' --border=rounded --reverse --no-sort --delimiter='\t' --with-nth=1 --accept-nth=2)
+
+tmux switch-client -t "$pane"
+tmux select-window -t "$pane"
+tmux select-pane -t "$pane"
