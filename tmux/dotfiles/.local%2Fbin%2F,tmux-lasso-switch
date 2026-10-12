@@ -7,14 +7,14 @@ index="$1"
 tracker_file="$HOME/.tmux-lasso-tracker"
 
 if [ ! -f "$tracker_file" ]; then
-    tmux display-message "No tracker file found at $tracker_file"
+    tmux display-message -l "No tracker file found at $tracker_file"
     exit
 fi
 
 session="$(sed -n "${index}p" "$tracker_file")"
 
 if [ -z "$session" ]; then
-    tmux display-message "No session found at index $index"
+    tmux display-message -l "No session found at index $index"
     exit
 fi
 

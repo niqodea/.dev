@@ -9,7 +9,7 @@ if tmux has-session -t "=$1" 2> /dev/null; then
 fi
 
 if [ ! -d "$HOME/$1/$DOTDEV_ATDIR/session" ]; then
-    tmux display-message "No session named $1"
+    tmux display-message -l "No session named $1"
     exit
 fi
 

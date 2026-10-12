@@ -14,7 +14,7 @@ return function(cmp_nvim_lsp)
 
     vim.api.nvim_create_user_command('PythonRopifyMoveModule', function()
         local resource = vim.fn.expand('%')
-        local command = 'ropify move-module ' .. resource .. ' --ropefolder ' .. ropefolder
+        local command = 'ropify move-module ' .. vim.fn.shellescape(resource) .. ' --ropefolder ' .. vim.fn.shellescape(ropefolder)
         vim.cmd('split | terminal ' .. command)
         vim.api.nvim_buf_set_option(0, 'buflisted', false)
     end, {})
@@ -22,14 +22,14 @@ return function(cmp_nvim_lsp)
     vim.api.nvim_create_user_command('PythonRopifyMoveSymbol', function()
         local resource = vim.fn.expand('%')
         local offset = vim.fn.line2byte(vim.fn.line('.')) + vim.fn.col('.') - 1
-        local command = 'ropify move-symbol ' .. resource .. ' ' .. offset .. ' --ropefolder ' .. ropefolder
+        local command = 'ropify move-symbol ' .. vim.fn.shellescape(resource) .. ' ' .. offset .. ' --ropefolder ' .. vim.fn.shellescape(ropefolder)
         vim.cmd('split | terminal ' .. command)
         vim.api.nvim_buf_set_option(0, 'buflisted', false)
     end, {})
 
     vim.api.nvim_create_user_command('PythonRopifyShowImports', function()
         local name = vim.fn.expand('<cword>')
-        local command = 'ropify show-imports ' .. name .. ' --ropefolder ' .. ropefolder
+        local command = 'ropify show-imports ' .. vim.fn.shellescape(name) .. ' --ropefolder ' .. vim.fn.shellescape(ropefolder)
         vim.cmd('split | terminal ' .. command)
         vim.api.nvim_buf_set_option(0, 'buflisted', false)
     end, {})

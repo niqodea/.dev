@@ -10,7 +10,7 @@ end
 function M.explore_cwd()
     -- `Explore .` won't work when already in netrw for some reason
     local cwd = vim.fn.getcwd()
-    vim.cmd('Explore ' .. cwd)
+    vim.cmd('Explore ' .. vim.fn.fnameescape(cwd))
 end
 
 
@@ -23,7 +23,7 @@ function M.explore_git_root()
         error('Not in a git repository')
     end
 
-    vim.cmd('Explore ' .. git_root)
+    vim.cmd('Explore ' .. vim.fn.fnameescape(git_root))
 end
 
 
