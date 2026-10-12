@@ -5,9 +5,8 @@
 - (maybe) move nvim lua files dealing with git as exported git dotfiles
 - write handy snippets (e.g. python)
 - Only pull repository info for the specific commit
-- (maybe) heck out https://github.com/abhinav/tmux-fastcopy or alternatives
-- (maybe) onsider using a mini-modal solution to pane resizing, both in tmux and nvim, to make it unnecessary for alt and ctrl to be pressed together (inspiration: https://github.com/whame/tmux-modal)
-- Consider a solution that saves content of tmux panes in a backup directory, so that you can have an idea of what you were working on after a reboot. Potentially, we could keep track of the state of the shells with hooks, so that we can reinflate the state automatically afterwards!
+- (maybe) check out https://github.com/abhinav/tmux-fastcopy or alternatives
+- (maybe) consider using a mini-modal solution to pane resizing, both in tmux and nvim, to make it unnecessary for alt and ctrl to be pressed together (inspiration: https://github.com/whame/tmux-modal)
 - (maybe) move all dotfiles to separate git submodule
 - Write READMEs for all modules
 - (maybe) add configuration for optimized Xournal++ use (one hand for keyboard, other for pen) (if not possible with this tool, find another that best accommodates this workflow)
@@ -21,7 +20,6 @@
 - Create alias to deal with processes more easily (exposed ports with `lsof`, better `psg`, etc.)
 - Find nvim window reordering solution (can be less complete than tmux's since closing a pane won't close the underlying buffer)
 - Look into other tools for a richer, semantic diff
-- Find a better way to manage zsh history (right now it starts from scratch each time we create a new session, not ideal)
 - Implement git ls-files by modification date both as a command and in nvim
 - Implement nvim string/lines diff solution (search the web, an idea could be to compare yank register and visual selection)
 - Implement non-intrusive monitoring of key metrics like MEM usage, GPU usage, Disk usage (they should only be visually noticeable if above a critical threshold)
@@ -38,4 +36,3 @@
 - Find alternatives to copilot that do not rely on node
 - Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier
 - Add `lm` as an utils command
-- Move all nvim custom configuration to Developer mode, maybe rename it to something else like @-mode, own mode or something
