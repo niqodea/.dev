@@ -2,9 +2,10 @@
 
 set -eu
 
-mk-session -e "$1"
+if [ -d "$HOME/$1/$DOTDEV_ATDIR/session" ]; then
+    tmux display-message "Session $1 already exists, open it from M-/"
+    exit
+fi
 
-# tmux has no long flags: -d detached, -n window name, -s session name, -c start directory, and
-# -e session environment, so that every pane gets it, not only the first
-tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_SESSION="$1"
-tmux switch-client -t "$1"
+mk-session "$1"
+tmux-open-session "$1"

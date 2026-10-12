@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -eu
+
+# "=" for the exact name, since tmux otherwise matches a prefix of another one
+if tmux has-session -t "=$1" 2>/dev/null; then
+    tmux switch-client -t "=$1"
+    exit
+fi
+
+if [ ! -d "$HOME/$1/$DOTDEV_ATDIR/session" ]; then
+    tmux display-message "No session named $1"
+    exit
+fi
+
+tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_SESSION="$1"
+tmux switch-client -t "=$1"

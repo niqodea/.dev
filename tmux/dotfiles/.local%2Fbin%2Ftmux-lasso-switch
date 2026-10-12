@@ -18,9 +18,4 @@ if [ -z "$session" ]; then
     exit
 fi
 
-if ! tmux has-session -t "$session" 2>/dev/null; then
-    tmux display-message "Can't find session: $session"
-    exit
-fi
-
-tmux switch-client -t "$session"
+tmux-open-session "$session"

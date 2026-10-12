@@ -4,10 +4,15 @@ set -eu
 
 current=$(tmux display-message -p '#{session_name}')
 
-selected=$(tmux list-sessions -F '#{session_last_used} #{session_name}' \
-    | sort -rn \
-    | awk '{print $NF}' \
-    | grep -Fxv "$current" \
-    | fzf --prompt='session > ' --border=rounded --reverse --no-sort)
+live=$(tmux list-sessions -F '#{session_last_used} #{session_name}' | sort -rn | awk '{print $NF}')
 
-[ -n "$selected" ] && tmux switch-client -t "$selected"
+by_last_command=$(ls -t "$HOME"/*/"$DOTDEV_ATDIR"/session/history.zsh 2>/dev/null | sed "s|^$HOME/||; s|/.*||")
+# A session has no history file until its first command
+all=$(ls -d "$HOME"/*/"$DOTDEV_ATDIR"/session | sed "s|^$HOME/||; s|/.*||")
+
+# The home session is 0, and M-Home already switches to it
+choices=$(printf '%s\n' "$live" "$by_last_command" "$all" | awk '!seen[$0]++' | grep -Fxv -e "$current" -e 0)
+
+selected=$(printf '%s\n' "$choices" | fzf --prompt='session > ' --border=rounded --reverse --no-sort)
+
+tmux-open-session "$selected"

@@ -2,27 +2,7 @@
 
 set -eu
 
-usage="Usage: $0 [-e] name"
-
-# With -e, a session that already exists is not an error
-exist_ok=false
-while getopts "e" opt; do
-    case "$opt" in
-        e) exist_ok=true;;
-        *) >&2 echo "$usage"; exit 1;;
-    esac
-done
-shift "$((OPTIND-1))"
-
-make_dir() {
-    if [ "$exist_ok" = true ] && [ -d "$1" ]; then
-        return
-    fi
-    mkdir "$1"
-}
-
 root="$HOME/$1"
 
-make_dir "$root"
-make_dir "$root/$DOTDEV_ATDIR"
-make_dir "$root/$DOTDEV_ATDIR/session"  # State of the whole session, rather than of the root directory
+mkdir -p "$root/$DOTDEV_ATDIR"
+mkdir "$root/$DOTDEV_ATDIR/session"
