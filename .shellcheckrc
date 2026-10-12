@@ -1,0 +1,6 @@
+enable=quote-safe-variables
+enable=add-default-case
+enable=avoid-nullary-conditions
+enable=avoid-negated-conditions
+enable=deprecate-which
+enable=useless-use-of-cat

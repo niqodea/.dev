@@ -9,4 +9,7 @@ case "$(uname -s)" in
             echo 'debian'; exit
         fi
         ;;
+    *)
+        # Printing nothing tells the caller the operating system is unknown
+        ;;
 esac
