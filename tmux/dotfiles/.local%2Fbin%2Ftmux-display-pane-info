@@ -12,6 +12,7 @@ if [ "$status" = 'idle' ]; then
 fi
 
 shell_pid=$(echo "$pane_options" | awk '$1 == "@shell_pid" {print $2}')
+command_pids=$(pgrep -d , -P "$shell_pid")
 
 echo
-ps --ppid "$shell_pid" -o %cpu,%mem,stat,etime,cmd --sort start_time
+ps -o %cpu,%mem,stat,etime,args -p "$command_pids"

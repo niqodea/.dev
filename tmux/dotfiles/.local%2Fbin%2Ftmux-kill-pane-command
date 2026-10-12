@@ -10,13 +10,7 @@ fi
 
 shell_pid=$(tmux display-message -p '#{@shell_pid}')
 # Heuristic: get the oldest child process of the shell
-# 1. Filter processes with shell_pid as parent PID
-# 2. Get the start time and PID
-# 3. Sort by start time
-# 4. Get the oldest process
-command_pid=$(ps -fj | awk "NR>1 && \$3==$shell_pid" | awk '{print $5, $2}' | sort | head -n 1 | awk {'print $2'})
-
-if [ -z "$command_pid" ]; then
+if ! command_pid=$(pgrep -o -P "$shell_pid"); then
     tmux display-message 'No command to kill found'
     exit
 fi
