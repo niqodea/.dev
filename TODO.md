@@ -36,3 +36,7 @@
 - Find alternatives to copilot that do not rely on node
 - Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier
 - Add `lm` as an utils command
+- Build on the session's Claude pane
+  - Send the current file and line, or the visual selection, from nvim to the session's Claude
+  - Tell a Claude waiting for a permission apart from one that finished, in the status bar and the picker
+  - Order the waiting Claude picker by how long each Claude has waited
