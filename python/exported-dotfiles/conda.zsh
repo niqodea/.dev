@@ -1,6 +1,0 @@
-alias ,coc='conda create -p .venv'
-alias ,cor='conda env remove -p .venv'
-alias ,coi='conda install -p .venv'
-alias ,coc@='conda create -p "$DOTDEV_ATDIR/venv"'
-alias ,cor@='conda env remove -p "$DOTDEV_ATDIR/venv"'
-alias ,coi@='conda install -p "$DOTDEV_ATDIR/venv"'

@@ -1,1 +1,0 @@
-../../../..root/python/exported-dotfiles/conda.zsh
