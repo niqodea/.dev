@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+load=$(sysctl -n vm.loadavg | awk '{print $3}')
+cores=$(sysctl -n hw.ncpu)
+# Free memory, counting the file cache, which macOS hands back as soon as a program needs it
+free_percent=$(sysctl -n kern.memorystatus_level)
+disk_used_percent=$(df -P "$HOME" | awk 'NR == 2 {print $5}' | tr -d %)
+
+awk -v load="$load" -v cores="$cores" -v free_percent="$free_percent" -v disk_used_percent="$disk_used_percent" 'BEGIN {printf "%.2f %d %d\n", load / cores, 100 - free_percent, disk_used_percent}'

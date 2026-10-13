@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -eu
+
+load=$(cut -d ' ' -f 2 /proc/loadavg)
+cores=$(nproc)
+# Unlike MemFree, MemAvailable counts the file cache, which Linux hands back as soon as a program needs it
+available_kilobytes=$(awk '$1 == "MemAvailable:" {print $2}' /proc/meminfo)
+total_kilobytes=$(awk '$1 == "MemTotal:" {print $2}' /proc/meminfo)
+disk_used_percent=$(df -P "$HOME" | awk 'NR == 2 {print $5}' | tr -d %)
+
+awk -v load="$load" -v cores="$cores" -v available="$available_kilobytes" -v total="$total_kilobytes" -v disk_used_percent="$disk_used_percent" 'BEGIN {printf "%.2f %d %d\n", load / cores, 100 - 100 * available / total, disk_used_percent}'

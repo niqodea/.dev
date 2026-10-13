@@ -1,0 +1,27 @@
+#!/bin/sh
+
+set -eu
+
+,get-system-load | awk '{
+    # The CPU has no fourth level: a busy CPU only slows programs, while full memory or a full disk makes them fail
+    if ($1 < 0.3) printf "C0"
+    else if ($1 < 0.6) printf "C1"
+    else if ($1 < 0.9) printf "C2"
+    else printf "C3"
+
+    printf " "
+
+    if ($2 < 50) printf "M0"
+    else if ($2 < 70) printf "M1"
+    else if ($2 < 80) printf "M2"
+    else if ($2 < 90) printf "M3"
+    else printf "#[reverse]M4#[noreverse]"
+
+    printf " "
+
+    if ($3 < 70) printf "D0"
+    else if ($3 < 80) printf "D1"
+    else if ($3 < 90) printf "D2"
+    else if ($3 < 95) printf "D3"
+    else printf "#[reverse]D4#[noreverse]"
+}'
