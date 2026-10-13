@@ -14,7 +14,6 @@
 - Add linting for lua files, ..., to ./lint
 - Add docker (utils or module)
 - Explore frecency solutions (zsh, nvim, tmux, ...)
-- Look for/implement neovim command that restores all swap files as buffers (useful in case of crashes)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported
 - Create alias to deal with processes more easily (exposed ports with `lsof`, better `psg`, etc.)
 - Find nvim window reordering solution (can be less complete than tmux's since closing a pane won't close the underlying buffer)
