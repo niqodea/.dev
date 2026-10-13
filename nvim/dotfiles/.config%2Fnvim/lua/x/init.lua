@@ -86,19 +86,6 @@ vim.keymap.set({'n', 'v'}, '<leader>P', '"+P')
 vim.api.nvim_create_user_command('YankPath', commands.yank_path, {})
 vim.keymap.set('n', '<leader><C-y>', ':YankPath<cr>')
 
--- Remove instructions banner from netrw
-vim.g.netrw_banner = 0
--- Quick file explorer (we use '-' for consistency with netrw)
-vim.api.nvim_create_user_command('ExploreDirectory', commands.explore_directory, {})
-vim.api.nvim_create_user_command('ExploreCwd', commands.explore_cwd, {})
-vim.api.nvim_create_user_command('ExploreGitRoot', commands.explore_git_root, {})
-vim.keymap.set('n', '<leader>-', ':ExploreDirectory<cr>')
-vim.keymap.set('n', '<leader>__', ':ExploreCwd<cr>')
-vim.keymap.set('n', '<leader>_g', ':ExploreGitRoot<cr>')
-vim.keymap.set('n', '<leader>_v', ':Explore $VIRTUAL_ENV<cr>')
-vim.keymap.set('n', '<leader>_~', ':Explore $HOME<cr>')
-vim.keymap.set('n', '<leader>_/', ':Explore /<cr>')
-
 -- Quick exit from terminal mode
 vim.keymap.set('t', '<C-\\><C-\\>', '<C-\\><C-n>')
 
