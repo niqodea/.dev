@@ -69,6 +69,31 @@ local function browse_up_directory()
 end
 
 
+local function rename_without_overwriting()
+    local line = vim.api.nvim_get_current_line()
+    -- Strip the marks netrw puts after a name: / for a directory, * for an executable, and @ for a
+    -- symlink, followed by its target
+    local name = line:gsub('@\t.*$', ''):gsub('[/*]$', '')
+    local old_path = vim.fs.joinpath(vim.b.netrw_curdir, name)
+    local new_path = vim.fn.input('Moving ' .. old_path .. ' to : ', old_path, 'file')
+
+    if new_path == '' or new_path == old_path then
+        return
+    end
+    if vim.uv.fs_stat(new_path) ~= nil then
+        vim.notify('Already exists: ' .. new_path, vim.log.levels.ERROR)
+        return
+    end
+
+    -- rename() copies across file systems, where vim.uv.fs_rename() fails
+    if vim.fn.rename(old_path, new_path) ~= 0 then
+        vim.notify('Could not move ' .. old_path .. ' to ' .. new_path, vim.log.levels.ERROR)
+        return
+    end
+    vim.cmd('execute "normal \\<Plug>NetrwRefresh"')
+end
+
+
 -- netrw sets its keys on each listing it opens, so ours are set on each listing too
 vim.api.nvim_create_autocmd('FileType', {
     pattern = 'netrw',
@@ -76,6 +101,8 @@ vim.api.nvim_create_autocmd('FileType', {
         -- m' adds the listing you leave to the jumplist, for CTRL-O to come back to
         vim.keymap.set('n', '<CR>', "m'<Plug>NetrwLocalBrowseCheck", { buffer = args.buf, remap = true })
         vim.keymap.set('n', '-', browse_up_directory, { buffer = args.buf })
+        -- netrw's R overwrites an existing file without asking
+        vim.keymap.set('n', 'R', rename_without_overwriting, { buffer = args.buf })
     end,
 })
 

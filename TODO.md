@@ -24,7 +24,6 @@
 - Find a way to effortlessly move to edited parts of a Git-tracked file in neovim (not necessarily next/previous hunk from the git nvim plugin)
 - Check for new functionalities of nvim, git versions
 - Add git-active-files to https://github.com/ahmetsait/toolgit
-- Find a better alternative to netrw (renaming files in netrw is extremely dangerous, it overwrites files without even mentioning it). We want an alternative that is lightweight and buffer-friendly.
 - Personalize tmux status bar (e.g. use hburger to shorten long tmux session names)
 - Restructure install script to be clearer
   - Support multiple platforms like Linux vs MacOS
