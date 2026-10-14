@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
+            "command": "tmux set-option -p -q -o -t \"$TMUX_PANE\" @claude_idle_since \"$(date +%s)\" \\; set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status running \\; refresh-client -S"
+            "command": "tmux set-option -p -u -t \"$TMUX_PANE\" @claude_idle_since \\; set-option -p -t \"$TMUX_PANE\" @status running \\; refresh-client -S"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status running \\; refresh-client -S"
+            "command": "tmux set-option -p -u -t \"$TMUX_PANE\" @claude_idle_since \\; set-option -p -t \"$TMUX_PANE\" @status running \\; refresh-client -S"
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
+            "command": "tmux set-option -p -q -o -t \"$TMUX_PANE\" @claude_idle_since \"$(date +%s)\" \\; set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
           }
         ]
       }
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
+            "command": "tmux set-option -p -q -o -t \"$TMUX_PANE\" @claude_idle_since \"$(date +%s)\" \\; set-option -p -t \"$TMUX_PANE\" @status idle \\; refresh-client -S"
           }
         ]
       }

@@ -2,10 +2,11 @@
 
 set -eu
 
-waiting=$(tmux list-panes -a -F '#{?#{E:@waiting_claude},#{session_name}	#{pane_id},}' | sed '/^$/d')
+# The Claude that started waiting last comes first
+waiting=$(tmux list-panes -a -F '#{?#{E:@waiting_claude},#{@claude_idle_since}	#{session_name}	#{pane_id},}' | sed '/^$/d' | sort --numeric-sort --reverse)
 
-# fzf shows and searches the session name, and returns the Claude pane after the tab
-pane=$(printf '%s\n' "$waiting" | fzf --prompt='waiting claude > ' --border=rounded --reverse --no-sort --delimiter='\t' --with-nth=1 --accept-nth=2)
+# fzf shows and searches the session name, and returns the Claude pane after it
+pane=$(printf '%s\n' "$waiting" | fzf --prompt='waiting claude > ' --border=rounded --reverse --no-sort --delimiter='\t' --with-nth=2 --accept-nth=3)
 
 tmux switch-client -t "$pane"
 tmux select-window -t "$pane"
