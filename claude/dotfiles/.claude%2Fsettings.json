@@ -1,3 +1,7 @@
 {
-  "editorMode": "vim"
+  "editorMode": "vim",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  }
 }
