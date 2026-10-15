@@ -18,4 +18,7 @@ if [ -z "$session" ]; then
     exit
 fi
 
-,tmux-open-session "$session"
+# run-shell drops stderr, so the reason the session did not open is shown as a message
+if ! error=$(,tmux-open-session "$session" 2>&1); then
+    tmux display-message -l "$error"
+fi
