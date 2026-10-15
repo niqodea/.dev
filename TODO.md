@@ -13,7 +13,7 @@
 - Compile/install ffmpeg and imagemagick and write aliases for it
 - Add linting for lua files, ..., to ./lint
 - Add docker (utils or module)
-- Explore frecency solutions (zsh, nvim, tmux, ...)
+- Explore frecency solutions (zsh, nvim, ...)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported
 - Create alias to deal with processes more easily (exposed ports with `lsof`, better `psg`, etc.)
 - Find nvim window reordering solution (can be less complete than tmux's since closing a pane won't close the underlying buffer)
@@ -24,7 +24,6 @@
 - Find a way to effortlessly move to edited parts of a Git-tracked file in neovim (not necessarily next/previous hunk from the git nvim plugin)
 - Check for new functionalities of nvim, git versions
 - Add git-active-files to https://github.com/ahmetsait/toolgit
-- Personalize tmux status bar (e.g. use hburger to shorten long tmux session names)
 - Restructure install script to be clearer
   - Support multiple platforms like Linux vs MacOS
   - Understand what's "foundational" (e.g. rsync) vs "nice-to-have" (e.g. breadcrumbs)
