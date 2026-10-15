@@ -2,26 +2,14 @@
 
 set -eu
 
-if [ -n "${TMUX-}" ]; then
-    current=$(tmux display-message -p '#{session_name}')
-else
-    # Outside tmux no session is current
-    current=''
-fi
+current=$(tmux display-message -p '#{session_name}')
 
-# Outside tmux there may be no server yet, and then no session is live
-live=$(tmux list-sessions -F '#{session_last_used} #{session_name}' 2> /dev/null | sort -rn | awk '{print $NF}')
-
-# Only ls sorts files by time, and splitting its output into lines is safe because no session name contains a newline
+# Only ls sorts files by time, and splitting its output into lines is safe because no project name contains a newline
 # shellcheck disable=SC2012
-by_last_command=$(ls -t "$HOME"/*/"$DOTDEV_ATDIR"/project/history.zsh 2> /dev/null | sed "s|^$HOME/||; s|/.*||")
-# A project has no history file until its first command
-all=$(printf '%s\n' "$HOME"/*/"$DOTDEV_ATDIR"/project | sed "s|^$HOME/||; s|/.*||")
+projects=$(ls -t "$HOME"/*/"$DOTDEV_ATDIR"/tmux-session-visit | sed "s|^$HOME/||; s|/.*||")
 
-# The home session comes right after the live ones, so it is first when nothing runs yet
-# An empty list prints an empty line, which is no session
-choices=$(printf '%s\n' "$live" '~' "$by_last_command" "$all" | awk '!seen[$0]++' | grep -Fxv -e "$current" -e '')
+choices=$(printf '%s\n' "$projects" | grep -Fxv -e "$current")
 
-selected=$(printf '%s\n' "$choices" | fzf --prompt='session > ' --border=rounded --reverse --no-sort)
+selected=$(printf '%s\n' "$choices" | fzf --prompt='project > ' --border=rounded --reverse --no-sort)
 
 ,tmux-open-session "$selected"

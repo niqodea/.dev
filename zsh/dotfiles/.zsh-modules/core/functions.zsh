@@ -34,6 +34,6 @@ function ,sw () {
     for f in "${pre_ssh_workstation_functions[@]}"; do "$f" "$workstation"; done
     # Connect to tmux, launching the server if necessary
     # Source ~/.profile as otherwise ~/.local/bin is not included in the path
-    ssh "${ssh_options[@]}" "$workstation" 'source ~/.profile && ,tmux-session-picker'
+    ssh "${ssh_options[@]}" "$workstation" 'source ~/.profile && ,tmux-launch'
     for f in "${post_ssh_workstation_functions[@]}"; do "$f"; done
 }

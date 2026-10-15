@@ -1,8 +1,0 @@
-#!/bin/sh
-
-set -eu
-
-root="$HOME/$1"
-
-mkdir -p "$root/$DOTDEV_ATDIR"
-mkdir "$root/$DOTDEV_ATDIR/project"

@@ -15,7 +15,7 @@ Every session but the home one belongs to a project: a directory with the same n
 The session starts in the project directory, and its shells keep their history in the project.
 
 Session `~` is the home session: it belongs to no project, starts in the home directory, and is created again on demand if it was killed.
-Start tmux with `,tmux-session-picker`, which offers the home session first when no session runs yet.
+Start tmux with `,tmux-launch`, which opens the home session.
 
 ### Pane naming
 

@@ -7,5 +7,7 @@ if [ -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
     exit
 fi
 
-,mk-project "$1"
+mkdir -p "$HOME/$1/$DOTDEV_ATDIR/project"
+# Making a project is its first visit, so M-/ lists every project from the start
+touch "$HOME/$1/$DOTDEV_ATDIR/tmux-session-visit"
 ,tmux-open-session "$1"
