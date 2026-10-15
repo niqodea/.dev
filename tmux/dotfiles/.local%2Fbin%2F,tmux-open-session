@@ -8,10 +8,10 @@ if tmux has-session -t "=$1" 2> /dev/null; then
     exit
 fi
 
-if [ ! -d "$HOME/$1/$DOTDEV_ATDIR/session" ]; then
-    tmux display-message -l "No session named $1"
+if [ ! -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
+    tmux display-message -l "No project named $1"
     exit
 fi
 
-tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_SESSION="$1"
+tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_PROJECT="$1"
 tmux switch-client -t "=$1"

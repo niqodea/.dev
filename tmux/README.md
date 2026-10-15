@@ -11,8 +11,8 @@ Since other programs in our workflow do not leverage <kbd>Meta</kbd>, we can omi
 
 ### Session management
 
-For each session we create a start directory with the same name in the home directory.
-The start directory contains the files needed to carry out the particular project or effort associated with the session.
+Each session belongs to a project: a directory with the same name in the home directory, holding the files needed to carry out that project or effort.
+The session starts in the project directory, and its shells keep their history in the project.
 
 Session `0` is the home session: it belongs to no project, starts in the home directory, and is created again on demand if it was killed.
 

@@ -1,8 +1,8 @@
 function() {
 
-    # SESSION
-    if [ -n "$DOTDEV_SESSION" ]; then
-        alias ,cds='cd "$HOME/$DOTDEV_SESSION"'
+    # PROJECT
+    if [ -n "$DOTDEV_PROJECT" ]; then
+        alias ,cdp='cd "$HOME/$DOTDEV_PROJECT"'
     fi
 
 
@@ -27,11 +27,11 @@ function() {
     SAVEHIST=100000  # Num commands loaded into memory from history file
     setopt HIST_IGNORE_ALL_DUPS  # Don't store duplicate commands
     setopt INC_APPEND_HISTORY  # Append to history file immediately
-    setopt EXTENDED_HISTORY  # Timestamps mark how far a session's history has been merged into the global one
-    if [ -n "$DOTDEV_SESSION" ]; then
-        # zsh reads HISTFILE after this file, so session commands end up on top and match first
+    setopt EXTENDED_HISTORY  # Timestamps mark how far a project's history has been merged into the global one
+    if [ -n "$DOTDEV_PROJECT" ]; then
+        # zsh reads HISTFILE after this file, so project commands end up on top and match first
         fc -R "$HOME/.zsh_history"
-        HISTFILE="$HOME/$DOTDEV_SESSION/$DOTDEV_ATDIR/session/history.zsh"
+        HISTFILE="$HOME/$DOTDEV_PROJECT/$DOTDEV_ATDIR/project/history.zsh"
     else
         # zsh saves no history without HISTFILE, and not every OS sets it
         HISTFILE="$HOME/.zsh_history"

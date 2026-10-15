@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+if [ -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
+    tmux display-message -l "Project $1 already exists, open it from M-/"
+    exit
+fi
+
+,mk-project "$1"
+,tmux-open-session "$1"

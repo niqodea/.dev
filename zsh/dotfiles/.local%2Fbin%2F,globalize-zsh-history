@@ -2,16 +2,16 @@
 
 set -eu
 
-if [ -z "${DOTDEV_SESSION-}" ]; then
-    >&2 echo 'Not in a session'
+if [ -z "${DOTDEV_PROJECT-}" ]; then
+    >&2 echo 'Not in a project'
     exit 1
 fi
 
-session_path="$HOME/$DOTDEV_SESSION/$DOTDEV_ATDIR/session"
-history_path="$session_path/history.zsh"
+project_path="$HOME/$DOTDEV_PROJECT/$DOTDEV_ATDIR/project"
+history_path="$project_path/history.zsh"
 # Timestamp of the newest command already in global, which unlike a line number survives zsh
-# trimming the oldest lines of the session history
-imported_path="$session_path/imported"
+# trimming the oldest lines of the project history
+imported_path="$project_path/imported"
 
 if [ ! -e "$history_path" ]; then
     echo 'Nothing to import'
