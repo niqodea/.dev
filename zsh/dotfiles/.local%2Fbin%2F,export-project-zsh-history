@@ -11,17 +11,17 @@ project_path="$HOME/$DOTDEV_PROJECT/$DOTDEV_ATDIR/project"
 history_path="$project_path/history.zsh"
 # Timestamp of the newest command already in global, which unlike a line number survives zsh
 # trimming the oldest lines of the project history
-imported_path="$project_path/imported"
+exported_path="$project_path/exported"
 
 if [ ! -e "$history_path" ]; then
-    echo 'Nothing to import'
+    echo 'Nothing to export'
     exit
 fi
 
-if [ -e "$imported_path" ]; then
-    imported="$(cat "$imported_path")"
+if [ -e "$exported_path" ]; then
+    exported="$(cat "$exported_path")"
 else
-    imported=-1 # Nothing imported yet, so even commands without a timestamp (0) are imported
+    exported=-1 # Nothing exported yet, so even commands without a timestamp (0) are exported
 fi
 
 # Lines look like ": <timestamp>:<duration>;<command>", continuation lines of a multi-line
@@ -30,17 +30,17 @@ fi
 # shellcheck disable=SC2016
 with_timestamp='/^: [0-9]+:[0-9]+;/ { split($0, fields, /[:;]/); timestamp = fields[2] + 0 }'
 
-# Fixed first, so that commands appended while we copy wait for the next import
+# Fixed first, so that commands appended while we copy wait for the next export
 newest="$(awk "$with_timestamp"' { if (timestamp > newest) newest = timestamp } END { print newest + 0 }' "$history_path")"
 
-if [ "$newest" -le "$imported" ]; then
-    echo 'Nothing to import'
+if [ "$newest" -le "$exported" ]; then
+    echo 'Nothing to export'
     exit
 fi
 
 # awk has no long form of -v, which sets an awk variable from the shell
-awk -v imported="$imported" -v newest="$newest" -v global_path="$HOME/.zsh_history" "$with_timestamp"'
-    timestamp > imported && timestamp <= newest { print >> global_path; count++ }
-    END { printf "Imported %d lines\n", count }
+awk -v exported="$exported" -v newest="$newest" -v global_path="$HOME/.zsh_history" "$with_timestamp"'
+    timestamp > exported && timestamp <= newest { print >> global_path; count++ }
+    END { printf "Exported %d lines\n", count }
 ' "$history_path"
-echo "$newest" > "$imported_path"
+echo "$newest" > "$exported_path"
