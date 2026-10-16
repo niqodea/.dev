@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -eu
+
+# ShellCheck cannot read the file this loads, which exists only on the machine it installs on
+# shellcheck disable=SC1091
+codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+
+# Backports carry newer versions of packages than the ones the release froze
+# Ref: https://backports.debian.org/Instructions
+sudo tee /etc/apt/sources.list.d/backports.sources << EOF
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: $codename-backports
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+sudo apt update

@@ -7,4 +7,9 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-sudo apt install "$@"
+# ShellCheck cannot read the file this loads, which exists only on the machine it installs on
+# shellcheck disable=SC1091
+codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+
+# Takes the backports version where there is one, and the release's own version otherwise
+sudo apt install --target-release "$codename-backports" "$@"
