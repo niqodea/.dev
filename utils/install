@@ -26,21 +26,9 @@ EOF
 sudo apt update
 sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin --no-install-recommends
 
-# TODO: Isolate rust installation if needed elsewhere
-install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
-RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
-ln -fs "$HOME/.cargo/bin/cargo" "$install_path/bin/"
-
 echo 'Downloading and installing breadcrumbs...'
 repo_path="$root/bin-submodules/breadcrumbs"
 git submodule update --init "$repo_path"
 # TODO: Wrap this behind a Makefile
 cargo build --manifest-path="$repo_path/Cargo.toml" --release
 cp "$repo_path/target/release/breadcrumbs" "$install_path/bin/"
-
-echo 'Downloading and installing hburger...'
-repo_path="$root/bin-submodules/hburger"
-git submodule update --init "$repo_path"
-# TODO: Wrap this behind a Makefile
-cargo build --manifest-path="$repo_path/Cargo.toml" --release
-cp "$repo_path/target/release/hburger" "$install_path/bin/"

@@ -5,17 +5,6 @@ set -eux
 root="$(dirname "$(realpath "$0")")"
 install_path="$1"
 
-echo 'Downloading and installing hburger...'
-repo_path="$root/bin-submodules/hburger"
-git submodule update --init "$repo_path"
-# TODO: Isolate rust installation if needed elsewhere
-install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
-RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
-ln -fs "$HOME/.cargo/bin/cargo" "$install_path/bin/"
-# TODO: Wrap this behind a Makefile
-cargo build --manifest-path="$repo_path/Cargo.toml" --release
-cp "$repo_path/target/release/hburger" "$install_path/bin/"
-
 echo 'Compiling and installing zsh...'
 
 repo_path="$root/bin-submodules/zsh"

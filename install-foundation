@@ -12,13 +12,25 @@ if [ -z "$os" ]; then
     exit 1
 fi
 
+"$foundation_path/build-tools/$os"
+
+bin_path="$HOME/.local/bin"
+mkdir -p "$bin_path"
+
+install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
+RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
+ln -fs "$HOME/.cargo/bin/cargo" "$bin_path/"
+
+hburger_path="$foundation_path/bin-submodules/hburger"
+git submodule update --init "$hburger_path"
+"$HOME/.cargo/bin/cargo" build --manifest-path="$hburger_path/Cargo.toml" --release
+cp "$hburger_path/target/release/hburger" "$bin_path/"
+
 setup_path="$foundation_path/setup/$os"
 if [ -e "$setup_path" ]; then
     "$setup_path"
 fi
 
-bin_path="$HOME/.local/bin"
-mkdir -p "$bin_path"
 for command in "$foundation_path/bin/"*; do
     command_name="$(basename "$command")"
     if [ -f "$command" ]; then

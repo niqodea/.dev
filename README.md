@@ -64,7 +64,7 @@ Ref: [Start all of your commands with a comma](https://rhodesmill.org/brandon/20
 ## Foundation
 
 The `.foundation` directory holds what every module builds on, so it is not a module itself.
-Installing it sets up the shell profile, the commands shared by all modules, Homebrew on macOS, and the packages that modules depend on.
+Installing it sets up the tools to compile Rust, the hburger command, the shell profile, the commands shared by all modules, Homebrew on macOS, and the packages that modules depend on.
 
 Commands in `.foundation/bin` are either a single file, used on every operating system, or a directory with one file per operating system.
 

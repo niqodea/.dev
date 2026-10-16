@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -eu
+
+# curl downloads rustup, and Rust links its programs with the system's C compiler and C library
+sudo apt install curl gcc libc6-dev
