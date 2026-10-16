@@ -2,8 +2,6 @@
 
 set -eu
 
-# ShellCheck cannot read the file this loads, which exists only on the machine it installs on
-# shellcheck disable=SC1091
 codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
 
 # Backports carry newer versions of packages than the ones the release froze

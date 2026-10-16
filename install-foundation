@@ -13,8 +13,6 @@ if [ -z "$os" ]; then
 fi
 
 # Run with the environment a new terminal will have, which a fresh machine does not have yet
-# ./lint runs ShellCheck without -x, which it needs to follow a loaded file
-# shellcheck disable=SC1091
 . "$foundation_path/profile"
 
 mkdir -p "$HOME/$DOTDEV_ATDIR"

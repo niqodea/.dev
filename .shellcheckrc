@@ -4,3 +4,6 @@ enable=avoid-nullary-conditions
 enable=avoid-negated-conditions
 enable=deprecate-which
 enable=useless-use-of-cat
+
+# SC1091 only notes that ShellCheck did not read a file a script loads, which is never a mistake in the script
+disable=SC1091

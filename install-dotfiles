@@ -5,8 +5,6 @@ set -eu
 root="$(dirname "$(realpath "$0")")"
 
 # Run with the environment a new terminal will have, which a fresh machine does not have yet
-# ./lint runs ShellCheck without -x, which it needs to follow a loaded file
-# shellcheck disable=SC1091
 . "$root/.foundation/profile"
 
 if [ "$#" -eq 0 ]; then
