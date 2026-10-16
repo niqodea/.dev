@@ -47,6 +47,21 @@ if vim.fn.filereadable(auto_path) == 1 then
     auto_file:close()
 end
 
+-- Pick the modules to load, now and automatically from then on
+vim.api.nvim_create_user_command('XAutoload', function()
+    require('x.core.fuzzy').fzf_lua.fzf_exec(modules, {
+        fzf_opts = { ['--multi'] = true },
+        actions = {
+            ['default'] = function(selected)
+                vim.fn.writefile(selected, auto_path)
+                for _, module in ipairs(selected) do
+                    require(modules_path .. '.' .. module)
+                end
+            end,
+        },
+    })
+end, {})
+
 -- Easier split management
 vim.keymap.set('n', '<leader>j', '<C-w>j')
 vim.keymap.set('n', '<leader>k', '<C-w>k')
