@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -eu
+
+backup_path="$1"
+target_path="$2"
+name="$3"
+
+link_path="$HOME/.local/bin/$name"
+if [ "$(readlink "$link_path")" = "$target_path" ]; then
+    exit
+fi
+# Keeps whatever was there before, so nothing is lost unnoticed
+if [ -e "$link_path" ] || [ -h "$link_path" ]; then
+    mkdir -p "$backup_path/.local/bin"
+    mv "$link_path" "$backup_path/.local/bin/$name"
+fi
+ln -s "$target_path" "$link_path"

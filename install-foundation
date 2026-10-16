@@ -21,13 +21,10 @@ backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
 "$foundation_path/prerequisites/$os"
 
 mkdir -p "$HOME/.local/bin"
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
 
 install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
 RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
-ln -s "$HOME/.cargo/bin/cargo" "$tmp/cargo"
-"$foundation_path/bin/,put-in-local-bin" "$backup_path" "$tmp/cargo" cargo
+"$foundation_path/bin/,link-in-local-bin" "$backup_path" "$HOME/.cargo/bin/cargo" cargo
 
 hburger_path="$foundation_path/bin-submodules/hburger"
 git submodule update --init "$hburger_path"
