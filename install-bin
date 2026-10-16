@@ -4,19 +4,8 @@ set -eu
 
 root="$(dirname "$(realpath "$0")")"
 
-usage="Usage: $0 [-p /install/path] [module1] [module2] [...]"
-
-install_path="$HOME/.local" # Default option value
-while getopts "p:" opt; do
-    case "$opt" in
-        p) install_path="$OPTARG" ;;
-        *)
-            >&2 echo "$usage"
-            exit 1
-            ;;
-    esac
-done
-shift "$((OPTIND - 1))" # positional arguments follow options
+# Run with the environment a new terminal will have, which a fresh machine does not have yet
+. "$root/.foundation/profile"
 
 if [ "$#" -eq 0 ]; then
     # Install all modules
@@ -24,6 +13,10 @@ if [ "$#" -eq 0 ]; then
 else
     modules="$*"
 fi
+
+backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
+versions_path="$HOME/$DOTDEV_ATDIR/tool-versions"
+mkdir -p "$versions_path"
 
 for module in $modules; do
     module_path="$root/$module"
@@ -38,7 +31,16 @@ for module in $modules; do
         continue
     fi
 
-    echo "Installing binary for module $module"
-    "$module_path/install-bin" "$install_path"
+    echo "Installing programs for module $module"
+    "$module_path/install-bin" "$backup_path"
 
+    if [ -e "$module_path/tool-versions" ]; then
+        rsync --archive --checksum --backup --backup-dir="$backup_path/$DOTDEV_ATDIR/tool-versions" "$module_path/tool-versions" "$versions_path/$module"
+    fi
 done
+
+if [ -e "$backup_path" ]; then
+    echo "Backed up replaced files in $backup_path"
+fi
+
+,check-tools

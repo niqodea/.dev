@@ -82,8 +82,6 @@ To install programs, run:
 ./install-bin [module1] [module2] [...]
 ```
 
-You can also specify the installation path with `-p` (default is `~/.local`).
-
 To install dotfiles, run:
 
 ```sh

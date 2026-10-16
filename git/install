@@ -1,5 +1,0 @@
-#!/bin/sh
-
-set -eux
-
-sudo apt install git --yes --no-install-recommends
