@@ -5,6 +5,8 @@ set -eu
 # A pipeline exits with the status of its last command, so a failing git ls-files below would go unnoticed
 git rev-parse --git-dir > /dev/null
 
+# $path belongs to the inner sh below, so the single quotes keep it from expanding here
+# shellcheck disable=SC2016
 # Without --deduplicate, a file with a merge conflict is listed once per version git keeps of it
 git ls-files -z --cached --others --exclude-standard --deduplicate |
     # Drop the files that are tracked but deleted from the working tree, which ls would fail on
