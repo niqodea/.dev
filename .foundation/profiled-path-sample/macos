@@ -1,6 +1,1 @@
-# export PATH="/opt/homebrew/bin:$PATH"
-
-# Homebrew is a pain to share between many MacOS users, so we use a custom location for secondary users
-# To do this, set HOMEBREW_PREFIX to "$HOME/.homebrew" in this script before running it:
-# https://raw.githubusercontent.com/Homebrew/install/deb02e27d99fd2cb27ae16760e3a5272b612fded/install.sh
-# export PATH="$HOME/.homebrew/bin:$PATH"
+# export PATH="$("$HOME/.local/bin/,get-homebrew-prefix")/bin:$PATH"

@@ -26,11 +26,6 @@ git submodule update --init "$hburger_path"
 "$HOME/.cargo/bin/cargo" build --manifest-path="$hburger_path/Cargo.toml" --release
 cp "$hburger_path/target/release/hburger" "$bin_path/"
 
-setup_path="$foundation_path/setup/$os"
-if [ -e "$setup_path" ]; then
-    "$setup_path"
-fi
-
 for command in "$foundation_path/bin/"*; do
     command_name="$(basename "$command")"
     if [ -f "$command" ]; then
@@ -42,6 +37,11 @@ for command in "$foundation_path/bin/"*; do
         cp "$command/$os" "$bin_path/$command_name"
     fi
 done
+
+setup_path="$foundation_path/setup/$os"
+if [ -e "$setup_path" ]; then
+    "$setup_path"
+fi
 
 source_profile_path="$foundation_path/profile"
 target_profile_path="$HOME/.profile"

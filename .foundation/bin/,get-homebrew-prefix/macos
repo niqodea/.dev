@@ -1,0 +1,7 @@
+#!/bin/sh
+
+set -eu
+
+# Each user gets a Homebrew of their own, as one shared between users fights over who owns its files
+# Homebrew uses its prebuilt packages only under a path no longer than /opt/homebrew, which this is
+echo "/opt/hb-$("$HOME/.local/bin/hburger" hash -l 2 -c 2 -r 1 -- "$USER")"

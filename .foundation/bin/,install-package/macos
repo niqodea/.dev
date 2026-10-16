@@ -7,5 +7,6 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
+prefix="$("$HOME/.local/bin/,get-homebrew-prefix")"
 # Not on PATH right after setup installs it
-/opt/homebrew/bin/brew install "$@"
+"$prefix/bin/brew" install "$@"
