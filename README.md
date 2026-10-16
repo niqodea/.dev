@@ -90,9 +90,9 @@ To install dotfiles, run:
 ./install-dotfiles [module1] [module2] [...]
 ```
 
-The script will move existing, conflicting dotfiles in a backup directory.
-
 Note: both scripts install all the modules if no module is specified.
+
+You can run `install-foundation` and `install-dotfiles` again at any time. Before they replace a file with different content, they copy the old one to `~/$DOTDEV_ATDIR/backups/<date-time>`, at its path from the home folder, or from `/` for a system file. Files that apt, Homebrew or rustup install are not backed up, because those tools manage them.
 
 ## Linting
 
