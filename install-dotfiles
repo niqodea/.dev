@@ -4,6 +4,11 @@ set -eu
 
 root="$(dirname "$(realpath "$0")")"
 
+# Run with the environment a new terminal will have, which a fresh machine does not have yet
+# ./lint runs ShellCheck without -x, which it needs to follow a loaded file
+# shellcheck disable=SC1091
+. "$root/.foundation/profile"
+
 if [ "$#" -eq 0 ]; then
     # Install all modules
     modules=$(find "$root/"* -maxdepth 0 -type d -exec basename {} \;)
@@ -11,7 +16,7 @@ else
     modules="$*"
 fi
 
-backup_path="$HOME/.dotfiles-backup/$(date '+%Y_%m_%d-%H_%M_%S')"
+backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
 
 for module in $modules; do
     module_path="$root/$module"
@@ -38,7 +43,7 @@ for module in $modules; do
         mkdir -p "$(dirname "$HOME"/"$target_dotfile_relpath")" # rsync expects parent dir to exist
 
         if [ -d "$source_dotfile_path" ]; then
-            rsync --archive --copy-unsafe-links --delete \
+            rsync --archive --checksum --copy-unsafe-links --delete \
                 --backup --backup-dir="$backup_path/$target_dotfile_relpath" \
                 "$source_dotfile_path/" "$HOME/$target_dotfile_relpath" # NOTE: trailing / is important
         else
@@ -49,7 +54,7 @@ for module in $modules; do
                 backup_dir="${backup_dir%/.}"
             fi
 
-            rsync --archive --copy-unsafe-links \
+            rsync --archive --checksum --copy-unsafe-links \
                 --backup --backup-dir="$backup_dir" \
                 "$source_dotfile_path" "$HOME/$target_dotfile_relpath"
         fi

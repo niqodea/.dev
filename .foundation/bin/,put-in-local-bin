@@ -1,0 +1,10 @@
+#!/bin/sh
+
+set -eu
+
+backup_path="$1"
+source_path="$2"
+name="$3"
+
+# Replaces the file only if its content differs, and keeps the replaced one, so nothing is lost unnoticed
+rsync --archive --checksum --backup --backup-dir="$backup_path/.local/bin" "$source_path" "$HOME/.local/bin/$name"

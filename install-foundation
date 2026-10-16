@@ -12,29 +12,39 @@ if [ -z "$os" ]; then
     exit 1
 fi
 
-"$foundation_path/build-tools/$os"
+# Run with the environment a new terminal will have, which a fresh machine does not have yet
+# ./lint runs ShellCheck without -x, which it needs to follow a loaded file
+# shellcheck disable=SC1091
+. "$foundation_path/profile"
 
-bin_path="$HOME/.local/bin"
-mkdir -p "$bin_path"
+mkdir -p "$HOME/$DOTDEV_ATDIR"
+backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
+
+"$foundation_path/prerequisites/$os"
+
+mkdir -p "$HOME/.local/bin"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 
 install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
 RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
-ln -fs "$HOME/.cargo/bin/cargo" "$bin_path/"
+ln -s "$HOME/.cargo/bin/cargo" "$tmp/cargo"
+"$foundation_path/bin/,put-in-local-bin" "$backup_path" "$tmp/cargo" cargo
 
 hburger_path="$foundation_path/bin-submodules/hburger"
 git submodule update --init "$hburger_path"
 "$HOME/.cargo/bin/cargo" build --manifest-path="$hburger_path/Cargo.toml" --release
-cp "$hburger_path/target/release/hburger" "$bin_path/"
+"$foundation_path/bin/,put-in-local-bin" "$backup_path" "$hburger_path/target/release/hburger" hburger
 
 for command in "$foundation_path/bin/"*; do
     command_name="$(basename "$command")"
     if [ -f "$command" ]; then
-        cp "$command" "$bin_path/$command_name" # Same on every OS
+        "$foundation_path/bin/,put-in-local-bin" "$backup_path" "$command" "$command_name" # Same on every OS
         continue
     fi
     command_path="$command/$os"
     if [ -e "$command_path" ]; then
-        cp "$command/$os" "$bin_path/$command_name"
+        "$foundation_path/bin/,put-in-local-bin" "$backup_path" "$command_path" "$command_name"
     fi
 done
 
@@ -43,27 +53,17 @@ if [ -e "$setup_path" ]; then
     "$setup_path"
 fi
 
-source_profile_path="$foundation_path/profile"
-target_profile_path="$HOME/.profile"
+rsync --archive --checksum --backup --backup-dir="$backup_path" "$foundation_path/profile" "$HOME/.profile"
 
-if [ -e "$target_profile_path" ]; then
-    profile_backups_path="$HOME/.profile-backups"
-    mkdir -p "$profile_backups_path"
-
-    profile_backup_path="$profile_backups_path/$(date '+%Y_%m_%d-%H_%M_%S')"
-    mv "$target_profile_path" "$profile_backup_path"
-
-    echo "Backed up overwritten .profile in $profile_backup_path"
-fi
-cp "$source_profile_path" "$target_profile_path"
-
-profiled_path="$HOME/.profile.d"
-mkdir -p "$profiled_path"
-
-profiled_path_sample="$foundation_path/profiled-path-sample/$os"
-if [ -e "$profiled_path_sample" ]; then
-    cp "$profiled_path_sample" "$profiled_path/.path.sample"
+mkdir -p "$HOME/.profile.d"
+profiled_homebrew_path="$foundation_path/profiled-homebrew/$os"
+if [ -e "$profiled_homebrew_path" ]; then
+    rsync --archive --checksum --backup --backup-dir="$backup_path/.profile.d" "$profiled_homebrew_path" "$HOME/.profile.d/homebrew"
 fi
 
 # Packages that other modules depend on
 "$foundation_path/bin/,install-package/$os" rsync jq fzf shellcheck shfmt
+
+if [ -e "$backup_path" ]; then
+    echo "Backed up replaced files in $backup_path"
+fi
