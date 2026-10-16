@@ -2,15 +2,21 @@
 
 set -eu
 
+backup_path="$1"
+
 codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
 
 # Backports carry newer versions of packages than the ones the release froze
 # Ref: https://backports.debian.org/Instructions
-sudo tee /etc/apt/sources.list.d/backports.sources << EOF
-Types: deb
+sources="Types: deb
 URIs: http://deb.debian.org/debian
 Suites: $codename-backports
 Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
-EOF
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg"
+sources_path=/etc/apt/sources.list.d/backports.sources
+# Copied as our own user, so the backup belongs to us and not to root
+if [ -e "$sources_path" ] && [ "$(cat "$sources_path")" != "$sources" ]; then
+    rsync --relative "$sources_path" "$backup_path/"
+fi
+printf '%s\n' "$sources" | sudo tee "$sources_path" > /dev/null
 sudo apt update

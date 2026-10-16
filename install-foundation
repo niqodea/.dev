@@ -48,7 +48,7 @@ done
 
 setup_path="$foundation_path/setup/$os"
 if [ -e "$setup_path" ]; then
-    "$setup_path"
+    "$setup_path" "$backup_path"
 fi
 
 rsync --archive --checksum --backup --backup-dir="$backup_path" "$foundation_path/profile" "$HOME/.profile"
