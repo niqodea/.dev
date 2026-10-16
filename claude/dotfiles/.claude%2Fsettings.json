@@ -1,5 +1,6 @@
 {
   "editorMode": "vim",
+  "tui": "default",
   "attribution": {
     "commit": "",
     "pr": ""
