@@ -1,22 +1,35 @@
 #!/bin/sh
 
-set -eux
+set -eu
 
 root="$(dirname "$(realpath "$0")")"
-install_path="$1"
+backup_path="$1"
 
-sudo apt install --yes python3.11 # TODO: Check if downloading venv is necessary
+uv_version='0.13.1'
+# Debian 12 does not package uv
+uv_path="$HOME/.local/opt/uv-$uv_version"
+if [ ! -e "$uv_path" ]; then
+    mkdir -p "$HOME/.local/opt"
+    tmp="$(mktemp -d "$HOME/.local/opt/.uv.XXXXXX")"
+    trap 'rm -rf "$tmp"' EXIT
+    install_script="$(curl --fail --silent --show-error --location --max-time 60 "https://astral.sh/uv/$uv_version/install.sh")"
+    # Installs into the given directory, without touching the shell profile or setting up self-updates
+    UV_UNMANAGED_INSTALL="$tmp/uv" sh -c "$install_script"
+    mv "$tmp/uv" "$uv_path"
+fi
+,link-in-local-bin "$backup_path" "$uv_path/uv" uv
+,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx
 
-tooling_venv_path="$HOME/.py-tooling-venv"
-python3.11 -m venv "$tooling_venv_path"
-# Ref: https://python-poetry.org/docs/#installing-manually
-"$tooling_venv_path/bin/pip" install poetry==1.7.1
-ln -s "$tooling_venv_path/bin/poetry" "$install_path/bin/"
-# Ref: https://github.com/pappasam/jedi-language-server#installation
-"$tooling_venv_path/bin/pip" install jedi-language-server==0.41.2
-ln -s "$tooling_venv_path/bin/jedi-language-server" "$install_path/bin/"
-# ---
+python_version="$(awk '$1 == "python3" { print $3 }' "$root/tool-versions")"
+UV_PYTHON_BIN_DIR="$HOME/.local/opt/uv-python-bin" uv python install "$python_version"
+,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-python-bin/python$python_version" python3
+
+UV_TOOL_BIN_DIR="$HOME/.local/opt/uv-tool-bin" uv tool install ruff
+,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-tool-bin/ruff" ruff
+UV_TOOL_BIN_DIR="$HOME/.local/opt/uv-tool-bin" uv tool install ty
+,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-tool-bin/ty" ty
+
 ropify_path="$root/bin-submodules/ropify"
-git submodule update --init "$ropify_path"
-"$tooling_venv_path/bin/pip" install "$ropify_path"
-ln -s "$tooling_venv_path/bin/ropify" "$install_path/bin/"
+git -C "$root" submodule update --init "$ropify_path"
+UV_TOOL_BIN_DIR="$HOME/.local/opt/uv-tool-bin" uv tool install "$ropify_path"
+,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-tool-bin/ropify" ropify

@@ -7,6 +7,7 @@ Monorepo containing dotfiles and programs for my development environment.
 Each directory at the root of the repository is a module with the following standardized structure:
 
 - `install-bin`: a script to install programs on the machine
+- `tool-versions`: the range of versions each installed program works with
 - `dotfiles/`: the dotfiles to install
 - `exported-dotfiles/`: dotfiles installed by other modules
 - `bin-submodules/`: git submodules containing programs to install
@@ -40,8 +41,7 @@ Then, we create symbolic links to these files in the dotfiles directory of the m
 
 We use git submodules to make our repository smaller and easier to manage, especially when working with external projects.
 
-Submodules in `bin-submodules` help us build the programs.
-This is useful because it lets us tailor the setup, install programs without needing special permissions, use the newest versions, and ensure consistent performance by locking the repository to a specific commit.
+Submodules in `bin-submodules` hold programs of our own, and the sources we build from, like a tree-sitter grammar.
 
 Submodules in `dotfiles-submodules` include files we link to in the dotfiles directory.
 This helps us know which files we handle and which come from outside sources.
@@ -70,7 +70,7 @@ Commands in `.foundation/bin` are either a single file, used on every operating 
 
 ## Installation
 
-To install the foundation, run this from the root of the repository before anything else:
+To install the foundation, run this before anything else:
 
 ```sh
 ./install-foundation
@@ -90,7 +90,9 @@ To install dotfiles, run:
 
 Note: both scripts install all the modules if no module is specified.
 
-You can run `install-foundation` and `install-dotfiles` again at any time. Before they replace a file with different content, they copy the old one to `~/$DOTDEV_ATDIR/backups/<date-time>`, at its path from the home folder, or from `/` for a system file. Files that apt, Homebrew or rustup install are not backed up, because those tools manage them.
+`install-bin` installs a program with the package manager, unless one of our systems lacks a version that works: then it downloads the program on every system, into `~/.local/opt/<program>-<version>`, since the download works everywhere and a second way to install it would only be more to maintain. Programs of our own are built from their submodule and copied into `~/.local/bin`, and every other program is linked there. Each module's `tool-versions` file lists the versions its programs work with, and `install-bin` ends by checking them with `,check-tools`.
+
+You can run `install-foundation`, `install-bin` and `install-dotfiles` again at any time. Before they replace a file with different content, they copy the old one to `~/$DOTDEV_ATDIR/backups/<date-time>`, at its path from the home folder, or from `/` for a system file. Files that apt, Homebrew, rustup or uv install are not backed up, because those tools manage them.
 
 ## Linting
 

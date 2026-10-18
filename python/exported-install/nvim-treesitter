@@ -3,11 +3,23 @@
 set -eu
 
 root="$(dirname "$(dirname "$(realpath "$0")")")"
-site_path="$1"
+backup_path="$1"
 
 grammar_path="$root/bin-submodules/tree-sitter-python"
-git submodule update --init "$grammar_path"
+git -C "$root" submodule update --init "$grammar_path"
+grammar_commit="$(git -C "$grammar_path" rev-parse HEAD)"
 
+# Two builds of the same grammar differ byte for byte, so each grammar commit is built once and that build is copied
+build_path="$HOME/.local/opt/tree-sitter-python-$grammar_commit"
+if [ ! -e "$build_path" ]; then
+    mkdir -p "$HOME/.local/opt"
+    tmp="$(mktemp -d "$HOME/.local/opt/.tree-sitter-python.XXXXXX")"
+    trap 'rm -rf "$tmp"' EXIT
+    tree-sitter build "$grammar_path" -o "$tmp/python.so"
+    mv "$tmp" "$build_path"
+fi
+
+site_path="$HOME/.local/share/nvim/site"
 mkdir -p "$site_path/parser" "$site_path/queries/python"
-tree-sitter build "$grammar_path" -o "$site_path/parser/python.so"
-cp "$grammar_path/queries/highlights.scm" "$site_path/queries/python/highlights.scm"
+rsync --archive --checksum --backup --backup-dir="$backup_path/.local/share/nvim/site/parser" "$build_path/python.so" "$site_path/parser/python.so"
+rsync --archive --checksum --backup --backup-dir="$backup_path/.local/share/nvim/site/queries/python" "$grammar_path/queries/highlights.scm" "$site_path/queries/python/highlights.scm"

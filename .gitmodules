@@ -1,9 +1,3 @@
-[submodule "nvim/bin-submodules/neovim"]
-	path = nvim/bin-submodules/neovim
-	url = https://github.com/neovim/neovim.git
-[submodule "nvim/bin-submodules/nvim-treesitter"]
-	path = nvim/bin-submodules/nvim-treesitter
-	url = https://github.com/nvim-treesitter/nvim-treesitter.git
 [submodule "nvim/dotfiles-submodules/aerial.nvim"]
 	path = nvim/dotfiles-submodules/aerial.nvim
 	url = https://github.com/stevearc/aerial.nvim.git
@@ -32,27 +26,15 @@
 	path = python/bin-submodules/tree-sitter-python
 	url = https://github.com/tree-sitter/tree-sitter-python.git
     ignore = dirty
-[submodule "tmux/bin-submodules/tmux"]
-	path = tmux/bin-submodules/tmux
-	url = https://github.com/tmux/tmux.git
 [submodule "tmux/dotfiles-submodules/tmux-matryoshka"]
 	path = tmux/dotfiles-submodules/tmux-matryoshka
 	url = https://github.com/niqodea/tmux-matryoshka
 [submodule "utils/bin-submodules/breadcrumbs"]
 	path = utils/bin-submodules/breadcrumbs
 	url = https://github.com/niqodea/breadcrumbs.git
-[submodule "utils/bin-submodules/ffmpeg"]
-	path = utils/bin-submodules/ffmpeg
-	url = https://git.ffmpeg.org/ffmpeg.git
 [submodule ".foundation/bin-submodules/hburger"]
 	path = .foundation/bin-submodules/hburger
 	url = https://github.com/niqodea/hburger.git
-[submodule "utils/bin-submodules/password-store"]
-	path = utils/bin-submodules/password-store
-	url = https://git.zx2c4.com/password-store
-[submodule "zsh/bin-submodules/zsh"]
-	path = zsh/bin-submodules/zsh
-	url = https://github.com/zsh-users/zsh.git
 [submodule "zsh/dotfiles-submodules/fzf"]
 	path = zsh/dotfiles-submodules/fzf
 	url = https://github.com/junegunn/fzf.git

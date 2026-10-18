@@ -1,38 +1,59 @@
 #!/bin/sh
 
-set -eux
+set -eu
 
 root="$(dirname "$(realpath "$0")")"
-install_path="$1"
+backup_path="$1"
 
-echo 'Downloading and installing breadcrumbs...'
-repo_path="$root/bin-submodules/breadcrumbs"
-git submodule update --init "$repo_path"
-cp "$repo_path/breadcrumbs" "$install_path/bin/"
+,install-package pass ffmpeg
+pass_path="$(,get-package-path pass)"
+,link-in-local-bin "$backup_path" "$pass_path" pass
+ffmpeg_path="$(,get-package-path ffmpeg)"
+,link-in-local-bin "$backup_path" "$ffmpeg_path" ffmpeg
+ffprobe_path="$(,get-package-path ffprobe)"
+,link-in-local-bin "$backup_path" "$ffprobe_path" ffprobe
 
-echo 'Compiling and installing pass...'
-repo_path="$root/bin-submodules/password-store"
-git submodule update --init "$repo_path"
-sudo apt install --yes --no-install-recommends make
-make -C "$repo_path" install PREFIX="$install_path"
+case "$(uname -s)" in
+    'Darwin')
+        # Docker on macOS needs a Linux virtual machine to run containers in
+        ,install-package docker colima
+        colima_path="$(,get-package-path colima)"
+        ,link-in-local-bin "$backup_path" "$colima_path" colima
+        ;;
+    'Linux')
+        # Ref: https://docs.docker.com/engine/install/debian#install-using-the-repository
+        key_path=/etc/apt/keyrings/docker.asc
+        key="$(curl --fail --silent --show-error --location --max-time 60 https://download.docker.com/linux/debian/gpg)"
+        # Copied as our own user, so the backup belongs to us and not to root
+        if [ -e "$key_path" ] && [ "$(cat "$key_path")" != "$key" ]; then
+            rsync --relative "$key_path" "$backup_path/"
+        fi
+        sudo mkdir -p /etc/apt/keyrings
+        printf '%s\n' "$key" | sudo tee "$key_path" > /dev/null
 
-sudo apt install --yes --no-install-recommends python3.11 python3.11-venv
+        codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+        sources="Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: $codename
+Components: stable
+Signed-By: $key_path"
+        sources_path=/etc/apt/sources.list.d/docker.sources
+        if [ -e "$sources_path" ] && [ "$(cat "$sources_path")" != "$sources" ]; then
+            rsync --relative "$sources_path" "$backup_path/"
+        fi
+        printf '%s\n' "$sources" | sudo tee "$sources_path" > /dev/null
+        sudo apt update
+        ,install-package docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        ;;
+    *)
+        >&2 echo "Unsupported operating system: $(uname -s)"
+        exit 1
+        ;;
+esac
+docker_path="$(,get-package-path docker)"
+,link-in-local-bin "$backup_path" "$docker_path" docker
 
-gdown_venv_path="$HOME/.gdown-venv"
-python3.11 -m venv "$gdown_venv_path"
-"$gdown_venv_path/bin/pip" install gdown==4.7.1
-ln -fs "$gdown_venv_path/bin/gdown" "$install_path/bin/"
-
-ytdlp_venv_path="$HOME/.ytdlp-venv"
-python3.11 -m venv "$ytdlp_venv_path"
-"$ytdlp_venv_path/bin/pip" install yt-dlp==2023.12.30
-ln -fs "$ytdlp_venv_path/bin/yt-dlp" "$install_path/bin/"
-
-echo 'Downloading and installing ffmpeg...'
-repo_path="$root/bin-submodules/ffmpeg"
-git submodule update --init "$repo_path"
-sudo apt install --yes --no-install-recommends yasm
-# Go for a static build to avoid dependency issues
-cd "$repo_path" && "./configure" --prefix="$install_path" --enable-static --disable-shared
-cd "$repo_path" && make
-cd "$repo_path" && make install
+breadcrumbs_path="$root/bin-submodules/breadcrumbs"
+git -C "$root" submodule update --init "$breadcrumbs_path"
+cargo build --manifest-path="$breadcrumbs_path/Cargo.toml" --release
+,put-in-local-bin "$backup_path" "$breadcrumbs_path/target/release/breadcrumbs" breadcrumbs

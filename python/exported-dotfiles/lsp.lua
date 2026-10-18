@@ -3,7 +3,7 @@ return function(cmp_nvim_lsp)
     -- Also document symbols currently include imports
     -- Ref: https://github.com/pappasam/jedi-language-server/issues/288
     vim.lsp.config('ty', {
-        cmd = { 'uvx', 'ty', 'server' },
+        cmd = { 'ty', 'server' },
         filetypes = { 'python' },
         root_markers = { '.' },
         capabilities = cmp_nvim_lsp.default_capabilities(),
