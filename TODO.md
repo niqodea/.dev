@@ -10,9 +10,8 @@
 - (maybe) move all dotfiles to separate git submodule
 - Write READMEs for all modules
 - (maybe) add configuration for optimized Xournal++ use (one hand for keyboard, other for pen) (if not possible with this tool, find another that best accommodates this workflow)
-- Compile/install ffmpeg and imagemagick and write aliases for it
+- Install imagemagick, and write aliases for it and ffmpeg
 - Add linting for lua files, ..., to ./lint
-- Add docker (utils or module)
 - Explore frecency solutions (zsh, nvim, ...)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported
 - Create alias to deal with processes more easily (exposed ports with `lsof`, better `psg`, etc.)
@@ -23,11 +22,7 @@
 - Find a way to effortlessly move to edited parts of a Git-tracked file in neovim (not necessarily next/previous hunk from the git nvim plugin)
 - Check for new functionalities of nvim, git versions
 - Add git-active-files to https://github.com/ahmetsait/toolgit
-- Restructure install script to be clearer
-  - Support multiple platforms like Linux vs MacOS
-  - Understand what's "foundational" (e.g. rsync) vs "nice-to-have" (e.g. breadcrumbs)
-  - Understand how to cleanly separate what gets installed from source / tarball / apt
-  - Do not install if program is already available in the path (perhaps opt-in)
+- Do not install a program that is already available in the path (perhaps opt-in)
 - Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier
 - Add `lm` as an utils command
 - Build on the session's Claude pane
