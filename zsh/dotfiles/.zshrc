@@ -82,6 +82,11 @@ function() {
     # Fix backspace only deleting inserted characters in insert mode
     # Ref: https://unix.stackexchange.com/a/290403
     bindkey -v '^?' backward-delete-char
+    # Remove compinit's Esc bindings, so only key codes like arrows conflict with a lone Esc
+    bindkey -M viins -r '^[/' '^[,' '^[~'
+    # Act on a lone Esc ASAP to make it snappy
+    # Key codes arrive together anyway, so they are still read as one sequence
+    KEYTIMEOUT=1  # 10ms, the minimum (0 would wait forever instead)
 
 
     # LOCAL
