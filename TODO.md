@@ -28,3 +28,10 @@
 - Build on the session's Claude pane
   - (paused) Tell a Claude waiting for a permission apart from one that finished, in the status bar and the picker, once Claude Code fires a hook when a permission prompt is answered (https://github.com/anthropics/claude-code/issues/77700). Until then, a Claude whose prompt was approved would show as waiting until its tool finishes
   - Show a Claude that waits on a background shell as running, not idle, once Claude Code can tell such a wait from a shell that runs forever, like a dev server (https://github.com/anthropics/claude-code/issues/98373). Until then, when a Claude shows as idle while it waits on a background shell, ask that Claude to wait for the shell in the foreground
+- Add a test that installs everything on a fresh debian container (and macos runner)
+- Verify downloads with a pinned sha256 next to each version (nvim, tree-sitter, uv install script)
+- Check the fingerprint of the Docker GPG key before trusting it (Ref: https://docs.docker.com/engine/install/debian)
+- Tell debian apart from other distros with /etc/os-release instead of /etc/debian_version, so Ubuntu does not get debian backports
+- Lint .foundation/profile and other files which ./lint skips since they have no shebang
+- Fix the problem of breadcrumbs not being usable in dotfiles repos
+- (maybe) avoid the race between the background compinit and compinit -C over .zcompdump
