@@ -1,0 +1,18 @@
+#!/bin/sh
+
+set -eu
+
+project="$1"
+if [ -n "${DOTDEV_PROJECT-}" ]; then
+    >&2 echo "Already in project $DOTDEV_PROJECT"
+    exit 1
+fi
+if [ ! -d "$HOME/$project/$DOTDEV_ATDIR/project" ]; then
+    >&2 echo "No project named $project"
+    exit 1
+fi
+
+# The same variable that ,tmux-open-session gives a project's session
+export DOTDEV_PROJECT="$project"
+cd "$HOME/$project"
+exec "$SHELL"

@@ -2,6 +2,11 @@
 
 set -eu
 
+if [ -z "${DOTDEV_PROJECT-}" ]; then
+    >&2 echo "Not in a project"
+    exit 1
+fi
+
 # Above the ports dev servers default to, like 3000 and 8080
 start=10000
 # Linux picks ports for outgoing connections from 32768
@@ -9,6 +14,6 @@ end=32768
 block_size=10
 
 # Picked from the project's name, so that a project gets the same ports on every machine
-hash="$(printf '%s' "$1" | cksum | cut -d ' ' -f 1)"
+hash="$(printf '%s' "$DOTDEV_PROJECT" | cksum | cut -d ' ' -f 1)"
 first_port="$((start + hash % ((end - start) / block_size) * block_size))"
 echo "$first_port $((first_port + block_size - 1))"

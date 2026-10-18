@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -eu
+
+case "$1" in
+    '' | *[!0-9]*)
+        >&2 echo "Not a port number: $1"
+        exit 1
+        ;;
+    *) ;;
+esac
+port_range="$(,get-project-port-range)"
+first_port="${port_range% *}"
+last_port="${port_range#* }"
+port="$((first_port + $1))"
+if [ "$port" -gt "$last_port" ]; then
+    >&2 echo "The project has ports 0 to $((last_port - first_port)), not $1"
+    exit 1
+fi
+echo "$port"
