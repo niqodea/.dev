@@ -20,14 +20,20 @@ fi
 ,link-in-local-bin "$backup_path" "$uv_path/uv" uv
 ,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx
 
-python_version="$(awk '$1 == "python3" { print $3 }' "$root/program-versions")"
+python_version="$(awk '$1 == "python3" { print $2 }' "$root/program-versions")"
 UV_PYTHON_BIN_DIR="$HOME/.local/opt/uv-python-bin" uv python install "$python_version"
 ,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-python-bin/python$python_version" python3
 
-UV_TOOL_BIN_DIR="$HOME/.local/opt/uv-tool-bin" uv tool install ruff
-,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-tool-bin/ruff" ruff
-UV_TOOL_BIN_DIR="$HOME/.local/opt/uv-tool-bin" uv tool install ty
-,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-tool-bin/ty" ty
+# Each version gets a folder of its own, whose name tells ,check-program-versions the version
+ruff_version='0.17.1'
+ruff_path="$HOME/.local/opt/ruff-$ruff_version"
+UV_TOOL_DIR="$ruff_path" UV_TOOL_BIN_DIR="$ruff_path/bin" uv tool install "ruff==$ruff_version"
+,link-in-local-bin "$backup_path" "$ruff_path/bin/ruff" ruff
+
+ty_version='0.0.89'
+ty_path="$HOME/.local/opt/ty-$ty_version"
+UV_TOOL_DIR="$ty_path" UV_TOOL_BIN_DIR="$ty_path/bin" uv tool install "ty==$ty_version"
+,link-in-local-bin "$backup_path" "$ty_path/bin/ty" ty
 
 ropify_path="$root/bin-submodules/ropify"
 git -C "$root" submodule update --init "$ropify_path"

@@ -8,9 +8,15 @@ for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
     if [ ! -e "$versions_path" ]; then
         continue
     fi
-    while read -r program flag at_least below; do
+    while read -r program at_least below; do
         case "$program" in
             '' | '#'*) continue ;;
+            # A path could point outside ~/.local/bin
+            */*)
+                >&2 echo "$program: not a program name"
+                status=1
+                continue
+                ;;
             *) ;;
         esac
         if [ ! -e "$HOME/.local/bin/$program" ]; then
@@ -18,8 +24,25 @@ for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
             status=1
             continue
         fi
-        # Takes the first word that looks like a version, as in "git version 2.39.5", "tmux 3.5a" or "NVIM v0.12.3"
-        version="$("$HOME/.local/bin/$program" "$flag" 2>&1 | tr ' ' '\n' | sed -n 's/^v\{0,1\}\([0-9][0-9]*\.[0-9][0-9a-z.]*\).*/\1/p' | head -n 1)"
+        # Reads the version from where the program is installed, so no line of the file can make this run anything
+        path="$(realpath "$HOME/.local/bin/$program")"
+        case "$path" in
+            # apt keeps the version in its database, as in 1:2.39.5-0+deb12u3, where 2.39.5 is the program's own
+            /usr/bin/*)
+                # /bin is /usr/bin since Debian 12, but dpkg still records some programs under /bin, so it is asked for both
+                # and complains about the one it lacks
+                # Ref: https://wiki.debian.org/UsrMerge
+                package="$(dpkg-query --search "$path" "/bin/${path#/usr/bin/}" 2> /dev/null | cut -d : -f 1)"
+                version="$(dpkg-query --show --showformat '${Version}' "$package" | sed 's/^[0-9]*://; s/-[^-]*$//')"
+                ;;
+            # Every other source names a folder after the version, as in Cellar/git/2.56.0_1 or nvim-v0.12.3
+            *) version="$(echo "$path" | tr '/' '\n' | sed -n 's/^\([a-z-]*-\)\{0,1\}v\{0,1\}\([0-9][0-9]*\.[0-9][0-9a-z.]*\).*/\2/p' | head -n 1)" ;;
+        esac
+        if [ -z "$version" ]; then
+            >&2 echo "$program: no version in $path"
+            status=1
+            continue
+        fi
         lowest="$(printf '%s\n%s\n' "$at_least" "$version" | sort -V | head -n 1)"
         highest="$(printf '%s\n%s\n' "$version" "$below" | sort -V | tail -n 1)"
         if [ "$lowest" != "$at_least" ] || [ "$highest" != "$below" ] || [ "$version" = "$below" ]; then
