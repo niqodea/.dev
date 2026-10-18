@@ -8,7 +8,9 @@ if ! tmux has-session -t "=$1" 2> /dev/null; then
         # The home session belongs to no project
         tmux new-session -d -n "" -s '~' -c "$HOME"
     elif [ -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
-        tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_PROJECT="$1"
+        port_range="$(,get-project-port-range "$1")"
+        tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_PROJECT="$1" \
+            -e DOTDEV_FIRST_PORT="${port_range% *}" -e DOTDEV_LAST_PORT="${port_range#* }"
     else
         >&2 echo "No project named $1"
         exit 1
