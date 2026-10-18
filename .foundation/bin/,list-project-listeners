@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -eu
+
+port_range="$(,get-project-port-range)"
+first_port="${port_range% *}"
+last_port="${port_range#* }"
+
+# lsof exits with 1 when nothing listens, which is no failure here, and prints any real error itself
+listeners="$(lsof -nP -iTCP:"$first_port-$last_port" -sTCP:LISTEN -Fpcn || true)"
+
+# -F prints one field per line: p for the process ID, c for the command, n for the address
+echo "$listeners" | awk -v first_port="$first_port" '
+    /^p/ { pid = substr($0, 2) }
+    /^c/ { command = substr($0, 2) }
+    /^n/ {
+        port = $0
+        sub(/.*:/, "", port)
+        print port - first_port, port, command, pid
+    }
+' | sort -n -u | while read -r number port command pid; do
+    echo "$number: port $port, $command (process $pid)"
+done

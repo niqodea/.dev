@@ -6,3 +6,5 @@ set -eu
 sudo apt install curl gcc libc6-dev
 # The installers place every file with rsync, which a minimal Debian does not have
 sudo apt install rsync
+# ,list-project-listeners finds servers with lsof, which a minimal Debian does not have
+sudo apt install lsof
