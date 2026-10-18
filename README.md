@@ -7,7 +7,7 @@ Monorepo containing dotfiles and programs for my development environment.
 Each directory at the root of the repository is a module with the following standardized structure:
 
 - `install-bin`: a script to install programs on the machine
-- `tool-versions`: the range of versions each installed program works with
+- `program-versions`: the range of versions each installed program works with
 - `dotfiles/`: the dotfiles to install
 - `exported-dotfiles/`: dotfiles installed by other modules
 - `bin-submodules/`: git submodules containing programs to install
@@ -90,7 +90,7 @@ To install dotfiles, run:
 
 Note: both scripts install all the modules if no module is specified.
 
-`install-bin` installs a program with the package manager, unless one of our systems lacks a version that works: then it downloads the program on every system, into `~/.local/opt/<program>-<version>`, since the download works everywhere and a second way to install it would only be more to maintain. Programs of our own are built from their submodule and copied into `~/.local/bin`, and every other program is linked there. Each module's `tool-versions` file lists the versions its programs work with, and `install-bin` ends by checking them with `,check-tools`.
+`install-bin` installs a program with the package manager, unless one of our systems lacks a version that works: then it downloads the program on every system, into `~/.local/opt/<program>-<version>`, since the download works everywhere and a second way to install it would only be more to maintain. Programs of our own are built from their submodule and copied into `~/.local/bin`, and every other program is linked there. Each module's `program-versions` file lists the versions its programs work with, and `install-bin` ends by checking them with `,check-program-versions`.
 
 You can run `install-foundation`, `install-bin` and `install-dotfiles` again at any time. Before they replace a file with different content, they copy the old one to `~/$DOTDEV_ATDIR/backups/<date-time>`, at its path from the home folder, or from `/` for a system file. Files that apt, Homebrew, rustup or uv install are not backed up, because those tools manage them.
 

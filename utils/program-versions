@@ -1,4 +1,4 @@
-# tool        version flag   at least   below
+# program     version flag   at least   below
 pass          --version      1.7        1.8
 ffmpeg        -version       5.1        10
 docker        --version      29         30

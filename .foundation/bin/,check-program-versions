@@ -3,31 +3,31 @@
 set -eu
 
 status=0
-for versions_path in "$HOME/$DOTDEV_ATDIR/tool-versions/"*; do
+for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
     # An empty directory leaves the pattern itself in $versions_path
     if [ ! -e "$versions_path" ]; then
         continue
     fi
-    while read -r tool flag at_least below; do
-        case "$tool" in
+    while read -r program flag at_least below; do
+        case "$program" in
             '' | '#'*) continue ;;
             *) ;;
         esac
-        if [ ! -e "$HOME/.local/bin/$tool" ]; then
-            >&2 echo "$tool: not in ~/.local/bin"
+        if [ ! -e "$HOME/.local/bin/$program" ]; then
+            >&2 echo "$program: not in ~/.local/bin"
             status=1
             continue
         fi
         # Takes the first word that looks like a version, as in "git version 2.39.5", "tmux 3.5a" or "NVIM v0.12.3"
-        version="$("$HOME/.local/bin/$tool" "$flag" 2>&1 | tr ' ' '\n' | sed -n 's/^v\{0,1\}\([0-9][0-9]*\.[0-9][0-9a-z.]*\).*/\1/p' | head -n 1)"
+        version="$("$HOME/.local/bin/$program" "$flag" 2>&1 | tr ' ' '\n' | sed -n 's/^v\{0,1\}\([0-9][0-9]*\.[0-9][0-9a-z.]*\).*/\1/p' | head -n 1)"
         lowest="$(printf '%s\n%s\n' "$at_least" "$version" | sort -V | head -n 1)"
         highest="$(printf '%s\n%s\n' "$version" "$below" | sort -V | tail -n 1)"
         if [ "$lowest" != "$at_least" ] || [ "$highest" != "$below" ] || [ "$version" = "$below" ]; then
-            >&2 echo "$tool $version needs to be at least $at_least and below $below"
+            >&2 echo "$program $version needs to be at least $at_least and below $below"
             status=1
             continue
         fi
-        echo "$tool $version"
+        echo "$program $version"
     done < "$versions_path"
 done
 exit "$status"

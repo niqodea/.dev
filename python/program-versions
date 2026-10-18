@@ -1,0 +1,5 @@
+# program   version flag   at least   below
+python3     --version      3.13       3.14
+uv          --version      0.13       0.14
+ruff        --version      0.17       0.18
+ty          --version      0.0.89     0.1

@@ -20,7 +20,7 @@ fi
 ,link-in-local-bin "$backup_path" "$uv_path/uv" uv
 ,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx
 
-python_version="$(awk '$1 == "python3" { print $3 }' "$root/tool-versions")"
+python_version="$(awk '$1 == "python3" { print $3 }' "$root/program-versions")"
 UV_PYTHON_BIN_DIR="$HOME/.local/opt/uv-python-bin" uv python install "$python_version"
 ,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-python-bin/python$python_version" python3
 

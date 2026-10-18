@@ -15,7 +15,7 @@ else
 fi
 
 backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
-versions_path="$HOME/$DOTDEV_ATDIR/tool-versions"
+versions_path="$HOME/$DOTDEV_ATDIR/program-versions"
 mkdir -p "$versions_path"
 
 for module in $modules; do
@@ -34,8 +34,8 @@ for module in $modules; do
     echo "Installing programs for module $module"
     "$module_path/install-bin" "$backup_path"
 
-    if [ -e "$module_path/tool-versions" ]; then
-        rsync --archive --checksum --backup --backup-dir="$backup_path/$DOTDEV_ATDIR/tool-versions" "$module_path/tool-versions" "$versions_path/$module"
+    if [ -e "$module_path/program-versions" ]; then
+        rsync --archive --checksum --backup --backup-dir="$backup_path/$DOTDEV_ATDIR/program-versions" "$module_path/program-versions" "$versions_path/$module"
     fi
 done
 
@@ -43,4 +43,4 @@ if [ -e "$backup_path" ]; then
     echo "Backed up replaced files in $backup_path"
 fi
 
-,check-tools
+,check-program-versions

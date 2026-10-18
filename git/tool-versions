@@ -1,3 +1,0 @@
-# tool   version flag   at least   below
-# git ls-files --deduplicate, in git recent-files, needs 2.31
-git      --version      2.31       3

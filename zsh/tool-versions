@@ -1,3 +1,0 @@
-# tool   version flag   at least   below
-# Anonymous functions, in .zshrc, and %F prompt colors need 4.3.7
-zsh      --version      4.3.7      6

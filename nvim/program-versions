@@ -1,4 +1,4 @@
-# tool        version flag   at least   below
+# program     version flag   at least   below
 # vim.lsp.config, in the LSP setup, needs 0.11
 nvim          --version      0.11       0.13
 # tree-sitter 0.26 needs glibc 2.39, and Debian 12 has 2.36
