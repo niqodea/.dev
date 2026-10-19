@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -eu
+
+install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://claude.ai/install.sh')"
+/bin/bash -c "$install_script" install.sh 2.1.303
