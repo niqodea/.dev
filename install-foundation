@@ -39,6 +39,12 @@ for command in "$foundation_path/bin/"*; do
     fi
 done
 
+# The package manager's location can depend on the commands above
+install_package_manager_path="$foundation_path/install-package-manager/$os"
+if [ -e "$install_package_manager_path" ]; then
+    "$install_package_manager_path"
+fi
+
 "$foundation_path/bin/,copy-in-home" "$backup_path" "$foundation_path/profile" .profile
 
 os_profile_path="$foundation_path/profile.d/$os"
