@@ -10,51 +10,28 @@ vim.api.nvim_create_user_command('GitStatus', function()
     vim.cmd('terminal git status --short')
 end, {})
 
-local function get_branch_point(branch)
-    local output = vim.fn.systemlist({ 'git', 'merge-base', branch, 'HEAD' })
+local function run_git(arguments)
+    local output = vim.fn.systemlist(vim.list_extend({ 'git' }, arguments))
     if vim.v.shell_error ~= 0 then
-        error('Cannot find where HEAD left ' .. branch .. ': ' .. table.concat(output, ' '))
+        error('git ' .. table.concat(arguments, ' ') .. ' failed: ' .. table.concat(output, ' '))
     end
-    return output[1]
-end
-
--- A detached HEAD is on no branch, so there is no name
-local function get_current_branch()
-    return vim.fn.systemlist({ 'git', 'branch', '--show-current' })[1]
-end
-
--- git does not record which branch a branch started from, so the branch keeps it in a setting of its own
-local function get_base_branch_key(branch)
-    return 'branch.' .. branch .. '.dotdev-base'
-end
-
--- origin/HEAD stands in on a detached HEAD, and on a branch with no base of its own
-local function get_base_branch()
-    local current_branch = get_current_branch()
-    if current_branch == nil then
-        return 'origin/HEAD'
-    end
-    local output = vim.fn.systemlist({ 'git', 'config', '--get', get_base_branch_key(current_branch) })
-    if vim.v.shell_error ~= 0 then
-        return 'origin/HEAD'
-    end
-    return output[1]
+    return output
 end
 
 local function complete_branch(argument)
-    local branches = vim.fn.systemlist({ 'git', 'for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes' })
+    local branches = run_git({ 'for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes' })
     return vim.tbl_filter(function(branch) return vim.startswith(branch, argument) end, branches)
 end
 
 -- Lists every change since HEAD left its base branch, committed or not, one quickfix entry per hunk
 local function review()
-    local base_branch = get_base_branch()
-    local branch_point = get_branch_point(base_branch)
-    local root = vim.fn.systemlist({ 'git', 'rev-parse', '--show-toplevel' })[1]
-    local diff = vim.fn.systemlist({ 'git', 'diff', '--unified=0', branch_point })
+    local base_branch = run_git({ 'base-branch' })[1]
+    local branch_point = run_git({ 'merge-base', base_branch, 'HEAD' })[1]
+    local root = run_git({ 'rev-parse', '--show-toplevel' })[1]
+    local diff_lines = run_git({ 'diff', '--unified=0', branch_point })
     local items = {}
     local path
-    for _, line in ipairs(diff) do
+    for _, line in ipairs(diff_lines) do
         if vim.startswith(line, '+++ ') then
             -- A deleted file has no b/ path, and no lines left to jump to
             path = line:match('^%+%+%+ b/(.*)')
@@ -71,19 +48,19 @@ end
 
 local function get_lines_at(commit, path)
     local folder = vim.fn.fnamemodify(path, ':h')
-    local object = commit .. ':./' .. vim.fn.fnamemodify(path, ':t')
-    vim.fn.system({ 'git', '-C', folder, 'cat-file', '-e', object })
+    local name = vim.fn.fnamemodify(path, ':t')
+    local listed = run_git({ '-C', folder, 'ls-tree', '--name-only', commit, '--', name })
     -- A file added since that commit has no earlier version
-    if vim.v.shell_error ~= 0 then
+    if #listed == 0 then
         return {}
     end
-    return vim.fn.systemlist({ 'git', '-C', folder, 'show', object })
+    return run_git({ '-C', folder, 'show', commit .. ':./' .. name })
 end
 
 -- Opens the file as it was where HEAD left its base branch, side by side with the file now
 local function diff()
-    local base_branch = get_base_branch()
-    local branch_point = get_branch_point(base_branch)
+    local base_branch = run_git({ 'base-branch' })[1]
+    local branch_point = run_git({ 'merge-base', base_branch, 'HEAD' })[1]
     local lines = get_lines_at(branch_point, vim.fn.expand('%:p'))
     local filetype = vim.bo.filetype
     vim.cmd('diffthis')
@@ -102,12 +79,5 @@ end
 vim.keymap.set('n', '<leader>gr', review)
 vim.keymap.set('n', '<leader>gd', diff)
 vim.api.nvim_create_user_command('GitSetBase', function(args)
-    local current_branch = get_current_branch()
-    if current_branch == nil then
-        error('HEAD is on no branch, so there is no base to set')
-    end
-    local output = vim.fn.system({ 'git', 'config', get_base_branch_key(current_branch), args.args })
-    if vim.v.shell_error ~= 0 then
-        error('Cannot set the base branch: ' .. output)
-    end
+    run_git({ 'base-branch', args.args })
 end, { nargs = 1, complete = complete_branch })

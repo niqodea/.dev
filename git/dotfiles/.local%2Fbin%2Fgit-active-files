@@ -1,7 +1,9 @@
 #!/bin/sh
 
-origin_head=$(git rev-parse origin/HEAD)
-active_file_paths=$(git diff --name-only "$origin_head"...)
+set -eu
+
+base=$(git base-branch)
+active_file_paths=$(git diff --name-only "$base"...)
 
 current_path=$(git rev-parse --show-prefix) # Empty at the repository's root
 
