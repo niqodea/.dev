@@ -31,7 +31,6 @@
 - Add a test that installs everything on a fresh debian container (and macos runner)
 - Verify downloads with a pinned sha256 next to each version (nvim, tree-sitter, uv install script)
 - Check the fingerprint of the Docker GPG key before trusting it (Ref: https://docs.docker.com/engine/install/debian)
-- Tell debian apart from other distros with /etc/os-release instead of /etc/debian_version, so Ubuntu does not get debian backports
 - Lint .foundation/profile and other files which ./lint skips since they have no shebang
 - Fix the problem of breadcrumbs not being usable in dotfiles repos
 - (maybe) avoid the race between the background compinit and compinit -C over .zcompdump
