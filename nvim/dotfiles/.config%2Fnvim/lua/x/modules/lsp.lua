@@ -20,12 +20,11 @@ vim.keymap.set('n', lsp_prefix..'r', vim.lsp.buf.references)
 vim.keymap.set('n', lsp_prefix..'t', vim.lsp.buf.type_definition)
 
 -- Ref: https://github.com/neovim/nvim-lspconfig/issues/662#issuecomment-983423169
-vim.diagnostic.config({virtual_text = false, signs = false})
+vim.diagnostic.config({signs = false})
 
 vim.api.nvim_set_hl(0, "DiagnosticUnderlineError", { underline = true, ctermfg = 'DarkRed' })
 vim.api.nvim_set_hl(0, "DiagnosticUnderlineWarn", { underline = true, ctermfg = 'DarkYellow' })
 
-vim.o.omnifunc = 'v:lua.vim.lsp.omnifunc'
 vim.cmd('packadd nvim-cmp')
 local cmp = require('cmp')
 cmp.setup {

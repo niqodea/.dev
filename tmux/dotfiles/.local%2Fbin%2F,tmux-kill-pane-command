@@ -12,7 +12,7 @@ case "$pane_type" in
         exit
         ;;
     *)
-        tmux display-message "Unknown pane type: $pane_type"
+        tmux display-message -l "Unknown pane type: $pane_type"
         exit
         ;;
 esac
@@ -35,8 +35,8 @@ if ! tmux confirm-before -p "Kill process $command_pid in pane?" 'send-keys ""';
 fi
 
 kill -9 "$command_pid" || {
-    tmux display-message "Failed to send SIGKILL to process $command_pid"
+    tmux display-message -l "Failed to send SIGKILL to process $command_pid"
     exit
 }
 
-tmux display-message "Sent SIGKILL to process $command_pid"
+tmux display-message -l "Sent SIGKILL to process $command_pid"

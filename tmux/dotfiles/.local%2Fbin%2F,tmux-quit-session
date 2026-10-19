@@ -9,19 +9,18 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
             ;;
         claude)
             # Claude is only ever closed from Claude itself
-            tmux display-message "Pane %$pane_id runs Claude, quit it from Claude"
+            tmux display-message -l "Pane $pane_id runs Claude, quit it from Claude"
             exit
             ;;
         *)
-            tmux display-message "Pane %$pane_id has unknown type: $pane_type"
+            tmux display-message -l "Pane $pane_id has unknown type: $pane_type"
             exit
             ;;
     esac
 
     status="$(tmux show-options -pv -t "$pane_id" @status)"
     if [ "$status" != 'idle' ]; then
-        # display-message expands %, so the pane ID's leading % is doubled
-        tmux display-message "Pane %$pane_id is not idle"
+        tmux display-message -l "Pane $pane_id is not idle"
         exit
     fi
 done

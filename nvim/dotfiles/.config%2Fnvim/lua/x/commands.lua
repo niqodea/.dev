@@ -13,25 +13,18 @@ function M.reload_buffers()
         if vim.api.nvim_buf_is_loaded(bufnr) == false then
             goto continue
         end
-        if vim.api.nvim_buf_get_option(bufnr, 'buftype') ~= '' then
+        if vim.bo[bufnr].buftype ~= '' then
             goto continue
         end
         if vim.api.nvim_buf_get_name(bufnr) == '' then
             goto continue
         end
-        if vim.api.nvim_buf_get_option(bufnr, 'modified') then
+        if vim.bo[bufnr].modified then
             table.insert(modified_bufnrs, bufnr)
             goto continue
         end
         vim.api.nvim_buf_call(bufnr, function()
-            -- :edit inside nvim_buf_call trips over matchparen, which is switched off for the call by emptying matchpairs
-            -- Ref: https://github.com/neovim/neovim/issues/25877
-            local matchpairs = vim.o.matchpairs
-            vim.o.matchpairs = ""
-
             vim.cmd('edit')
-
-            vim.o.matchpairs = matchpairs
         end)
 
         ::continue::
