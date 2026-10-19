@@ -14,11 +14,11 @@ alias ,gcpc='git cherry-pick --continue'
 alias ,gd='git diff'
 alias ,gdn='git diff --name-only'
 alias ,gi='git init'
-alias ,gl='git log --graph --pretty=format:"%C(auto)%h -%d %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"'  # Compress log, add branches graph, show relative date and author
+alias ,gl='git log --graph --pretty=format:"%C(auto)%h -%d %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"'  # One line per commit, with the branch graph, relative date and author
 alias ,gm='git merge'
 alias ,gp='git push'
-alias ,gpf='git push --force-with-lease'  # You rarely want to force push if leasing fails
-alias ,gpl='git pull --rebase'  # Incorporate changes by rebasing rather than merging
+alias ,gpf='git push --force-with-lease'  # Refuses to overwrite remote commits you have not seen
+alias ,gpl='git pull --rebase'
 alias ,gr='git reset'
 alias ,grb='git rebase --interactive'
 alias ,grba='git rebase --abort'
@@ -36,4 +36,4 @@ alias ,gswc='git switch --create'
 alias ,gswd='git switch --detach'
 
 alias ,amg='_activate_extra_module git'
-alias ,cdg='cd $(git rev-parse --show-toplevel)'  # Go to the root of the current git repository
+alias ,cdg='cd $(git rev-parse --show-toplevel)'

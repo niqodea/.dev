@@ -9,8 +9,8 @@ fi
 
 project_path="$HOME/$DOTDEV_PROJECT/$DOTDEV_ATDIR/project"
 history_path="$project_path/history.zsh"
-# Timestamp of the newest command already in global, which unlike a line number survives zsh
-# trimming the oldest lines of the project history
+# Holds the timestamp of the newest command already in the global history, which, unlike a line
+# number, stays valid when zsh trims the oldest lines of the project history
 exported_path="$project_path/exported"
 
 if [ ! -e "$history_path" ]; then
@@ -24,13 +24,13 @@ else
     exported=-1 # Nothing exported yet, so even commands without a timestamp (0) are exported
 fi
 
-# Lines look like ": <timestamp>:<duration>;<command>", continuation lines of a multi-line
-# command have no timestamp of their own, and commands saved without EXTENDED_HISTORY count as 0
+# A line looks like ": <timestamp>:<duration>;<command>". The continuation lines of a multi-line
+# command have no timestamp of their own, and a command saved without EXTENDED_HISTORY counts as 0
 # $0 is awk's current line, so the shell must not expand it
 # shellcheck disable=SC2016
 with_timestamp='/^: [0-9]+:[0-9]+;/ { split($0, fields, /[:;]/); timestamp = fields[2] + 0 }'
 
-# Fixed first, so that commands appended while we copy wait for the next export
+# Read first, so commands added during the copy wait for the next export
 newest="$(awk "$with_timestamp"' { if (timestamp > newest) newest = timestamp } END { print newest + 0 }' "$history_path")"
 
 if [ "$newest" -le "$exported" ]; then

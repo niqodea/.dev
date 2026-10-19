@@ -7,26 +7,23 @@ function() {
 
 
     # DOTDEV_ATDIR
-    # We can create an atdir from a handle inside a working directory
-    # Programs can use the atdir to store state and contextualize their operation,
-    # allowing them to tailor their behavior based on the originating working directory
-    # NOTE: DOTDEV_ATDIR is a first-class citizen in our dotfiles, many configs rely on it
+    # An atdir is a folder named $DOTDEV_ATDIR inside a working directory, where programs keep state that belongs to that directory
+    # Many configs rely on DOTDEV_ATDIR
     alias ,mk@='mkdir "$DOTDEV_ATDIR"'
 
 
     # SHELL VARIABLE
-    # The zsh we use might be /bin/zsh or, if we manage to compile it, $HOME/.local/bin/zsh
-    # Changing SHELL to refer to a locally installed one using chsh is risky, so we dynamically
-    # update it to refer to the zsh found in PATH instead, which prefers the local one
-    # NOTE: /proc/$$/exe would give the running zsh, but /proc does not exist on MacOS
+    # SHELL is the zsh first in PATH, so a zsh in ~/.local/bin wins over /bin/zsh
+    # Changing the login shell with chsh is risky, so SHELL is set here instead
+    # /proc/$$/exe would name the running zsh, but macOS has no /proc
     export SHELL="$(whence -p zsh)"
 
 
     # HISTORY
-    HISTSIZE=100000  # Num commands stored in the file
-    SAVEHIST=100000  # Num commands loaded into memory from history file
-    setopt HIST_IGNORE_ALL_DUPS  # Don't store duplicate commands
-    setopt INC_APPEND_HISTORY  # Append to history file immediately
+    HISTSIZE=100000  # Commands kept in memory
+    SAVEHIST=100000  # Commands saved to the file
+    setopt HIST_IGNORE_ALL_DUPS
+    setopt INC_APPEND_HISTORY  # Other shells can load a command as soon as it runs
     setopt EXTENDED_HISTORY  # Timestamps mark how far a project's history has been merged into the global one
     if [ -n "$DOTDEV_PROJECT" ]; then
         # zsh reads HISTFILE after this file, so project commands end up on top and match first
@@ -49,15 +46,14 @@ function() {
     # Ref: https://thevaluable.dev/zsh-completion-guide-examples/
     # Ref: https://github.com/Phantas0s/.dotfiles/blob/4c41b4865528714dbdeb18c8da42b4d1ca5a2182/zsh/completion.zsh
     autoload -Uz compinit; compinit -C  # Use cache to reduce startup time by ~0.1s
-    # Have another thread refresh the cache in the background (subshell to hide output)
+    # A background compinit refreshes the cache, in a subshell so its job messages stay hidden
     (autoload -Uz compinit; compinit &)
 
     zstyle ':completion:*' menu 'select'
-    unsetopt LIST_BEEP  # Disable beep on tab completion
-    # Beep on exit (with ^C) can technically be disabled by wrapping the widget for
-    # autocomplete to set NO_BEEP when run, but it's not worth the effort, too brittle
+    unsetopt LIST_BEEP
+    # ^C in the menu still beeps, and silencing it means wrapping the completion widget, which is brittle
 
-    zstyle ':completion:*' group-name ''  # Use group names as separators
+    zstyle ':completion:*' group-name ''  # Matches are grouped by kind, under the kind's name
     zstyle ':completion:*:*:*:*:descriptions' format '%F{cyan}-- %d --%f'
     zstyle ':completion:*:*:*:*:warnings' format '%F{red}no matches found%f'
 
@@ -70,27 +66,26 @@ function() {
     bindkey -M menuselect '^d' 'vi-forward-word'
     bindkey -M menuselect '^u' 'vi-backward-word'
 
-    # Enable autocompletion for . and ..
+    # Complete . and .. too
     # Ref: https://stackoverflow.com/a/716926
     zstyle ':completion:*' special-dirs 'true'
 
 
-    # MISCELLAENOUS
-    # Enable vi mode
+    # MISCELLANEOUS
+    # vi mode
     # Ref: https://stackoverflow.com/a/58188295
     bindkey -v
-    # Fix backspace only deleting inserted characters in insert mode
+    # Backspace otherwise deletes only what was typed since entering insert mode
     # Ref: https://unix.stackexchange.com/a/290403
     bindkey -v '^?' backward-delete-char
     # Remove compinit's Esc bindings, so only key codes like arrows conflict with a lone Esc
     bindkey -M viins -r '^[/' '^[,' '^[~'
-    # Act on a lone Esc ASAP to make it snappy
-    # Key codes arrive together anyway, so they are still read as one sequence
-    KEYTIMEOUT=1  # 10ms, the minimum (0 would wait forever instead)
+    # zsh acts on a lone Esc after the shortest wait, 10 ms, since 0 would wait forever
+    # The bytes of a key code arrive together, so zsh still reads them as one sequence
+    KEYTIMEOUT=1
 
 
     # LOCAL
-    # Source local zsh config, if it exists
     local local_zsh_path="$HOME/.local.zsh"
     if [[ -f "$local_zsh_path"  ]]; then
         source "$local_zsh_path"
@@ -98,13 +93,11 @@ function() {
 
 
     # EXTENSIONS
-    # Source modules
     source "$HOME/.zsh-modules/main.zsh"
 
 }
 
-# NOTES
-# We use anonymous function to scope variables and avoid flooding the env
+# The anonymous function keeps these variables out of the shell
 # Ref: https://stackoverflow.com/a/13670749
-# It is generally recommended to always run autoload with -Uz flags
+# autoload always takes -Uz: -U ignores the caller's aliases, and -z loads the function the zsh way
 # Ref: https://unix.stackexchange.com/a/214306

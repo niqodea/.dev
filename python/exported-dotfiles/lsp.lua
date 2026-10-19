@@ -1,7 +1,4 @@
 return function(cmp_nvim_lsp)
-    -- Best lightweight server, but no environment-wide autoimport
-    -- Also document symbols currently include imports
-    -- Ref: https://github.com/pappasam/jedi-language-server/issues/288
     vim.lsp.config('ty', {
         cmd = { 'ty', 'server' },
         filetypes = { 'python' },
@@ -33,6 +30,4 @@ return function(cmp_nvim_lsp)
         vim.cmd('split | terminal ' .. command)
         vim.api.nvim_buf_set_option(0, 'buflisted', false)
     end, {})
-
-    -- TODO: Try ty LSP
 end

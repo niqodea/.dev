@@ -2,10 +2,10 @@
     name = Nicola De Angeli
     # email = "someemail@somedomain.com"
 [core]
-    excludesfile = ~/.gitignore  # Global gitignore
+    excludesfile = ~/.gitignore  # Ignored in every repository
 [merge]
-    conflictstyle = diff3  # Also show common ancestor in conflicts
+    conflictstyle = diff3  # Conflicts also show the common ancestor
 [pull]
-    rebase = true  # Rebase instead of merge to incorporate remote changes
+    rebase = true  # Pulling rebases local commits instead of adding a merge commit
 [push]
-    autoSetupRemote = true  # Create on remote a branch with same name on first push
+    autoSetupRemote = true  # The first push creates a remote branch of the same name

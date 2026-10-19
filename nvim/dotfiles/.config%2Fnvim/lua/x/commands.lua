@@ -24,9 +24,8 @@ function M.reload_buffers()
             goto continue
         end
         vim.api.nvim_buf_call(bufnr, function()
-            -- NOTE: editing a buffer with nvim_buf_call has the following issue:
-            -- https://github.com/neovim/neovim/issues/25877
-            -- For now, as a hack, we temporarily disable matchparen in the following way
+            -- :edit inside nvim_buf_call trips over matchparen, which is switched off for the call by emptying matchpairs
+            -- Ref: https://github.com/neovim/neovim/issues/25877
             local matchpairs = vim.o.matchpairs
             vim.o.matchpairs = ""
 

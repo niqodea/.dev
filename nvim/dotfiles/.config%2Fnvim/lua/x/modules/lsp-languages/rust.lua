@@ -1,4 +1,3 @@
--- TODO: This config kind of works for now, but probably can be improved
 return function(cmp_nvim_lsp)
     vim.lsp.config('rust_analyzer', {
         cmd = { 'rust-analyzer' },

@@ -1,16 +1,15 @@
 ZSH_MONITOR_EXIT_CODE=0
 
-# Only monitor exit code if we execute a command
+# An empty command line keeps the last exit code, which is not reported twice
 function enable_monitor_exit_code() {
     ZSH_MONITOR_EXIT_CODE=1
 }
 preexec_functions+=(enable_monitor_exit_code)
 
 function monitor_exit_code() {
-    exit_code="$?"  # capture it immediately or it will be lost
+    exit_code="$?"  # Any command in this function overwrites $?
 
     if [ "$ZSH_MONITOR_EXIT_CODE" != 1 ]; then
-        # A command has not been executed, no exit code to monitor
         return
     fi
     ZSH_MONITOR_EXIT_CODE=0

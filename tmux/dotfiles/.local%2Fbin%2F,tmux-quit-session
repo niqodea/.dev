@@ -20,7 +20,7 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
 
     status="$(tmux show-options -pv -t "$pane_id" @status)"
     if [ "$status" != 'idle' ]; then
-        # Prefix pane id with % to escape the leading % character
+        # display-message expands %, so the pane ID's leading % is doubled
         tmux display-message "Pane %$pane_id is not idle"
         exit
     fi

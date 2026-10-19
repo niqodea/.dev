@@ -1,4 +1,3 @@
--- Remove instructions banner from netrw
 vim.g.netrw_banner = 0
 -- Show a directory's past listing instead of rewriting it on every visit. Rewriting it scrambles
 -- the lines CTRL-O and CTRL-I remember in it, which gives E19 errors and presses that go nowhere.
@@ -17,7 +16,7 @@ end
 
 
 local function explore_cwd()
-    -- `Explore .` won't work when already in netrw for some reason
+    -- `Explore .` does nothing inside a netrw listing, so the folder is named in full
     local cwd = vim.fn.getcwd()
     explore(vim.fn.fnameescape(cwd))
 end
@@ -106,7 +105,7 @@ vim.api.nvim_create_autocmd('FileType', {
     end,
 })
 
--- Quick file explorer (we use '-' for consistency with netrw)
+-- - opens the explorer, the way - goes up a folder inside netrw
 vim.api.nvim_create_user_command('ExploreDirectory', explore_directory, {})
 vim.api.nvim_create_user_command('ExploreCwd', explore_cwd, {})
 vim.api.nvim_create_user_command('ExploreGitRoot', explore_git_root, {})

@@ -1,5 +1,5 @@
 function prompt_git() {
-    # TODO: Maybe build string instead of printing as we go
+    # TODO: Build the result in a variable instead of printing it piece by piece
 
     local hash_burger_length=7  # Same as git default for short SHA
 
@@ -26,12 +26,10 @@ function prompt_git() {
 
     local current_ref=$(git rev-parse --abbrev-ref HEAD)
     if [ "$current_ref" = "HEAD" ]; then
-        # Detached HEAD, print the short SHA
-        printf ' '  # Detached
+        printf ' '  # Detached HEAD
         printf '%s' "$(git rev-parse --short HEAD)"
     else
-        # HEAD points to branch, print branch's name burger hash
-        printf '>'  # Attached
+        printf '>'  # On a branch
         local current_branch="$current_ref"
         printf '%s' "$(hburger hash -l 3 -c 2 -r 2 -p " " -- "$current_branch")"
     fi

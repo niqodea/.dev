@@ -18,20 +18,18 @@ case "$pane_type" in
 esac
 
 if [ "$(tmux show-options -pv @status)" = 'idle' ]; then
-    # Prefix pane id with % to escape the leading % character
     tmux display-message 'Pane is idle'
     exit
 fi
 
 zsh_pid=$(tmux display-message -p '#{@zsh_pid}')
-# Heuristic: get the oldest child process of the shell
+# The shell's oldest child is most likely the command it runs
 if ! command_pid=$(pgrep -o -P "$zsh_pid"); then
     tmux display-message 'No command to kill found'
     exit
 fi
 
-# Use send-keys "" for no-op, true operation is the code below the if statement
-# Prefix pane id with % to escape the leading % character
+# confirm-before needs a command to run, so it gets one that does nothing, and the kill comes after
 if ! tmux confirm-before -p "Kill process $command_pid in pane?" 'send-keys ""'; then
     exit
 fi

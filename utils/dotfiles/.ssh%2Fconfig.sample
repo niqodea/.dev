@@ -3,10 +3,10 @@ Host abc
     hostname 0.0.0.0
 
 Host *
-    # Use a ControlMaster to speed up subsequent connections
+    # Later connections reuse the first one, so they open faster
     ControlPath ~/.ssh/controlmasters/%C
     ControlMaster auto
 
-    # Enables running local commands with <Enter>~C!
+    # Lets <Enter>~C! run local commands
     PermitLocalCommand yes
     EnableEscapeCommandline yes

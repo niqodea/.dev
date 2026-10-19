@@ -8,7 +8,6 @@ root="$(dirname "$(realpath "$0")")"
 . "$root/.foundation/profile"
 
 if [ "$#" -eq 0 ]; then
-    # Install all modules
     modules=$(find "$root/"* -maxdepth 0 -type d -exec basename {} \;)
 else
     modules="$*"

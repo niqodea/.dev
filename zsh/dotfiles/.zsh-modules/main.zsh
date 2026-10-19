@@ -12,7 +12,7 @@ function _activate_extra_module() {
     if [ -n "$2" ]; then
         local config="$2"
     else
-        local config='{}'  # empty config
+        local config='{}'
     fi
 
     if echo "$DOTDEV_ZSH_EXTRA_MODULES" | jq -e ".$extra_module" > /dev/null ; then

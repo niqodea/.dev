@@ -20,7 +20,6 @@ esac
 status="$(tmux show-options -pv @status)"
 
 if [ "$status" != 'idle' ]; then
-    # Prefix pane id with % to escape the leading % character
     tmux display-message "Pane is not idle"
     exit
 fi

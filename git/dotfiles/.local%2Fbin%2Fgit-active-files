@@ -3,12 +3,10 @@
 origin_head=$(git rev-parse origin/HEAD)
 active_file_paths=$(git diff --name-only "$origin_head"...)
 
-current_path=$(git rev-parse --show-prefix) # empty if in root of git repo
+current_path=$(git rev-parse --show-prefix) # Empty at the repository's root
 
 for active_file_path in $active_file_paths; do
-    # NOTE: This assumes paths do not contain .. or . components
-    # This is the case for git paths returned by the above git commands
-
+    # git prints paths without . or .. components, which the loops below rely on
     diverging_current_path="$current_path"
     diverging_active_file_path="$active_file_path"
 

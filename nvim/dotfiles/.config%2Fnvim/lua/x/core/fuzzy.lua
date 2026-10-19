@@ -4,20 +4,19 @@ vim.cmd('packadd fzf-lua')
 M.fzf_lua = require('fzf-lua')
 
 M.fzf_lua.setup{
-    -- Set POSIX-compliant find command for MacOS
+    -- A POSIX find, which works on macOS too
     files = { cmd = 'find . -type f' }
 }
 
--- Fuzzy find through files
 vim.keymap.set('n', '<leader>f-', function() M.fzf_lua.files() end)
 vim.keymap.set('n', '<leader>f/', function() M.fzf_lua.live_grep() end)
 vim.keymap.set('n', '<leader>f*', function() M.fzf_lua.grep_cword() end)
 vim.keymap.set('v', '<leader>f*', function() M.fzf_lua.grep_visual() end)
 
--- Fuzzy find through open buffers, leaving out the current one so the previous one comes first
+-- The current buffer is left out, so the previous one comes first
 vim.keymap.set('n', '<leader>fb', function() M.fzf_lua.buffers({ ignore_current_buffer = true }) end)
 
--- Fuzzy find through files in the current directory
+-- The capital F searches from the current file's folder
 vim.keymap.set('n', '<leader>F-', function() M.fzf_lua.files({ cwd = vim.fn.expand('%:p:h') }) end)
 vim.keymap.set('n', '<leader>F/', function() M.fzf_lua.live_grep({ cwd = vim.fn.expand('%:p:h') }) end)
 vim.keymap.set('n', '<leader>F*', function() M.fzf_lua.grep_cword({ cwd = vim.fn.expand('%:p:h') }) end)

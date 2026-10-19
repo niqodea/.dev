@@ -1,6 +1,6 @@
 setopt PROMPT_SUBST
 
-# TODO: Change to prepend/append to prompt base
+# TODO: Take what to add before or after the prompt base, instead of a whole new base
 function setup_prompt_base() {
     export DOTDEV_PROMPT_BASE="$1"
 
@@ -9,11 +9,9 @@ function setup_prompt_base() {
     export PROMPT="$DOTDEV_PROMPT_BASE$COLOR_OFF$SHELL_STATE "
 }
 
-# TODO: Rename this function (does not necessarily compress)
-# TODO: This will probably need to be refactored/implemented in a different language
-#       if we want to support injectable burger parameters
+# TODO: Move to another language once hburger's parameters need to be configurable
 function format_path() {
-    # TODO: Maybe build string instead of printing as we go
+    # TODO: Build the result in a variable instead of printing it piece by piece
 
     local input="$1"
     local num_start_components="$2"

@@ -21,7 +21,6 @@ esac
 
 status="$(echo "$pane_options" | awk '$1 == "@status" {print $2}')"
 if [ "$status" = 'idle' ]; then
-    # No command information to show
     exit
 fi
 

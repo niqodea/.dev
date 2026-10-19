@@ -13,10 +13,9 @@ shift
 if [ "$command" = 'connect' ]; then
     destination="$1"
     SSH_DESTINATION="$destination" ssh "$destination"
-# subcommands below to be used when connected with <Enter>~C!
-# NOTE: requires PermitLocalCommand and EnableEscapeCommandLine in ~/.ssh/config
-# NOTE: we need to use a separate background process to release the lock on the ssh controlmaster
-#   this sadly makes the command async, seems to be no way around this though
+# put and yank run from inside a connection, through <Enter>~C!, which needs PermitLocalCommand and EnableEscapeCommandline
+# Each runs in the background, since the inner ssh needs the control master, which stays busy until the escape command returns
+# So the copy can finish after the prompt is back
 elif [ "$command" = 'put' ]; then
     (,clipboard read | ssh "$SSH_DESTINATION" 'source .profile; ,clipboard write') &
 elif [ "$command" = 'yank' ]; then

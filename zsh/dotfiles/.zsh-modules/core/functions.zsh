@@ -23,8 +23,8 @@ post_ssh_workstation_functions=()
 function ,sw () {
     local workstation="$1"
 
-    local ssh_options=(-t)  # -t to specify a command to run at the end
-    # Options for sturdier connections
+    local ssh_options=(-t)  # The remote command is interactive, so it needs a terminal
+    # A keepalive every minute stops an idle connection from being dropped
     ssh_options+=(-o ServerAliveInterval=60 -o ServerAliveCountMax=3)
 
     for port in {50000..50019}; do
@@ -32,8 +32,7 @@ function ,sw () {
     done
 
     for f in "${pre_ssh_workstation_functions[@]}"; do "$f" "$workstation"; done
-    # Connect to tmux, launching the server if necessary
-    # Source ~/.profile as otherwise ~/.local/bin is not included in the path
+    # ssh runs the command in a shell that has not read ~/.profile, so PATH lacks ~/.local/bin
     ssh "${ssh_options[@]}" "$workstation" 'source ~/.profile && ,tmux-launch'
     for f in "${post_ssh_workstation_functions[@]}"; do "$f"; done
 }

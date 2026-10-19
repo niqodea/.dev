@@ -1,6 +1,4 @@
-# Prevent tmux from asking the terminal emulator for capabilities, as this can cause the terminal
-# emulator to send escape sequences that are not understood by tmux due to setting escape-time to 0.
-# NOTE: This assumes that the terminal emulator in use supports these capabilities.
-# NOTE: This TERM variable is not inherited by the tmux server when started from the shell
-#       Use default-terminal to set the default TERM for the tmux server
+# tmux would otherwise ask the terminal for its capabilities, and can misread the answer as key presses
+# This assumes the terminal supports what tmux-256color describes
+# A tmux server started from a shell does not inherit this TERM
 export TERM="tmux-256color"

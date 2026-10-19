@@ -4,9 +4,8 @@ function set_tmux_pane_idle() {
 }
 
 function set_tmux_pane_running() {
-    # Set pane title to running command
     COMMAND="$1"
-    # Escape newlines, otherwise tmux will not display the title
+    # tmux does not show a title with a newline in it
     tmux select-pane -t "$TMUX_PANE" -T "${COMMAND//$'\n'/\\n}"
     tmux set-option -t "$TMUX_PANE" -p @status running
 }
@@ -42,19 +41,15 @@ function () {
     tmux set-option -t "$TMUX_PANE" -p @pane_type zsh
     tmux set-option -t "$TMUX_PANE" -p @zsh_pid "$$"
 
-    # Initially set the pane to idle
     set_tmux_pane_idle
-    # Call these functions before and after a command
     preexec_functions+=(set_tmux_pane_running)
     precmd_functions+=(set_tmux_pane_idle)
 
-    # Keep track of zsh's cwd and extra modules
     set_tmux_pane_cwd
     chpwd_functions+=(set_tmux_pane_cwd)
     set_tmux_pane_zsh_extra_modules
     precmd_functions+=(set_tmux_pane_zsh_extra_modules)
 
-    # Be aware of workstation name for a pane during ssh
     pre_ssh_workstation_functions+=(set_tmux_ssh_workstation)
     post_ssh_workstation_functions+=(unset_tmux_ssh_workstation)
 }
