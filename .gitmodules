@@ -1,9 +1,6 @@
 [submodule "nvim/dotfiles-submodules/aerial.nvim"]
 	path = nvim/dotfiles-submodules/aerial.nvim
 	url = https://github.com/stevearc/aerial.nvim.git
-[submodule "nvim/dotfiles-submodules/cmp-nvim-lsp"]
-	path = nvim/dotfiles-submodules/cmp-nvim-lsp
-	url = https://github.com/hrsh7th/cmp-nvim-lsp.git
 [submodule "nvim/dotfiles-submodules/fzf-lua"]
 	path = nvim/dotfiles-submodules/fzf-lua
 	url = https://github.com/ibhagwan/fzf-lua.git
@@ -13,12 +10,6 @@
 [submodule "nvim/dotfiles-submodules/lasso.nvim"]
 	path = nvim/dotfiles-submodules/lasso.nvim
 	url = https://github.com/niqodea/lasso.nvim.git
-[submodule "nvim/dotfiles-submodules/nvim-cmp"]
-	path = nvim/dotfiles-submodules/nvim-cmp
-	url = https://github.com/hrsh7th/nvim-cmp.git
-[submodule "nvim/dotfiles-submodules/nvim-snippy"]
-	path = nvim/dotfiles-submodules/nvim-snippy
-	url = https://github.com/dcampos/nvim-snippy.git
 [submodule "python/bin-submodules/ropify"]
 	path = python/bin-submodules/ropify
 	url = https://github.com/niqodea/ropify

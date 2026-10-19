@@ -1,10 +1,7 @@
-vim.cmd('packadd cmp-nvim-lsp')
-local cmp_nvim_lsp = require('cmp_nvim_lsp')
-cmp_nvim_lsp.setup()
 local language_files = vim.api.nvim_get_runtime_file('lua/x/modules/lsp-languages/*.lua', true)
 for _, language_file in ipairs(language_files) do
     local language = language_file:match(".+/([^/]+)%.lua")
-    require('x.modules.lsp-languages.' .. language)(cmp_nvim_lsp)
+    require('x.modules.lsp-languages.' .. language)
 end
 
 -- ; ends statements in many languages, and is easy to type
@@ -25,26 +22,27 @@ vim.diagnostic.config({signs = false})
 vim.api.nvim_set_hl(0, "DiagnosticUnderlineError", { underline = true, ctermfg = 'DarkRed' })
 vim.api.nvim_set_hl(0, "DiagnosticUnderlineWarn", { underline = true, ctermfg = 'DarkYellow' })
 
-vim.cmd('packadd nvim-cmp')
-local cmp = require('cmp')
-cmp.setup {
-    sources = { { name = 'nvim_lsp' } },
-    mapping = cmp.mapping.preset.insert(
-        {
-            ['<C-u>'] = cmp.mapping.scroll_docs(-4),
-            ['<C-d>'] = cmp.mapping.scroll_docs(4),
-            ['<CR>'] = cmp.mapping.confirm {
-                behavior = cmp.ConfirmBehavior.Replace,
-                select = false,  -- Enter confirms only an item picked by hand, and otherwise starts a new line
-            },
-        }
-    ),
-    snippet = {
-        expand = function(args)
-            require('x.core.snippet').snippy.expand_snippet(args.body)
-        end,
-    },
-}
+-- The menu shows a single match too, and no match is picked until picked by hand
+vim.opt.completeopt:append({ 'menuone', 'noselect' })
+vim.api.nvim_create_autocmd('LspAttach', {
+    callback = function(args)
+        local client = assert(vim.lsp.get_client_by_id(args.data.client_id))
+        if client:supports_method('textDocument/completion') then
+            -- Accepting a match also applies its snippet and the server's extra edits
+            vim.lsp.completion.enable(true, client.id, args.buf)
+            -- The menu opens as you type, with the server's matches only
+            vim.bo[args.buf].complete = 'o'
+            vim.bo[args.buf].autocomplete = true
+        end
+    end,
+})
+-- Enter accepts a match picked by hand, the way <C-y> does, which also expands its snippet, and otherwise starts a new line
+vim.keymap.set('i', '<CR>', function()
+    if vim.fn.complete_info({ 'selected' }).selected == -1 then
+        return '<CR>'
+    end
+    return '<C-y>'
+end, { expr = true })
 
 vim.cmd('packadd aerial.nvim')
 require('aerial').setup({

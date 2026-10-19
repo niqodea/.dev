@@ -1,26 +1,24 @@
-return function(cmp_nvim_lsp)
-    vim.lsp.config('rust_analyzer', {
-        cmd = { 'rust-analyzer' },
-        filetypes = { 'rust' },
-        root_markers = { '.' },
-        settings = {
-            ['rust-analyzer'] = {
-                imports = {
-                    granularity = {
-                        group = "module",
-                    },
-                    prefix = "self",
+vim.lsp.config('rust_analyzer', {
+    cmd = { 'rust-analyzer' },
+    filetypes = { 'rust' },
+    root_markers = { '.' },
+    settings = {
+        ['rust-analyzer'] = {
+            imports = {
+                granularity = {
+                    group = "module",
                 },
-                cargo = {
-                    buildScripts = {
-                        enable = true,
-                    },
-                },
-                procMacro = {
-                    enable = true
+                prefix = "self",
+            },
+            cargo = {
+                buildScripts = {
+                    enable = true,
                 },
             },
+            procMacro = {
+                enable = true
+            },
         },
-    })
-    vim.lsp.enable('rust_analyzer')
-end
+    },
+})
+vim.lsp.enable('rust_analyzer')
