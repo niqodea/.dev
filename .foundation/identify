@@ -12,6 +12,9 @@ case "$(uname -s)" in
         fi
         ;;
     *)
-        # Printing nothing tells the caller the operating system is unknown
+        # Reported as unknown below
         ;;
 esac
+
+>&2 echo "Error: unknown operating system"
+exit 1

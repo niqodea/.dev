@@ -2,4 +2,4 @@
 
 set -eu
 
-echo "/usr/bin/$1"
+echo "/usr"

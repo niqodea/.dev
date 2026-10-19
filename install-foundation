@@ -7,10 +7,6 @@ root="$(dirname "$(realpath "$0")")"
 foundation_path="$root/.foundation"
 
 os=$("$foundation_path/identify")
-if [ -z "$os" ]; then
-    >&2 echo "Error: unknown operating system"
-    exit 1
-fi
 
 # Run with the environment a new terminal will have, which a fresh machine does not have yet
 . "$foundation_path/profile"
@@ -18,7 +14,7 @@ fi
 mkdir -p "$HOME/$DOTDEV_ATDIR"
 backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
 
-"$foundation_path/prerequisites/$os"
+"$foundation_path/install-system-tools/$os"
 
 mkdir -p "$HOME/.local/bin"
 
@@ -43,17 +39,12 @@ for command in "$foundation_path/bin/"*; do
     fi
 done
 
-setup_path="$foundation_path/setup/$os"
-if [ -e "$setup_path" ]; then
-    "$setup_path" "$backup_path"
-fi
-
 rsync --archive --checksum --backup --backup-dir="$backup_path" "$foundation_path/profile" "$HOME/.profile"
 
-mkdir -p "$HOME/.profile.d"
-profiled_homebrew_path="$foundation_path/profiled-homebrew/$os"
-if [ -e "$profiled_homebrew_path" ]; then
-    rsync --archive --checksum --backup --backup-dir="$backup_path/.profile.d" "$profiled_homebrew_path" "$HOME/.profile.d/homebrew"
+os_profile_path="$foundation_path/profile.d/$os"
+if [ -e "$os_profile_path" ]; then
+    mkdir -p "$HOME/.profile.d"
+    rsync --archive --checksum --backup --backup-dir="$backup_path/.profile.d" "$os_profile_path" "$HOME/.profile.d/os"
 fi
 
 # Packages that other modules depend on

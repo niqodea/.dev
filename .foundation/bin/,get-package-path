@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -eu
+
+prefix="$("$HOME/.local/bin/,get-package-prefix")"
+echo "$prefix/bin/$1"

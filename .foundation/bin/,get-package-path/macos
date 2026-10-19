@@ -1,6 +1,0 @@
-#!/bin/sh
-
-set -eu
-
-prefix="$("$HOME/.local/bin/,get-homebrew-prefix")"
-echo "$prefix/bin/$1"
