@@ -24,7 +24,7 @@ python_version="$(awk '$1 == "python3" { print $2 }' "$root/program-versions")"
 UV_PYTHON_BIN_DIR="$HOME/.local/opt/uv-python-bin" uv python install "$python_version"
 ,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-python-bin/python$python_version" python3
 
-# Each version gets a folder of its own, whose name tells ,check-program-versions the version
+# Each version gets a folder named after it, so the install path says which version it is
 ruff_version='0.17.1'
 ruff_path="$HOME/.local/opt/ruff-$ruff_version"
 UV_TOOL_DIR="$ruff_path" UV_TOOL_BIN_DIR="$ruff_path/bin" uv tool install "ruff==$ruff_version"

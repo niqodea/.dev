@@ -8,7 +8,7 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
         zsh)
             ;;
         claude)
-            # An accidental M-Q must not close Claude
+            # Claude is only ever closed from Claude itself
             tmux display-message "Pane %$pane_id runs Claude, quit it from Claude"
             exit
             ;;

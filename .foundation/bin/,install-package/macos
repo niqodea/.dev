@@ -8,5 +8,5 @@ if [ "$#" -eq 0 ]; then
 fi
 
 prefix="$("$HOME/.local/bin/,get-package-prefix")"
-# brew is not on PATH yet in the shell that installed it, so it is called by its full path
+# brew is called by its full path, so it works whatever PATH holds
 "$prefix/bin/brew" install "$@"

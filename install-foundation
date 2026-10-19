@@ -39,7 +39,7 @@ for command in "$foundation_path/bin/"*; do
     fi
 done
 
-# Runs after the commands above, which compute where the package manager goes
+# A system's package manager may use the foundation's commands
 install_package_manager_path="$foundation_path/install-package-manager/$os"
 if [ -e "$install_package_manager_path" ]; then
     "$install_package_manager_path"

@@ -8,7 +8,7 @@ if ! tmux has-session -t "=$1" 2> /dev/null; then
         # The home session belongs to no project
         tmux new-session -d -n "" -s '~' -c "$HOME"
     elif [ -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
-        # The same variable that ,enter-project sets
+        # Every shell inside a project has DOTDEV_PROJECT set to the project's name
         tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_PROJECT="$1"
     else
         >&2 echo "No project named $1"

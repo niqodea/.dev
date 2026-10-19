@@ -12,7 +12,7 @@ if [ ! -d "$HOME/$project/$DOTDEV_ATDIR/project" ]; then
     exit 1
 fi
 
-# The same variable that ,tmux-open-session gives a project's session
+# Every shell inside a project has DOTDEV_PROJECT set to the project's name
 export DOTDEV_PROJECT="$project"
 cd "$HOME/$project"
 exec "$SHELL"

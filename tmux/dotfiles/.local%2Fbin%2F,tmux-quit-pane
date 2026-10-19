@@ -7,7 +7,7 @@ case "$pane_type" in
     zsh)
         ;;
     claude)
-        # An accidental M-q must not close Claude
+        # Claude is only ever closed from Claude itself
         tmux display-message "Pane runs Claude, quit it from Claude"
         exit
         ;;

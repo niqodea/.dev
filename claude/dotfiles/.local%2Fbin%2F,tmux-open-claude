@@ -4,7 +4,7 @@ set -eu
 
 session=$(tmux display-message -p '#{session_name}')
 
-# Holding M-; repeats it, and two runs could both find no Claude pane
+# A session has at most one Claude, even when two runs start at once
 tmux wait-for -L "claude-$session"
 trap 'tmux wait-for -U "claude-$session"' EXIT
 

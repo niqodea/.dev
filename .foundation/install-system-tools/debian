@@ -4,7 +4,5 @@ set -eu
 
 # apt only knows the packages in its local lists, and a fresh machine can have them empty or out of date
 sudo apt update
-# curl downloads rustup, and Rust links its programs with the system's C compiler and C library
-sudo apt install curl gcc libc6-dev
-# ,list-project-listeners finds servers with lsof, which a minimal Debian does not have
-sudo apt install lsof
+# What the foundation needs that a minimal Debian lacks
+sudo apt install curl gcc libc6-dev lsof

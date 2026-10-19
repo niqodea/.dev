@@ -35,7 +35,7 @@ mkdir -p "$HOME/.local/opt"
 tmp="$(mktemp -d "$HOME/.local/opt/.nvim.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
-# Debian 12 has nvim 0.7, and the LSP setup needs 0.11
+# Debian 12 has nvim 0.7, which is too old for this setup
 neovim_path="$HOME/.local/opt/nvim-$neovim_version"
 if [ ! -e "$neovim_path" ]; then
     curl --fail --silent --show-error --location --max-time 300 --output "$tmp/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/$neovim_version/nvim-$os-$neovim_arch.tar.gz"

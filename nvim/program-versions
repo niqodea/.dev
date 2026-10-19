@@ -1,5 +1,5 @@
 # program     at least   below
-# vim.lsp.config, in the LSP setup, needs 0.11
+# vim.lsp.config needs 0.11
 nvim          0.11       0.13
 # tree-sitter 0.26 needs glibc 2.39, and Debian 12 has 2.36
 tree-sitter   0.25       0.26

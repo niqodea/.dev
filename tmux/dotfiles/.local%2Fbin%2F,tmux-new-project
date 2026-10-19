@@ -8,6 +8,6 @@ if [ -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
 fi
 
 mkdir -p "$HOME/$1/$DOTDEV_ATDIR/project"
-# Making a project is its first visit, so M-/ lists every project from the start
+# Every project has a visit file from the moment it exists
 touch "$HOME/$1/$DOTDEV_ATDIR/tmux-session-visit"
 ,tmux-open-session "$1"
