@@ -10,7 +10,7 @@ link_path="$HOME/.local/bin/$name"
 if [ "$(readlink "$link_path")" = "$target_path" ]; then
     exit
 fi
-# Keeps whatever was there before, so nothing is lost unnoticed
+# The old file goes into the backup, so nothing is lost
 if [ -e "$link_path" ] || [ -h "$link_path" ]; then
     mkdir -p "$backup_path/.local/bin"
     mv "$link_path" "$backup_path/.local/bin/$name"

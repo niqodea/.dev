@@ -8,5 +8,5 @@ if [ "$#" -eq 0 ]; then
 fi
 
 prefix="$("$HOME/.local/bin/,get-package-prefix")"
-# Not on PATH right after install-package-manager installs it
+# brew is not on PATH yet in the shell that installed it, so it is called by its full path
 "$prefix/bin/brew" install "$@"

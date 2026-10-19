@@ -2,7 +2,7 @@
 
 set -eu
 
-# A fresh machine can have no package lists, or outdated ones, and then apt cannot find or download packages
+# apt only knows the packages in its local lists, and a fresh machine can have them empty or out of date
 sudo apt update
 # curl downloads rustup, and Rust links its programs with the system's C compiler and C library
 sudo apt install curl gcc libc6-dev

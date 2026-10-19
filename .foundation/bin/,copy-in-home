@@ -7,7 +7,7 @@ source_path="$2"
 home_relative_path="$3"
 
 if [ -d "$source_path" ]; then
-    >&2 echo "Error: $source_path is a folder, and only files can be copied"
+    >&2 echo "Error: $source_path is a folder, but ,copy-in-home only copies files"
     exit 1
 fi
 
@@ -16,7 +16,7 @@ if [ -e "$target_path" ] || [ -h "$target_path" ]; then
     if cmp -s "$source_path" "$target_path"; then
         exit
     fi
-    # Keeps whatever was there before, so nothing is lost unnoticed
+    # The old file goes into the backup, so nothing is lost
     mkdir -p "$(dirname "$backup_path/$home_relative_path")"
     mv "$target_path" "$backup_path/$home_relative_path"
 fi

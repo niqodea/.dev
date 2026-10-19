@@ -39,7 +39,7 @@ for command in "$foundation_path/bin/"*; do
     fi
 done
 
-# The package manager's location can depend on the commands above
+# Runs after the commands above, which compute where the package manager goes
 install_package_manager_path="$foundation_path/install-package-manager/$os"
 if [ -e "$install_package_manager_path" ]; then
     "$install_package_manager_path"

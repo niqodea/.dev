@@ -12,7 +12,7 @@ case "$(uname -s)" in
         fi
         ;;
     *)
-        # Reported as unknown below
+        # Any other system falls through to the error below
         ;;
 esac
 
