@@ -42,6 +42,22 @@ function() {
     setopt PUSHD_SILENT
 
 
+    # RECENT DIRECTORIES
+    autoload -Uz chpwd_recent_dirs cdr add-zsh-hook
+    add-zsh-hook chpwd chpwd_recent_dirs
+    if [ -n "$DOTDEV_PROJECT" ]; then
+        # A project keeps its own recent directories, the way it keeps its own history
+        zstyle ':chpwd:*' recent-dirs-file "$HOME/$DOTDEV_PROJECT/$DOTDEV_ATDIR/project/recent-dirs.zsh"
+    fi
+    function ,cdr () {
+        local choice="$(cdr -l | fzf --prompt='recent > ' --border=rounded --reverse --no-sort)"
+        if [ -z "$choice" ]; then
+            return
+        fi
+        cdr "${choice%% *}"
+    }
+
+
     # COMPLETION
     # Ref: https://thevaluable.dev/zsh-completion-guide-examples/
     # Ref: https://github.com/Phantas0s/.dotfiles/blob/4c41b4865528714dbdeb18c8da42b4d1ca5a2182/zsh/completion.zsh
