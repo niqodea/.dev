@@ -13,14 +13,14 @@ return function(set_qflist, set_loclist)
     end, {})
 
     local ruff_title = 'Ruff'
-    local mypy_base_command = 'ruff check --output-format=concise '
+    local ruff_base_command = 'ruff check --output-format=concise '
     vim.api.nvim_create_user_command('PythonRuff', function()
         local file_path = vim.fn.expand('%:p')
-        local command = mypy_base_command .. vim.fn.shellescape(file_path)
+        local command = ruff_base_command .. vim.fn.shellescape(file_path)
         set_loclist(ruff_title, command)
     end, {})
     vim.api.nvim_create_user_command('PythonRuffProject', function()
-        local command = mypy_base_command .. vim.fn.shellescape(vim.fn.getcwd())
+        local command = ruff_base_command .. vim.fn.shellescape(vim.fn.getcwd())
         set_qflist(ruff_title, command)
     end, {})
 
