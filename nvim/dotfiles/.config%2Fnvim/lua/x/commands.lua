@@ -51,4 +51,13 @@ function M.reload_buffers()
 end
 
 
+function M.move_window(direction, split)
+    local neighbor = vim.fn.win_getid(vim.fn.winnr(direction))
+    if neighbor == vim.api.nvim_get_current_win() then
+        return
+    end
+    vim.api.nvim_win_set_config(0, { win = neighbor, split = split })
+end
+
+
 return M

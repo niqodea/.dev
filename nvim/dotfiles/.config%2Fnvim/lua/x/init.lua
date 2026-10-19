@@ -71,6 +71,11 @@ vim.keymap.set('n', '<C-left>', '2<C-w><')
 vim.keymap.set('n', '<C-down>', '2<C-w>+')
 vim.keymap.set('n', '<C-up>', '2<C-w>-')
 vim.keymap.set('n', '<C-right>', '2<C-w>>')
+-- An arrow moves the window into its neighbor's cell, split across the direction of travel, so repeated moves reach any cell
+vim.keymap.set('n', '<Left>', function() commands.move_window('h', 'above') end)
+vim.keymap.set('n', '<Down>', function() commands.move_window('j', 'left') end)
+vim.keymap.set('n', '<Up>', function() commands.move_window('k', 'right') end)
+vim.keymap.set('n', '<Right>', function() commands.move_window('l', 'below') end)
 
 vim.keymap.set('n', '<leader><C-t>', ':tabnew<cr>')
 vim.keymap.set('n', '<leader><C-n>', ':tabnext<cr>')

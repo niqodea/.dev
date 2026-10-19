@@ -15,7 +15,6 @@
 - Explore frecency solutions (zsh, nvim, ...)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported
 - Create alias to deal with processes more easily (exposed ports with `lsof`, better `psg`, etc.)
-- Find nvim window reordering solution (can be less complete than tmux's since closing a pane won't close the underlying buffer)
 - Look into other tools for a richer, semantic diff
 - Implement nvim string/lines diff solution (search the web, an idea could be to compare yank register and visual selection)
 - (maybe) add GPU usage to the load levels in the tmux status bar
