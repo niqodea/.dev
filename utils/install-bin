@@ -29,7 +29,8 @@ case "$(uname -s)" in
         key="$(curl --fail --silent --show-error --location --max-time 60 "https://download.docker.com/linux/$distro/gpg")"
         # Copied as our own user, so the backup belongs to us and not to root
         if [ -e "$key_path" ] && [ "$(cat "$key_path")" != "$key" ]; then
-            rsync --relative "$key_path" "$backup_path/"
+            mkdir -p "$backup_path$(dirname "$key_path")"
+            cp "$key_path" "$backup_path$key_path"
         fi
         sudo mkdir -p /etc/apt/keyrings
         printf '%s\n' "$key" | sudo tee "$key_path" > /dev/null
@@ -41,7 +42,8 @@ Components: stable
 Signed-By: $key_path"
         sources_path=/etc/apt/sources.list.d/docker.sources
         if [ -e "$sources_path" ] && [ "$(cat "$sources_path")" != "$sources" ]; then
-            rsync --relative "$sources_path" "$backup_path/"
+            mkdir -p "$backup_path$(dirname "$sources_path")"
+            cp "$sources_path" "$backup_path$sources_path"
         fi
         printf '%s\n' "$sources" | sudo tee "$sources_path" > /dev/null
         sudo apt update
@@ -58,4 +60,4 @@ docker_path="$(,get-package-path docker)"
 breadcrumbs_path="$root/bin-submodules/breadcrumbs"
 git -C "$root" submodule update --init "$breadcrumbs_path"
 cargo build --manifest-path="$breadcrumbs_path/Cargo.toml" --release
-,put-in-local-bin "$backup_path" "$breadcrumbs_path/target/release/breadcrumbs" breadcrumbs
+,copy-in-home "$backup_path" "$breadcrumbs_path/target/release/breadcrumbs" .local/bin/breadcrumbs

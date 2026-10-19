@@ -25,26 +25,25 @@ RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
 hburger_path="$foundation_path/bin-submodules/hburger"
 git -C "$root" submodule update --init "$hburger_path"
 "$HOME/.cargo/bin/cargo" build --manifest-path="$hburger_path/Cargo.toml" --release
-"$foundation_path/bin/,put-in-local-bin" "$backup_path" "$hburger_path/target/release/hburger" hburger
+"$foundation_path/bin/,copy-in-home" "$backup_path" "$hburger_path/target/release/hburger" .local/bin/hburger
 
 for command in "$foundation_path/bin/"*; do
     command_name="$(basename "$command")"
     if [ -f "$command" ]; then
-        "$foundation_path/bin/,put-in-local-bin" "$backup_path" "$command" "$command_name" # Same on every OS
+        "$foundation_path/bin/,copy-in-home" "$backup_path" "$command" ".local/bin/$command_name" # Same on every OS
         continue
     fi
     command_path="$command/$os"
     if [ -e "$command_path" ]; then
-        "$foundation_path/bin/,put-in-local-bin" "$backup_path" "$command_path" "$command_name"
+        "$foundation_path/bin/,copy-in-home" "$backup_path" "$command_path" ".local/bin/$command_name"
     fi
 done
 
-rsync --archive --checksum --backup --backup-dir="$backup_path" "$foundation_path/profile" "$HOME/.profile"
+"$foundation_path/bin/,copy-in-home" "$backup_path" "$foundation_path/profile" .profile
 
 os_profile_path="$foundation_path/profile.d/$os"
 if [ -e "$os_profile_path" ]; then
-    mkdir -p "$HOME/.profile.d"
-    rsync --archive --checksum --backup --backup-dir="$backup_path/.profile.d" "$os_profile_path" "$HOME/.profile.d/os"
+    "$foundation_path/bin/,copy-in-home" "$backup_path" "$os_profile_path" .profile.d/os
 fi
 
 # Packages that other modules depend on
