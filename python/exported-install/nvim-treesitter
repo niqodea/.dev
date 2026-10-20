@@ -2,7 +2,8 @@
 
 set -eu
 
-root="$(dirname "$(dirname "$(realpath "$0")")")"
+# Resolved, as git takes a submodule by its real path, not through a symlink
+root="$(realpath "$(dirname "$(realpath "$0")")/..module")"
 backup_path="$1"
 
 grammar_path="$root/bin-submodules/tree-sitter-python"
