@@ -8,3 +8,7 @@ root="$(dirname "$(realpath "$0")")"
 # git grep reads only regular tracked files, so symlinks and submodules are left out
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shellcheck
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shfmt --diff
+
+# An empty pattern matches every file with a line in it, which here means every regular tracked Lua file
+# --codes names each warning's rule, which an inline ignore has to name too
+git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs luacheck --config "$root/.luacheckrc" --quiet --codes
