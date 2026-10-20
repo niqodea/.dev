@@ -67,11 +67,14 @@ vim.keymap.set('n', '<leader>s', '<C-w>s')
 vim.keymap.set('n', '<leader>v', '<C-w>v')
 vim.keymap.set('n', '<leader>S', ':below split<cr>')
 vim.keymap.set('n', '<leader>V', ':below vsplit<cr>')
+local function has_window(direction)
+    return vim.fn.winnr(direction) ~= vim.fn.winnr()
+end
 -- An arrow moves a border in its direction: the right or bottom one when a window is there, otherwise the left or top one when a window is there
-vim.keymap.set('n', '<C-left>', function() return vim.fn.winnr('l') ~= vim.fn.winnr() and '2<C-w><' or vim.fn.winnr('h') ~= vim.fn.winnr() and '2<C-w>>' or '' end, { expr = true })
-vim.keymap.set('n', '<C-down>', function() return vim.fn.winnr('j') ~= vim.fn.winnr() and '2<C-w>+' or vim.fn.winnr('k') ~= vim.fn.winnr() and '2<C-w>-' or '' end, { expr = true })
-vim.keymap.set('n', '<C-up>', function() return vim.fn.winnr('j') ~= vim.fn.winnr() and '2<C-w>-' or vim.fn.winnr('k') ~= vim.fn.winnr() and '2<C-w>+' or '' end, { expr = true })
-vim.keymap.set('n', '<C-right>', function() return vim.fn.winnr('l') ~= vim.fn.winnr() and '2<C-w>>' or vim.fn.winnr('h') ~= vim.fn.winnr() and '2<C-w><' or '' end, { expr = true })
+vim.keymap.set('n', '<C-left>', function() return has_window('l') and '2<C-w><' or has_window('h') and '2<C-w>>' or '' end, { expr = true })
+vim.keymap.set('n', '<C-down>', function() return has_window('j') and '2<C-w>+' or has_window('k') and '2<C-w>-' or '' end, { expr = true })
+vim.keymap.set('n', '<C-up>', function() return has_window('j') and '2<C-w>-' or has_window('k') and '2<C-w>+' or '' end, { expr = true })
+vim.keymap.set('n', '<C-right>', function() return has_window('l') and '2<C-w>>' or has_window('h') and '2<C-w><' or '' end, { expr = true })
 -- An arrow moves the window into its neighbor's cell, split across the direction of travel, so repeated moves reach any cell
 vim.keymap.set('n', '<Left>', function() commands.move_window('h', 'above') end)
 vim.keymap.set('n', '<Down>', function() commands.move_window('j', 'left') end)
