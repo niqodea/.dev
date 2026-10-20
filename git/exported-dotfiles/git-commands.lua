@@ -30,7 +30,8 @@ local function diff_all()
     local branch_point = run_git({ 'merge-base', base_branch, 'HEAD' })[1]
     local root = run_git({ 'rev-parse', '--show-toplevel' })[1]
     -- --no-renames lists a renamed file as deleted and added, so each path is new or exists at the branch point
-    local diff_lines = run_git({ 'diff', '--unified=0', '--no-renames', branch_point })
+    -- core.quotePath=false keeps non-ASCII file names unquoted, as the header match reads them
+    local diff_lines = run_git({ '-c', 'core.quotePath=false', 'diff', '--unified=0', '--no-renames', branch_point })
     local items = {}
     local path
     -- A changed line can look like a header line, so file names are read only from the header
@@ -45,7 +46,8 @@ local function diff_all()
             table.insert(items, { filename = root .. '/' .. path, lnum = math.max(tonumber(line_number), 1), text = '' })
         elseif in_header then
             -- A deleted file has only its old path, and an added one only its new path
-            path = line:match('^%-%-%- a/(.*)') or line:match('^%+%+%+ b/(.*)') or path
+            -- git ends a name that contains a space with a tab, which is not part of the name
+            path = line:match('^%-%-%- a/(.-)\t?$') or line:match('^%+%+%+ b/(.-)\t?$') or path
         else
             local item = items[#items]
             -- An added line shows what the branch wrote, so it wins over a removed one
@@ -67,15 +69,16 @@ local function get_version_buf(commit, file_buf)
     if vim.b[buf].git_version ~= nil then
         return buf
     end
-    local folder = vim.fn.fnamemodify(path, ':h')
-    local name = vim.fn.fnamemodify(path, ':t')
-    local listed = run_git({ '-C', folder, 'ls-tree', '--name-only', commit, '--', name })
+    -- Found from the path alone, since a file deleted with its folder leaves no folder to run git in
+    local root = assert(vim.fs.root(path, '.git'), path .. ' is in no git repository')
+    local relative_path = vim.fs.relpath(root, path)
+    local listed = run_git({ '-C', root, 'ls-tree', '--name-only', commit, '--', relative_path })
     vim.bo[buf].buftype = 'nofile'
     vim.bo[buf].bufhidden = 'wipe'
     vim.fn.bufload(buf)
     -- A file added since that commit has no version there
     if #listed > 0 then
-        local lines = run_git({ '-C', folder, 'show', commit .. ':./' .. name })
+        local lines = run_git({ '-C', root, 'show', commit .. ':' .. relative_path })
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     end
     vim.bo[buf].modifiable = false
