@@ -4,4 +4,6 @@ set -eu
 
 # Each user gets a Homebrew of their own, as one shared between users fights over who owns its files
 # Homebrew uses its prebuilt packages only under a path no longer than /opt/homebrew, which this is
-echo "/opt/hb-$("$HOME/.local/bin/hburger" hash -l 2 -c 2 -r 1 -- "$USER")"
+# Assigned on its own line, since set -e does not stop on a command failing inside echo's argument
+hash="$("$HOME/.local/bin/hburger" hash -l 2 -c 2 -r 1 -- "$USER")"
+echo "/opt/hb-$hash"
