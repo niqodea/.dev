@@ -10,7 +10,7 @@
 - Write READMEs for all modules
 - (maybe) add configuration for optimized Xournal++ use (one hand for keyboard, other for pen) (if not possible with this tool, find another that best accommodates this workflow)
 - Install imagemagick, and write aliases for it and ffmpeg
-- Add linting for lua files, ..., to ./lint
+- Add linting for other file types to ./lint
 - Explore frecency solutions (zsh, nvim, ...)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported
 - Create alias to deal with processes more easily (exposed ports with `lsof`, better `psg`, etc.)
@@ -28,6 +28,5 @@
 - Add a test that installs everything on a fresh debian container (and macos runner)
 - Verify downloads with a pinned sha256 next to each version (nvim, tree-sitter, uv install script)
 - Check the fingerprint of the Docker GPG key before trusting it (Ref: https://docs.docker.com/engine/install/debian)
-- Lint .foundation/profile and other files which ./lint skips since they have no shebang
 - Fix the problem of breadcrumbs not being usable in dotfiles repos
 - (maybe) avoid the race between the background compinit and compinit -C over .zcompdump
