@@ -1,4 +1,4 @@
-function ,bkp () {
+function ,bkp() {
     local file_path="$1"
     if [ -z "$file_path" ]; then
         >&2 echo "No path provided"
@@ -20,10 +20,10 @@ function ,bkp () {
 pre_ssh_workstation_functions=()
 post_ssh_workstation_functions=()
 
-function ,sw () {
+function ,sw() {
     local workstation="$1"
 
-    local ssh_options=(-t)  # The remote command is interactive, so it needs a terminal
+    local ssh_options=(-t) # The remote command is interactive, so it needs a terminal
     # A keepalive every minute stops an idle connection from being dropped
     ssh_options+=(-o ServerAliveInterval=60 -o ServerAliveCountMax=3)
 

@@ -1,11 +1,11 @@
 function prompt_git() {
     # TODO: Build the result in a variable instead of printing it piece by piece
 
-    local hash_burger_length=7  # Same as git default for short SHA
+    local hash_burger_length=7 # Same as git default for short SHA
 
     local git_dir=$(git rev-parse --git-dir 2> /dev/null)
     if [ -z "$git_dir" ]; then
-        printf 'X'  # Not a git repo
+        printf 'X' # Not a git repo
         printf '%.s ' {1..$((hash_burger_length + 1))}
         return
     fi
@@ -26,21 +26,21 @@ function prompt_git() {
 
     local current_ref=$(git rev-parse --abbrev-ref HEAD)
     if [ "$current_ref" = "HEAD" ]; then
-        printf ' '  # Detached HEAD
+        printf ' ' # Detached HEAD
         printf '%s' "$(git rev-parse --short HEAD)"
     else
-        printf '>'  # On a branch
+        printf '>' # On a branch
         local current_branch="$current_ref"
         printf '%s' "$(hburger hash -l 3 -c 2 -r 2 -p " " -- "$current_branch")"
     fi
 }
 
-function () {
+function() {
     if [ "$DOTDEV_ZSH_GIT_SETUP" = 'true' ]; then
         return
     fi
     export DOTDEV_ZSH_GIT_SETUP='true'
 
-    local color_git='%F{034}'  # Green
+    local color_git='%F{034}' # Green
     setup_prompt_base "$DOTDEV_PROMPT_BASE$color_git"'($(prompt_git))'
 }

@@ -58,16 +58,16 @@ function() {
         return
     fi
 
-    local color_userhost='%F{099}'  # Purple
-    local color_cwd='%F{220}'  # Yellow
+    local color_userhost='%F{099}' # Purple
+    local color_cwd='%F{220}'      # Yellow
 
     setup_prompt_base "$color_userhost"'$(prompt_userhost)'"$color_cwd"'[$(prompt_cwd)]'
 }
 
 function() {
     if [ -z "${DOTDEV_PROMPT_BASE:+x}" ]; then
-        local color_userhost='%F{099}'  # Purple
-        local color_cwd='%F{220}'  # Yellow
+        local color_userhost='%F{099}' # Purple
+        local color_cwd='%F{220}'      # Yellow
         export DOTDEV_PROMPT_BASE="$color_userhost"'$(prompt_userhost)'"$color_cwd"'[$(prompt_cwd)]'
     fi
 

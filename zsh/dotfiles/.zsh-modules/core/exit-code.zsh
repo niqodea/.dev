@@ -7,7 +7,7 @@ function enable_monitor_exit_code() {
 preexec_functions+=(enable_monitor_exit_code)
 
 function monitor_exit_code() {
-    exit_code="$?"  # Any command in this function overwrites $?
+    exit_code="$?" # Any command in this function overwrites $?
 
     if [ "$ZSH_MONITOR_EXIT_CODE" != 1 ]; then
         return

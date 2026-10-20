@@ -7,17 +7,17 @@ alias ,gc='git commit'
 alias ,gca='git commit --amend'
 alias ,gcan='git commit --amend --no-edit'
 alias ,gcl='git clone'
-alias ,gcln='git clean -fd'  # Delete untracked files
+alias ,gcln='git clean -fd' # Delete untracked files
 alias ,gcp='git cherry-pick'
 alias ,gcpa='git cherry-pick --abort'
 alias ,gcpc='git cherry-pick --continue'
 alias ,gd='git diff'
 alias ,gdn='git diff --name-only'
 alias ,gi='git init'
-alias ,gl='git log --graph --pretty=format:"%C(auto)%h -%d %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"'  # One line per commit, with the branch graph, relative date and author
+alias ,gl='git log --graph --pretty=format:"%C(auto)%h -%d %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"' # One line per commit, with the branch graph, relative date and author
 alias ,gm='git merge'
 alias ,gp='git push'
-alias ,gpf='git push --force-with-lease'  # Refuses to overwrite remote commits you have not seen
+alias ,gpf='git push --force-with-lease' # Refuses to overwrite remote commits you have not seen
 alias ,gpl='git pull --rebase'
 alias ,gr='git reset'
 alias ,grb='git rebase --interactive'

@@ -7,3 +7,7 @@ space_redirects = true
 # Shell files marked only by their location have no shebang, so the dialect given here is what makes [[shell]] apply
 [{.foundation/profile,.foundation/profile.d/*,*/dotfiles/.profile.d%2F*}]
 shell_variant = posix
+
+# The sample's name does not tell shfmt that it is zsh
+[*.zsh.sample]
+shell_variant = zsh

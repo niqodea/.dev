@@ -1,4 +1,4 @@
-function ,cdv () {
+function ,cdv() {
     local venv_path="$VIRTUAL_ENV"
 
     if [ -z "${venv_path+x}" ]; then
@@ -8,7 +8,7 @@ function ,cdv () {
 
     if [[ "$venv_path" == *"/$DOTDEV_ATDIR/venv" ]]; then
         local base_path="${venv_path%/$DOTDEV_ATDIR/venv}"
-    elif [[ "$venv_path" == *"/.venv"  ]]; then
+    elif [[ "$venv_path" == *"/.venv" ]]; then
         local base_path="${venv_path%/.venv}"
     else
         local base_path="$venv_path"

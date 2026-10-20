@@ -7,7 +7,7 @@ function prompt_venv() {
 
 function format_venv_path() {
     local venv_path="$1"
-    if [[ "$venv_path" == *"/.venv"  ]]; then
+    if [[ "$venv_path" == *"/.venv" ]]; then
         local base_path="${venv_path%/.venv}"
         local postfix="."
     elif [[ "$venv_path" == *"/$DOTDEV_ATDIR/venv" ]]; then
@@ -40,6 +40,6 @@ function() {
         return 1
     fi
 
-    local color_venv='%F{208}'  # Orange
+    local color_venv='%F{208}' # Orange
     setup_prompt_base "$DOTDEV_PROMPT_BASE$color_venv"'{$(prompt_venv)}'
 }

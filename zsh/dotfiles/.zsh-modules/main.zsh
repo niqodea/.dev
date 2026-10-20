@@ -8,14 +8,14 @@ fi
 
 function _activate_extra_module() {
     local extra_module="$1"
-    
+
     if [ -n "$2" ]; then
         local config="$2"
     else
         local config='{}'
     fi
 
-    if echo "$DOTDEV_ZSH_EXTRA_MODULES" | jq -e ".$extra_module" > /dev/null ; then
+    if echo "$DOTDEV_ZSH_EXTRA_MODULES" | jq -e ".$extra_module" > /dev/null; then
         >&2 echo "Error: zsh module $extra_module already activated"
         return 1
     fi

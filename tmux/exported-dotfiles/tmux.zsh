@@ -18,16 +18,16 @@ function set_tmux_pane_zsh_extra_modules {
     tmux set-option -t "$TMUX_PANE" -p @zsh_extra_modules "$DOTDEV_ZSH_EXTRA_MODULES"
 }
 
-function set_tmux_ssh_workstation () {
+function set_tmux_ssh_workstation() {
     workstation="$1"
     tmux set-option -p @ssh_workstation "$workstation"
 }
 
-function unset_tmux_ssh_workstation () {
+function unset_tmux_ssh_workstation() {
     tmux set-option -p -u @ssh_workstation
 }
 
-function () {
+function() {
     if [ "$DOTDEV_ZSH_TMUX_SETUP" = 'true' ]; then
         return
     fi
