@@ -23,7 +23,8 @@ local function complete_branch(argument)
     return vim.tbl_filter(function(branch) return vim.startswith(branch, argument) end, branches)
 end
 
--- Lists every change since HEAD left its base branch, committed or not, one quickfix entry per hunk
+-- Lists, one quickfix entry per hunk, what git commit --all would put on the branch since it left its base
+-- That leaves out untracked files, which join the project only once added
 local function review()
     local base_branch = run_git({ 'base-branch' })[1]
     local branch_point = run_git({ 'merge-base', base_branch, 'HEAD' })[1]

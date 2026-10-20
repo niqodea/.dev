@@ -5,10 +5,10 @@ set -eu
 branch="$(git branch --show-current)"
 # git does not record which branch a branch started from, so each branch keeps it in a setting of its own
 key="branch.$branch.dotdev-base"
-# Stands in on a detached HEAD, and on a branch with no base of its own
+# The base on a detached HEAD, and on a branch with no base of its own
 default_base_branch='origin/HEAD'
 
-# Like git config, it reads the base without an argument and sets it with one
+# Like git config, this command reads the base without an argument and sets it with one
 case "$#" in
     0)
         if [ -z "$branch" ]; then
