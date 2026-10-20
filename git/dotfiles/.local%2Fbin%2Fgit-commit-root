@@ -1,18 +1,20 @@
 #!/bin/sh
 
+set -eu
+
 if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
     >&2 echo "Error: Not in a git repository"
-    return 1
+    exit 1
 fi
 
 if [ -n "$(git rev-list -n 1 --all)" ]; then
     >&2 echo "Error: Repository already has commits"
-    return 1
+    exit 1
 fi
 
 if ! git diff --staged --quiet; then
     >&2 echo "Error: There are staged changes"
-    return 1
+    exit 1
 fi
 
 GIT_AUTHOR_NAME="_" \
