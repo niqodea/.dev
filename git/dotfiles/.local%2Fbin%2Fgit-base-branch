@@ -22,7 +22,7 @@ case "$#" in
             >&2 echo 'Error: HEAD is on no branch, so there is no base to set'
             exit 1
         fi
-        # A base that names nothing would only fail later, at the first review
+        # A base that names nothing would only fail later, when used
         if ! git rev-parse --verify --quiet "$1^{commit}" > /dev/null; then
             >&2 echo "Error: $1 names no commit"
             exit 1
