@@ -3,7 +3,7 @@
 set -eu
 
 # Downloads a program's release file, checks its sha256 and unpacks it into ~/.local/opt/<program>-<version>, then prints that path
-# A .tar.gz unpacks as a folder, and a .gz as the single executable <program>
+# The file is a .tar.gz archive, a .gz of the executable <program>, or that executable itself
 url="$1"
 sha256="$2"
 program="$3"
@@ -19,15 +19,20 @@ if [ ! -e "$path" ]; then
     mkdir "$tmp/$program"
     case "$url" in
         *.tar.gz)
-            tar -xf "$tmp/download" -C "$tmp/$program" --strip-components=1
+            # Most archives wrap their files in one folder, which is dropped, but some put them at the top
+            if tar -tzf "$tmp/download" | grep --quiet --invert-match /; then
+                tar -xf "$tmp/download" -C "$tmp/$program"
+            else
+                tar -xf "$tmp/download" -C "$tmp/$program" --strip-components=1
+            fi
             ;;
         *.gz)
             gunzip --to-stdout "$tmp/download" > "$tmp/$program/$program"
             chmod +x "$tmp/$program/$program"
             ;;
         *)
-            >&2 echo "Error: no way to unpack $url"
-            exit 1
+            mv "$tmp/download" "$tmp/$program/$program"
+            chmod +x "$tmp/$program/$program"
             ;;
     esac
     mv "$tmp/$program" "$path"

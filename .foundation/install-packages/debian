@@ -3,4 +3,4 @@
 set -eu
 
 # Debian names the Lua linter lua-check
-"$HOME/.local/bin/,install-package" rsync jq fzf shellcheck shfmt lua-check
+"$HOME/.local/bin/,install-package" rsync jq shellcheck lua-check

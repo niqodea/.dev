@@ -15,8 +15,6 @@ else
 fi
 
 backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
-versions_path="$HOME/$DOTDEV_ATDIR/program-versions"
-mkdir -p "$versions_path"
 
 for module in $modules; do
     module_path="$root/$module"
@@ -35,7 +33,7 @@ for module in $modules; do
     "$module_path/install-bin" "$backup_path" "$os"
 
     if [ -e "$module_path/program-versions" ]; then
-        rsync --archive --checksum --backup --backup-dir="$backup_path/$DOTDEV_ATDIR/program-versions" "$module_path/program-versions" "$versions_path/$module"
+        ,copy-in-home "$backup_path" "$module_path/program-versions" "$DOTDEV_ATDIR/program-versions/$module"
     fi
 done
 

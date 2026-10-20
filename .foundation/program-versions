@@ -1,0 +1,9 @@
+# program    at least   below
+rsync        3.2        4
+jq           1.6        2
+# --accept-nth needs 0.60
+fzf          0.60       1
+shellcheck   0.9        1
+# Formatting zsh needs 3.13
+shfmt        3.13       4
+luacheck     1.1        2

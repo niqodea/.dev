@@ -52,9 +52,18 @@ if [ -e "$os_profile_path" ]; then
     "$foundation_path/bin/,copy-in-home" "$backup_path" "$os_profile_path" .profile.d/os
 fi
 
-# Packages that other modules and ./lint depend on, under each system's names for them
 "$foundation_path/install-packages/$os"
+"$foundation_path/install-releases/$os" "$backup_path"
+# Every installed program is linked into ~/.local/bin
+for program in rsync jq shellcheck luacheck; do
+    program_path="$("$foundation_path/bin/,get-package-path" "$program")"
+    "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$program_path" "$program"
+done
+
+"$foundation_path/bin/,copy-in-home" "$backup_path" "$foundation_path/program-versions" "$DOTDEV_ATDIR/program-versions/foundation"
 
 if [ -e "$backup_path" ]; then
     echo "Backed up replaced files in $backup_path"
 fi
+
+"$foundation_path/bin/,check-program-versions"
