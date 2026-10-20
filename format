@@ -11,4 +11,5 @@ git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xar
 git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfiles/.profile.d%2F*' | sed "s|^|$root/|" | xargs shfmt --write
 
 # zsh files are marked by their name
-git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' | sed "s|^|$root/|" | xargs shfmt --write
+# shfmt cannot parse the always blocks in the fzf completion, which is kept as fzf wrote it
+git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' ':!zsh/dotfiles/.zsh-modules/core/fzf-completion.zsh' | sed "s|^|$root/|" | xargs shfmt --write

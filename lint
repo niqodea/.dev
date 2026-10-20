@@ -16,7 +16,8 @@ git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfi
 # zsh files are marked by their name, and ShellCheck does not read zsh, so only syntax and format are checked
 # zsh checks one file per run, and xargs has no long form of -n on macOS
 git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' | sed "s|^|$root/|" | xargs -n 1 zsh --no-exec
-git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' | sed "s|^|$root/|" | xargs shfmt --diff
+# shfmt cannot parse the always blocks in the fzf completion, which is kept as fzf wrote it
+git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' ':!zsh/dotfiles/.zsh-modules/core/fzf-completion.zsh' | sed "s|^|$root/|" | xargs shfmt --diff
 
 # An empty pattern matches every file with a line in it, which here means every regular tracked Lua file
 # --codes names each warning's rule, which an inline ignore has to name too

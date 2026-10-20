@@ -26,6 +26,3 @@
 [submodule ".foundation/bin-submodules/hburger"]
 	path = .foundation/bin-submodules/hburger
 	url = https://github.com/niqodea/hburger.git
-[submodule "zsh/dotfiles-submodules/fzf"]
-	path = zsh/dotfiles-submodules/fzf
-	url = https://github.com/junegunn/fzf.git
