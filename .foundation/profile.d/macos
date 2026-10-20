@@ -1,1 +1,2 @@
-export PATH="$("$HOME/.local/bin/,get-package-prefix")/bin:$PATH"
+package_prefix="$("$HOME/.local/bin/,get-package-prefix")"
+export PATH="$package_prefix/bin:$PATH"

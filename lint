@@ -9,6 +9,10 @@ root="$(dirname "$(realpath "$0")")"
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shellcheck
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shfmt --diff
 
+# The profile and the files it loads from profile.d are shell, and only their location says so
+git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfiles/.profile.d%2F*' | sed "s|^|$root/|" | xargs shellcheck --shell=sh
+git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfiles/.profile.d%2F*' | sed "s|^|$root/|" | xargs shfmt --diff
+
 # An empty pattern matches every file with a line in it, which here means every regular tracked Lua file
 # --codes names each warning's rule, which an inline ignore has to name too
 git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs luacheck --config "$root/.luacheckrc" --quiet --codes

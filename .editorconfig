@@ -3,3 +3,7 @@ indent_style = space
 indent_size = 4
 switch_case_indent = true
 space_redirects = true
+
+# Shell files marked only by their location have no shebang, so the dialect given here is what makes [[shell]] apply
+[{.foundation/profile,.foundation/profile.d/*,*/dotfiles/.profile.d%2F*}]
+shell_variant = posix

@@ -7,3 +7,5 @@ enable=useless-use-of-cat
 
 # SC1091 only notes that ShellCheck did not read a file a script loads, which is never a mistake in the script
 disable=SC1091
+# SC1090 is the same note for a file named by a variable, as when a loop loads every file in a folder
+disable=SC1090
