@@ -1,0 +1,5 @@
+#!/bin/sh
+
+set -eu
+
+"$HOME/.local/bin/,install-package" rsync jq fzf shellcheck shfmt luacheck

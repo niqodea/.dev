@@ -4,6 +4,7 @@ set -eu
 
 root="$(dirname "$(realpath "$0")")"
 backup_path="$1"
+os="$2"
 
 ,install-package pass ffmpeg
 pass_path="$(,get-package-path pass)"
@@ -13,47 +14,7 @@ ffmpeg_path="$(,get-package-path ffmpeg)"
 ffprobe_path="$(,get-package-path ffprobe)"
 ,link-in-local-bin "$backup_path" "$ffprobe_path" ffprobe
 
-case "$(uname -s)" in
-    'Darwin')
-        # Docker on macOS needs a Linux virtual machine to run containers in
-        ,install-package docker colima
-        colima_path="$(,get-package-path colima)"
-        ,link-in-local-bin "$backup_path" "$colima_path" colima
-        ;;
-    'Linux')
-        # Ref: https://docs.docker.com/engine/install/debian#install-using-the-repository
-        # Docker has one repository per distro, named like the ID in /etc/os-release, such as debian or ubuntu
-        distro="$(sed -n 's/^ID=//p' /etc/os-release)"
-        codename="$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)"
-        key_path=/etc/apt/keyrings/docker.asc
-        key="$(curl --fail --silent --show-error --location --max-time 60 "https://download.docker.com/linux/$distro/gpg")"
-        # Copied as our own user, so the backup belongs to us and not to root
-        if [ -e "$key_path" ] && [ "$(cat "$key_path")" != "$key" ]; then
-            mkdir -p "$backup_path$(dirname "$key_path")"
-            cp "$key_path" "$backup_path$key_path"
-        fi
-        sudo mkdir -p /etc/apt/keyrings
-        printf '%s\n' "$key" | sudo tee "$key_path" > /dev/null
-
-        sources="Types: deb
-URIs: https://download.docker.com/linux/$distro
-Suites: $codename
-Components: stable
-Signed-By: $key_path"
-        sources_path=/etc/apt/sources.list.d/docker.sources
-        if [ -e "$sources_path" ] && [ "$(cat "$sources_path")" != "$sources" ]; then
-            mkdir -p "$backup_path$(dirname "$sources_path")"
-            cp "$sources_path" "$backup_path$sources_path"
-        fi
-        printf '%s\n' "$sources" | sudo tee "$sources_path" > /dev/null
-        sudo apt update
-        ,install-package docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-        ;;
-    *)
-        >&2 echo "Unsupported operating system: $(uname -s)"
-        exit 1
-        ;;
-esac
+"$root/install-docker/$os" "$backup_path"
 docker_path="$(,get-package-path docker)"
 ,link-in-local-bin "$backup_path" "$docker_path" docker
 

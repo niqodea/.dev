@@ -3,6 +3,7 @@
 set -eu
 
 root="$(dirname "$(realpath "$0")")"
+os="$("$root/.foundation/identify")"
 
 # Run with the environment a new terminal will have, which a fresh machine does not have yet
 . "$root/.foundation/profile"
@@ -31,7 +32,7 @@ for module in $modules; do
     fi
 
     echo "Installing programs for module $module"
-    "$module_path/install-bin" "$backup_path"
+    "$module_path/install-bin" "$backup_path" "$os"
 
     if [ -e "$module_path/program-versions" ]; then
         rsync --archive --checksum --backup --backup-dir="$backup_path/$DOTDEV_ATDIR/program-versions" "$module_path/program-versions" "$versions_path/$module"

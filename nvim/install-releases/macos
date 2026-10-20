@@ -1,0 +1,48 @@
+#!/bin/sh
+
+set -eu
+
+backup_path="$1"
+
+neovim_version='v0.12.3'
+tree_sitter_version='v0.25.10'
+
+case "$(uname -m)" in
+    'arm64')
+        neovim_arch='arm64'
+        tree_sitter_arch='arm64'
+        ;;
+    'x86_64')
+        neovim_arch='x86_64'
+        tree_sitter_arch='x64'
+        ;;
+    *)
+        >&2 echo "Unsupported processor: $(uname -m)"
+        exit 1
+        ;;
+esac
+
+mkdir -p "$HOME/.local/opt"
+tmp="$(mktemp -d "$HOME/.local/opt/.nvim.XXXXXX")"
+trap 'rm -rf "$tmp"' EXIT
+
+# Downloaded as on Debian, where the package is too old, so the two systems install it one way
+neovim_path="$HOME/.local/opt/nvim-$neovim_version"
+if [ ! -e "$neovim_path" ]; then
+    curl --fail --silent --show-error --location --max-time 300 --output "$tmp/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/$neovim_version/nvim-macos-$neovim_arch.tar.gz"
+    mkdir "$tmp/nvim"
+    tar -xf "$tmp/nvim.tar.gz" -C "$tmp/nvim" --strip-components=1
+    mv "$tmp/nvim" "$neovim_path"
+fi
+,link-in-local-bin "$backup_path" "$neovim_path/bin/nvim" nvim
+
+# Downloaded as on Debian, which does not package it, so the two systems install it one way
+tree_sitter_path="$HOME/.local/opt/tree-sitter-$tree_sitter_version"
+if [ ! -e "$tree_sitter_path" ]; then
+    curl --fail --silent --show-error --location --max-time 300 --output "$tmp/tree-sitter.gz" "https://github.com/tree-sitter/tree-sitter/releases/download/$tree_sitter_version/tree-sitter-macos-$tree_sitter_arch.gz"
+    mkdir "$tmp/tree-sitter"
+    gunzip --to-stdout "$tmp/tree-sitter.gz" > "$tmp/tree-sitter/tree-sitter"
+    chmod +x "$tmp/tree-sitter/tree-sitter"
+    mv "$tmp/tree-sitter" "$tree_sitter_path"
+fi
+,link-in-local-bin "$backup_path" "$tree_sitter_path/tree-sitter" tree-sitter

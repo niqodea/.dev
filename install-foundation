@@ -52,22 +52,8 @@ if [ -e "$os_profile_path" ]; then
     "$foundation_path/bin/,copy-in-home" "$backup_path" "$os_profile_path" .profile.d/os
 fi
 
-# Packages that other modules depend on
-"$foundation_path/bin/,install-package/$os" rsync jq fzf shellcheck shfmt
-
-# The Lua linter that ./lint runs, which Debian packages under another name
-case "$os" in
-    'debian')
-        "$foundation_path/bin/,install-package/$os" lua-check
-        ;;
-    'macos')
-        "$foundation_path/bin/,install-package/$os" luacheck
-        ;;
-    *)
-        >&2 echo "Error: no Lua linter package for $os"
-        exit 1
-        ;;
-esac
+# Packages that other modules and ./lint depend on, under each system's names for them
+"$foundation_path/install-packages/$os"
 
 if [ -e "$backup_path" ]; then
     echo "Backed up replaced files in $backup_path"
