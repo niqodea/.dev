@@ -1,0 +1,35 @@
+#!/bin/sh
+
+set -eu
+
+# Downloads a program's release file, checks its sha256 and unpacks it into ~/.local/opt/<program>-<version>, then prints that path
+# A .tar.gz unpacks as a folder, and a .gz as the single executable <program>
+url="$1"
+sha256="$2"
+program="$3"
+version="$4"
+
+path="$HOME/.local/opt/$program-$version"
+if [ ! -e "$path" ]; then
+    mkdir -p "$HOME/.local/opt"
+    tmp="$(mktemp -d "$HOME/.local/opt/.$program.XXXXXX")"
+    trap 'rm -rf "$tmp"' EXIT
+    curl --fail --silent --show-error --location --max-time 300 --output "$tmp/download" "$url"
+    ,check-sha256 "$sha256" "$tmp/download"
+    mkdir "$tmp/$program"
+    case "$url" in
+        *.tar.gz)
+            tar -xf "$tmp/download" -C "$tmp/$program" --strip-components=1
+            ;;
+        *.gz)
+            gunzip --to-stdout "$tmp/download" > "$tmp/$program/$program"
+            chmod +x "$tmp/$program/$program"
+            ;;
+        *)
+            >&2 echo "Error: no way to unpack $url"
+            exit 1
+            ;;
+    esac
+    mv "$tmp/$program" "$path"
+fi
+echo "$path"

@@ -7,14 +7,19 @@ backup_path="$1"
 neovim_version='v0.12.3'
 tree_sitter_version='v0.25.10'
 
+# Each download's sha256 changes with the versions above, and comes from the release's own digest on GitHub
 case "$(uname -m)" in
     'aarch64')
         neovim_arch='arm64'
         tree_sitter_arch='arm64'
+        neovim_sha256='e055af73fa9c72b37456da8d204fa5c09850bc07e80e9176fe3b87d4afb7a3fc'
+        tree_sitter_sha256='07fbff8ae0eeb0d3e496e14fc1a30dcc730cc2c97d70e601e5357f2e51958af5'
         ;;
     'x86_64')
         neovim_arch='x86_64'
         tree_sitter_arch='x64'
+        neovim_sha256='c441b547142860bf01bcce39e36cbed185c41112813e15443b16e5237750724d'
+        tree_sitter_sha256='8283ddba69253c698f6e987ba0e2f9285e079c8db4d36ebe1394b5bb3a0ebdfd'
         ;;
     *)
         >&2 echo "Unsupported processor: $(uname -m)"
@@ -22,27 +27,10 @@ case "$(uname -m)" in
         ;;
 esac
 
-mkdir -p "$HOME/.local/opt"
-tmp="$(mktemp -d "$HOME/.local/opt/.nvim.XXXXXX")"
-trap 'rm -rf "$tmp"' EXIT
-
 # Debian 12 has nvim 0.7, which is too old for this setup
-neovim_path="$HOME/.local/opt/nvim-$neovim_version"
-if [ ! -e "$neovim_path" ]; then
-    curl --fail --silent --show-error --location --max-time 300 --output "$tmp/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/$neovim_version/nvim-linux-$neovim_arch.tar.gz"
-    mkdir "$tmp/nvim"
-    tar -xf "$tmp/nvim.tar.gz" -C "$tmp/nvim" --strip-components=1
-    mv "$tmp/nvim" "$neovim_path"
-fi
+neovim_path="$(,download-release "https://github.com/neovim/neovim/releases/download/$neovim_version/nvim-linux-$neovim_arch.tar.gz" "$neovim_sha256" nvim "$neovim_version")"
 ,link-in-local-bin "$backup_path" "$neovim_path/bin/nvim" nvim
 
 # Debian 12 does not package tree-sitter
-tree_sitter_path="$HOME/.local/opt/tree-sitter-$tree_sitter_version"
-if [ ! -e "$tree_sitter_path" ]; then
-    curl --fail --silent --show-error --location --max-time 300 --output "$tmp/tree-sitter.gz" "https://github.com/tree-sitter/tree-sitter/releases/download/$tree_sitter_version/tree-sitter-linux-$tree_sitter_arch.gz"
-    mkdir "$tmp/tree-sitter"
-    gunzip --to-stdout "$tmp/tree-sitter.gz" > "$tmp/tree-sitter/tree-sitter"
-    chmod +x "$tmp/tree-sitter/tree-sitter"
-    mv "$tmp/tree-sitter" "$tree_sitter_path"
-fi
+tree_sitter_path="$(,download-release "https://github.com/tree-sitter/tree-sitter/releases/download/$tree_sitter_version/tree-sitter-linux-$tree_sitter_arch.gz" "$tree_sitter_sha256" tree-sitter "$tree_sitter_version")"
 ,link-in-local-bin "$backup_path" "$tree_sitter_path/tree-sitter" tree-sitter

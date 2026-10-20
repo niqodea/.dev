@@ -1,0 +1,28 @@
+#!/bin/sh
+
+set -eu
+
+backup_path="$1"
+
+uv_version='0.13.1'
+
+# Each download's sha256 changes with the version above, and comes from the release's own digest on GitHub
+case "$(uname -m)" in
+    'aarch64')
+        uv_target='aarch64-unknown-linux-gnu'
+        uv_sha256='9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14'
+        ;;
+    'x86_64')
+        uv_target='x86_64-unknown-linux-gnu'
+        uv_sha256='eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220'
+        ;;
+    *)
+        >&2 echo "Unsupported processor: $(uname -m)"
+        exit 1
+        ;;
+esac
+
+# Debian 12 does not package uv
+uv_path="$(,download-release "https://github.com/astral-sh/uv/releases/download/$uv_version/uv-$uv_target.tar.gz" "$uv_sha256" uv "$uv_version")"
+,link-in-local-bin "$backup_path" "$uv_path/uv" uv
+,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx

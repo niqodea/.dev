@@ -4,21 +4,9 @@ set -eu
 
 root="$(dirname "$(realpath "$0")")"
 backup_path="$1"
+os="$2"
 
-uv_version='0.13.1'
-# Debian 12 does not package uv
-uv_path="$HOME/.local/opt/uv-$uv_version"
-if [ ! -e "$uv_path" ]; then
-    mkdir -p "$HOME/.local/opt"
-    tmp="$(mktemp -d "$HOME/.local/opt/.uv.XXXXXX")"
-    trap 'rm -rf "$tmp"' EXIT
-    install_script="$(curl --fail --silent --show-error --location --max-time 60 "https://astral.sh/uv/$uv_version/install.sh")"
-    # Installs into the given directory, without touching the shell profile or setting up self-updates
-    UV_UNMANAGED_INSTALL="$tmp/uv" sh -c "$install_script"
-    mv "$tmp/uv" "$uv_path"
-fi
-,link-in-local-bin "$backup_path" "$uv_path/uv" uv
-,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx
+"$root/install-releases/$os" "$backup_path"
 
 python_version="$(awk '$1 == "python3" { print $2 }' "$root/program-versions")"
 UV_PYTHON_BIN_DIR="$HOME/.local/opt/uv-python-bin" uv python install "$python_version"

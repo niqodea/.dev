@@ -10,6 +10,9 @@ distro="$(sed -n 's/^ID=//p' /etc/os-release)"
 codename="$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)"
 key_path=/etc/apt/keyrings/docker.asc
 key="$(curl --fail --silent --show-error --location --max-time 60 "https://download.docker.com/linux/$distro/gpg")"
+# The key with the fingerprint 9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88, which Docker documented
+# Ref: https://github.com/docker/docs/blob/777c5d23dafd4b640016f24f92fe416f246ec848/engine/install/ubuntu.md
+printf '%s\n' "$key" | ,check-sha256 1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570 -
 # Copied as our own user, so the backup belongs to us and not to root
 if [ -e "$key_path" ] && [ "$(cat "$key_path")" != "$key" ]; then
     mkdir -p "$backup_path$(dirname "$key_path")"

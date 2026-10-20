@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    >&2 echo 'Usage: ,check-sha256 <sha256> <path, or - for stdin>'
+    exit 1
+fi
+
+actual="$(sha256sum "$2" | cut -d ' ' -f 1)"
+if [ "$actual" != "$1" ]; then
+    >&2 echo "Error: $2 has sha256 $actual, not the pinned $1"
+    exit 1
+fi
