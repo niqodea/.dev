@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+backup_path="$1"
+
+tart_version='2.41.1'
+# Changes with the version above, and comes from the release's own digest on GitHub
+tart_sha256='e680a734febccfce7d4e910c1f7f13fc3b00f19a181c945e2d746de3214c32c2'
+
+# Downloaded, since Homebrew's Tart needs softnet, which only runs on macOS 26 and later, though Tart runs on macOS 13
+tart_path="$(,download-release "https://github.com/openai/tart/releases/download/$tart_version/tart.tar.gz" "$tart_sha256" tart "$tart_version")"
+,link-in-local-bin "$backup_path" "$tart_path/tart.app/Contents/MacOS/tart" tart

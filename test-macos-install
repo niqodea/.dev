@@ -1,0 +1,55 @@
+#!/bin/sh
+
+set -eu
+
+root="$(dirname "$(realpath "$0")")"
+
+# Assigned on its own line, since set -e does not stop on a command failing inside the test's argument
+os="$("$root/.foundation/identify")"
+# Apple allows macOS virtual machines only on its own hardware, and Tart runs them only on macOS
+if [ "$os" != macos ]; then
+    >&2 echo "Error: a macOS virtual machine runs only on macOS"
+    exit 1
+fi
+
+# A plain macOS with SSH on and the user admin, password admin, who can sudo without a password
+# Pinned by digest, since a tag can be pushed again with other content
+image='ghcr.io/cirruslabs/macos-sequoia-vanilla@sha256:57a83b1b52f928f5b11b0963927178fd6c4cac52c315279f227c27cc5ab81587'
+vm="test-macos-install-$$"
+
+tmp="$(mktemp -d)"
+trap 'tart stop "$vm" > /dev/null 2>&1 || true; tart delete "$vm" > /dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+
+tart clone "$image" "$vm"
+tart run --no-graphics "$vm" > "$tmp/run.log" 2>&1 &
+ip="$(tart ip --wait 300 "$vm")"
+
+# ssh reads the password from the program in SSH_ASKPASS, which saves installing sshpass
+printf '#!/bin/sh\necho admin\n' > "$tmp/askpass"
+chmod +x "$tmp/askpass"
+vm_ssh() {
+    # The virtual machine gets a new host key each run, so there is nothing to check it against
+    # The user's config is left out, since a shared connection it sets up could lead to an older virtual machine at the same address
+    SSH_ASKPASS="$tmp/askpass" SSH_ASKPASS_REQUIRE=force ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 "admin@$ip" "$@"
+}
+
+# The virtual machine has an address before its SSH server answers
+attempts=0
+until vm_ssh true 2> /dev/null; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 60 ]; then
+        >&2 echo "Error: the virtual machine's SSH server did not answer"
+        # macOS keeps an app off the local network, where the virtual machine is, until the app is allowed there
+        >&2 echo "Check that the app running this script has the Local Network permission, in System Settings > Privacy & Security > Local Network"
+        exit 1
+    fi
+    sleep 5
+done
+
+# The image comes with the Command Line Tools, which a fresh Mac lacks
+vm_ssh 'sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --reset'
+
+# Installs HEAD, so uncommitted changes are left out
+# A fresh Mac has no git until the Command Line Tools are in, so the repository goes in as an archive of a clone
+git clone --quiet "$root" "$tmp/dev"
+tar -c -C "$tmp" dev | vm_ssh 'tar -x -C ~ && ~/dev/install-foundation && ~/dev/install-bin && ~/dev/install-dotfiles'
