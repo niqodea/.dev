@@ -1,1 +1,1 @@
-..root/git/exported-dotfiles/git-core.zsh
+..repo/git/exported-dotfiles/git-core.zsh

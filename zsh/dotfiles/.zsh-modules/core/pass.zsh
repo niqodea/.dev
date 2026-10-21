@@ -1,1 +1,1 @@
-..root/utils/exported-dotfiles/pass.zsh
+..repo/utils/exported-dotfiles/pass.zsh

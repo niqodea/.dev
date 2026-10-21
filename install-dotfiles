@@ -24,10 +24,10 @@ install_dotfile() (
     if [ -d "$source_path" ]; then
         # rsync takes a link through a breadcrumb for a link inside the folder and would copy it as is,
         # so each of them is installed on its own from where it leads
-        breadcrumb_links="$(find "$source_path" -type l \( -lname '..root/*' -o -lname '..module/*' \) | sed "s|^$source_path||")"
+        breadcrumb_links="$(find "$source_path" -type l \( -lname '..repo/*' -o -lname '..module/*' \) | sed "s|^$source_path||")"
 
         printf '%s\n' "$breadcrumb_links" | rsync --archive --checksum --copy-unsafe-links --delete \
-            --exclude='..root' --exclude='..module' --exclude-from=- \
+            --exclude='..repo' --exclude='..module' --exclude-from=- \
             --backup --backup-dir="$backup_path/$target_relpath" \
             "$source_path/" "$HOME/$target_relpath" # The trailing slash copies the folder's contents, not the folder itself
 

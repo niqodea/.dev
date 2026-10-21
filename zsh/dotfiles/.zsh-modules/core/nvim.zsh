@@ -1,1 +1,1 @@
-..root/nvim/exported-dotfiles/nvim.zsh
+..repo/nvim/exported-dotfiles/nvim.zsh

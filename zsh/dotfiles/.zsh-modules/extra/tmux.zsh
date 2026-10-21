@@ -1,1 +1,1 @@
-..root/tmux/exported-dotfiles/tmux.zsh
+..repo/tmux/exported-dotfiles/tmux.zsh

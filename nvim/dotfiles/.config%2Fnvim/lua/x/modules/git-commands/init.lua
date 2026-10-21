@@ -1,1 +1,1 @@
-..root/git/exported-dotfiles/git-commands.lua
+..repo/git/exported-dotfiles/git-commands.lua

@@ -1,1 +1,1 @@
-..root/python/exported-dotfiles/fix.lua
+..repo/python/exported-dotfiles/fix.lua

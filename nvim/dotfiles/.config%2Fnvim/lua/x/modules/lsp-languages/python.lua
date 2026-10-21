@@ -1,1 +1,1 @@
-..root/python/exported-dotfiles/lsp.lua
+..repo/python/exported-dotfiles/lsp.lua
