@@ -29,10 +29,7 @@ for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
         case "$path" in
             # apt keeps the version in its database, as in 1:2.39.5-0+deb12u3, where 2.39.5 is the program's own
             /usr/bin/*)
-                # /bin is /usr/bin since Debian 12, but dpkg still records some programs under /bin, so it is asked for both
-                # and complains about the one it lacks
-                # Ref: https://wiki.debian.org/UsrMerge
-                package="$(dpkg-query --search "$path" "/bin/${path#/usr/bin/}" 2> /dev/null | cut -d : -f 1)"
+                package="$(dpkg-query --search "$path" | cut -d : -f 1)"
                 version="$(dpkg-query --show --showformat '${Version}' "$package" | sed 's/^[0-9]*://; s/-[^-]*$//')"
                 ;;
             # Every other source names a folder after the version, as in Cellar/git/2.56.0_1 or nvim-v0.12.3

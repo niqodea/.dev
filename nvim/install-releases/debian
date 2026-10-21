@@ -27,10 +27,10 @@ case "$(uname -m)" in
         ;;
 esac
 
-# Debian 12 has nvim 0.7, which is too old for this setup
+# Debian 13 has nvim 0.10, which is too old for this setup
 neovim_path="$(,download-release "https://github.com/neovim/neovim/releases/download/$neovim_version/nvim-linux-$neovim_arch.tar.gz" "$neovim_sha256" nvim "$neovim_version")"
 ,link-in-local-bin "$backup_path" "$neovim_path/bin/nvim" nvim
 
-# Debian 12 does not package tree-sitter
+# Debian 13 has tree-sitter 0.22, which is too old for this setup
 tree_sitter_path="$(,download-release "https://github.com/tree-sitter/tree-sitter/releases/download/$tree_sitter_version/tree-sitter-linux-$tree_sitter_arch.gz" "$tree_sitter_sha256" tree-sitter "$tree_sitter_version")"
 ,link-in-local-bin "$backup_path" "$tree_sitter_path/tree-sitter" tree-sitter

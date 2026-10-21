@@ -22,7 +22,7 @@ case "$(uname -m)" in
         ;;
 esac
 
-# Debian 12 does not package uv
+# Debian 13 does not package uv
 uv_path="$(,download-release "https://github.com/astral-sh/uv/releases/download/$uv_version/uv-$uv_target.tar.gz" "$uv_sha256" uv "$uv_version")"
 ,link-in-local-bin "$backup_path" "$uv_path/uv" uv
 ,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx

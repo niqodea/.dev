@@ -52,7 +52,7 @@ if [ -e "$os_profile_path" ]; then
     "$foundation_path/bin/,copy-in-home" "$backup_path" "$os_profile_path" .profile.d/os
 fi
 
-"$foundation_path/install-packages/$os"
+"$foundation_path/install-packages/$os" "$backup_path"
 "$foundation_path/install-releases/$os" "$backup_path"
 # Every installed program is linked into ~/.local/bin
 for program in rsync jq shellcheck luacheck; do

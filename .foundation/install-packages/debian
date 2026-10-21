@@ -2,5 +2,9 @@
 
 set -eu
 
+backup_path="$1"
+
 # Debian names the Lua linter lua-check
-"$HOME/.local/bin/,install-package" rsync jq shellcheck lua-check
+"$HOME/.local/bin/,install-package" rsync jq shellcheck lua-check fzf
+# fzf is a package on this system only, so it is linked here and not with the packages of every system
+"$HOME/.local/bin/,link-in-local-bin" "$backup_path" "$("$HOME/.local/bin/,get-package-path" fzf)" fzf

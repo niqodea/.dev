@@ -4,19 +4,16 @@ set -eu
 
 backup_path="$1"
 
-fzf_version='0.74.5'
 shfmt_version='v3.14.1'
 
-# Each download's sha256 changes with the versions above, and comes from the release's own digest on GitHub
+# Each download's sha256 changes with the version above, and comes from the release's own digest on GitHub
 case "$(uname -m)" in
     'aarch64')
-        fzf_arch='arm64'
-        fzf_sha256='cf058001da21724a469b714a29cf4aab9cbe860d218a0d6c1b5b661efad7784c'
+        shfmt_arch='arm64'
         shfmt_sha256='5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489'
         ;;
     'x86_64')
-        fzf_arch='amd64'
-        fzf_sha256='d47d7f882972c7d674dbbba998ffa4116e68379616ffac7695d0671e9a722c5f'
+        shfmt_arch='amd64'
         shfmt_sha256='76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf'
         ;;
     *)
@@ -25,10 +22,6 @@ case "$(uname -m)" in
         ;;
 esac
 
-# Debian 12 has fzf 0.38, which is too old for this setup
-fzf_path="$("$HOME/.local/bin/,download-release" "https://github.com/junegunn/fzf/releases/download/v$fzf_version/fzf-$fzf_version-linux_$fzf_arch.tar.gz" "$fzf_sha256" fzf "$fzf_version")"
-"$HOME/.local/bin/,link-in-local-bin" "$backup_path" "$fzf_path/fzf" fzf
-
-# Debian 12 has shfmt 3.6, which is too old for this setup
-shfmt_path="$("$HOME/.local/bin/,download-release" "https://github.com/mvdan/sh/releases/download/$shfmt_version/shfmt_${shfmt_version}_linux_$fzf_arch" "$shfmt_sha256" shfmt "$shfmt_version")"
+# Debian 13 has shfmt 3.8, which is too old for this setup
+shfmt_path="$("$HOME/.local/bin/,download-release" "https://github.com/mvdan/sh/releases/download/$shfmt_version/shfmt_${shfmt_version}_linux_$shfmt_arch" "$shfmt_sha256" shfmt "$shfmt_version")"
 "$HOME/.local/bin/,link-in-local-bin" "$backup_path" "$shfmt_path/shfmt" shfmt
