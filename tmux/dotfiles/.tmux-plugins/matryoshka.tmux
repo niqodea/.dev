@@ -1,1 +1,1 @@
-../../..module/dotfiles-submodules/tmux-matryoshka/matryoshka.tmux
+..module/dotfiles-submodules/tmux-matryoshka/matryoshka.tmux

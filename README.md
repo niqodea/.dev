@@ -53,6 +53,7 @@ To move up in the directory structure, we use a method called [Breadcrumbs](http
 It is better than using lots of `../` in symlinks, which can be hard to read and might break unexpectedly.
 Breadcrumbs are the symlinks named `..root` and `..module`, which point at the root of the repository and of the module they sit in.
 A symlink that points up the directory tree goes through one of them, like `..root/<module>/<file>` or `..module/<file>`, so you can read where it points without counting `../`.
+Breadcrumbs work inside dotfile folders too: installing copies the files they lead to, not the breadcrumbs.
 
 ### Command names
 

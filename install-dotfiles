@@ -15,6 +15,41 @@ fi
 
 backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
 
+# The body runs in a subshell, so each recursive call keeps its own variables
+install_dotfile() (
+    source_path="$1"
+    target_relpath="$2"
+    mkdir -p "$(dirname "$HOME/$target_relpath")" # rsync needs the parent folder to exist
+
+    if [ -d "$source_path" ]; then
+        # rsync takes a link through a breadcrumb for a link inside the folder and would copy it as is,
+        # so each of them is installed on its own from where it leads
+        breadcrumb_links="$(find "$source_path" -type l \( -lname '..root/*' -o -lname '..module/*' \) | sed "s|^$source_path||")"
+
+        printf '%s\n' "$breadcrumb_links" | rsync --archive --checksum --copy-unsafe-links --delete \
+            --exclude='..root' --exclude='..module' --exclude-from=- \
+            --backup --backup-dir="$backup_path/$target_relpath" \
+            "$source_path/" "$HOME/$target_relpath" # The trailing slash copies the folder's contents, not the folder itself
+
+        printf '%s\n' "$breadcrumb_links" | while IFS= read -r link_relpath; do
+            if [ -n "$link_relpath" ]; then
+                install_dotfile "$(realpath "$source_path$link_relpath")" "$target_relpath$link_relpath"
+            fi
+        done
+    else
+        backup_dir="$backup_path/$(dirname "$target_relpath")"
+
+        if [ "${backup_dir#"${backup_dir%/.}"}" = "/." ]; then
+            # rsync fails on a backup folder that ends in /.
+            backup_dir="${backup_dir%/.}"
+        fi
+
+        rsync --archive --checksum --copy-unsafe-links \
+            --backup --backup-dir="$backup_dir" \
+            "$source_path" "$HOME/$target_relpath"
+    fi
+)
+
 for module in $modules; do
     module_path="$root/$module"
 
@@ -36,25 +71,7 @@ for module in $modules; do
     fi
 
     for source_dotfile_path in "$source_dotfiles_path/."[!.]*; do
-        target_dotfile_relpath="$(basename "$source_dotfile_path" | sed "s/%2F/\//g")"
-        mkdir -p "$(dirname "$HOME"/"$target_dotfile_relpath")" # rsync needs the parent folder to exist
-
-        if [ -d "$source_dotfile_path" ]; then
-            rsync --archive --checksum --copy-unsafe-links --delete \
-                --backup --backup-dir="$backup_path/$target_dotfile_relpath" \
-                "$source_dotfile_path/" "$HOME/$target_dotfile_relpath" # The trailing slash copies the folder's contents, not the folder itself
-        else
-            backup_dir="$backup_path/$(dirname "$target_dotfile_relpath")"
-
-            if [ "${backup_dir#"${backup_dir%/.}"}" = "/." ]; then
-                # rsync fails on a backup folder that ends in /.
-                backup_dir="${backup_dir%/.}"
-            fi
-
-            rsync --archive --checksum --copy-unsafe-links \
-                --backup --backup-dir="$backup_dir" \
-                "$source_dotfile_path" "$HOME/$target_dotfile_relpath"
-        fi
+        install_dotfile "$source_dotfile_path" "$(basename "$source_dotfile_path" | sed "s/%2F/\//g")"
     done
 
     echo "Successfully installed dotfiles for module $module"

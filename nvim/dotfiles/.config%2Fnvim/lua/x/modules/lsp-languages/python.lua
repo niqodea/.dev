@@ -1,1 +1,1 @@
-../../../../../../..root/python/exported-dotfiles/lsp.lua
+..root/python/exported-dotfiles/lsp.lua

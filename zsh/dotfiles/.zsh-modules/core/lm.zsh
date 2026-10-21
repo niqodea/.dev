@@ -1,1 +1,1 @@
-../../../..root/utils/exported-dotfiles/lm.zsh
+..root/utils/exported-dotfiles/lm.zsh
