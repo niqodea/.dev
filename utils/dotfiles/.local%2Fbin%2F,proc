@@ -1,0 +1,64 @@
+#!/bin/sh
+
+set -eu
+
+# Picks among the user's processes, each shown with the TCP ports it listens on, as in ,proc :3000 or ,proc vite
+# Prints the PIDs of the picked processes, so it composes, as in kill $(,proc vite)
+
+# fzf runs the same script to fill its list and its preview
+if [ "${1-}" = '--list' ]; then
+    # fzf's row is left out, since its arguments hold the query, which it would always match
+    fzf_pid="$2"
+    # -F prints one field per line: p for the process ID, n for the address, which becomes pairs like 577:7000 on one line
+    # lsof exits with 1 when nothing listens, which the pipeline ignores, as it takes awk's status, and prints any real error itself
+    listeners="$(lsof -nP -a -u "$(id -u)" -iTCP -sTCP:LISTEN -Fpn | awk '
+        /^p/ { pid = substr($0, 2) }
+        /^n/ {
+            port = $0
+            sub(/.*:/, "", port)
+            printf "%s:%s ", pid, port
+        }
+    ')"
+    # -ww keeps long command lines whole, which ps may otherwise cut when writing to a pipe
+    # The pairs go through the environment, since as an argument they would show in awk's own row and match any port
+    ps -ww -U "$(id -u)" -o pid=,etime=,args= | LISTENERS="$listeners" awk -v fzf_pid="$fzf_pid" '
+        BEGIN {
+            count = split(ENVIRON["LISTENERS"], pairs, " ")
+            for (i = 1; i <= count; i++) {
+                split(pairs[i], pair, ":")
+                # IPv4 and IPv6 each list the same port
+                if (index(ports[pair[1]] " ", " :" pair[2] " ") == 0) ports[pair[1]] = ports[pair[1]] " :" pair[2]
+            }
+        }
+        $1 == fzf_pid { next }
+        {
+            # Cut from the line, since rebuilding it from fields would squeeze the spaces inside the command line
+            args = $0
+            sub(/^ *[^ ]+ +[^ ]+ +/, "", args)
+            printf "%-7s %12s %-12s %s\n", $1, $2, substr(ports[$1], 2), args
+        }
+    '
+    exit
+fi
+
+if [ "${1-}" = '--preview' ]; then
+    pid="$2"
+    ps -ww -o args= -p "$pid"
+    echo
+    echo 'Started by:'
+    # Each process up to the first one, launchd or systemd
+    while pid="$(ps -o ppid= -p "$pid" | tr -d ' ')" && [ -n "$pid" ] && [ "$pid" -ne 0 ]; do
+        ps -ww -o pid=,args= -p "$pid"
+    done
+    exit
+fi
+
+# Exact matching, since a fuzzy :7000 matches any row with those characters spread across it
+# Each row stays on one line, and the preview shows the whole command line
+# exec gives fzf this script's PID, $$, which the list leaves out
+exec fzf --exact --no-wrap --multi --reverse --no-sort --query="$*" \
+    --header='enter: print PIDs, ctrl-x: send TERM' \
+    --preview="'$0' --preview {1}" --preview-window=down,wrap \
+    --bind="start:reload('$0' --list $$)" \
+    --bind="ctrl-x:execute-silent(kill {+1})+reload('$0' --list $$)" \
+    --accept-nth=1

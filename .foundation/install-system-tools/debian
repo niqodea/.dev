@@ -5,4 +5,4 @@ set -eu
 # apt only knows the packages in its local lists, and a fresh machine can have them empty or out of date
 sudo apt update
 # What the foundation needs that a minimal Debian lacks
-sudo apt install curl gcc libc6-dev lsof
+sudo apt install curl gcc libc6-dev lsof procps
