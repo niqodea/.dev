@@ -1,38 +1,35 @@
 function prompt_git() {
-    # TODO: Build the result in a variable instead of printing it piece by piece
-
     local hash_burger_length=7 # Same as git default for short SHA
 
     local git_dir=$(git rev-parse --git-dir 2> /dev/null)
     if [ -z "$git_dir" ]; then
-        printf 'X' # Not a git repo
-        printf '%.s ' {1..$((hash_burger_length + 1))}
+        printf 'X%*s' $((hash_burger_length + 1)) '' # Not a git repo
         return
     fi
 
+    local result
     if [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then
-        printf 'B'
+        result='B'
     elif [ -f "$git_dir/MERGE_HEAD" ]; then
-        printf 'M'
+        result='M'
     elif [ -f "$git_dir/BISECT_LOG" ]; then
-        printf 'S'
+        result='S'
     elif [ -f "$git_dir/CHERRY_PICK_HEAD" ]; then
-        printf 'C'
+        result='C'
     elif [ -f "$git_dir/REVERT_HEAD" ]; then
-        printf 'R'
+        result='R'
     else
-        printf '.'
+        result='.'
     fi
 
     local current_ref=$(git rev-parse --abbrev-ref HEAD)
     if [ "$current_ref" = "HEAD" ]; then
-        printf ' ' # Detached HEAD
-        printf '%s' "$(git rev-parse --short HEAD)"
+        result+=" $(git rev-parse --short HEAD)" # Detached HEAD
     else
-        printf '>' # On a branch
-        local current_branch="$current_ref"
-        printf '%s' "$(hburger hash -l 3 -c 2 -r 2 -p " " -- "$current_branch")"
+        result+=">$(hburger hash -l 3 -c 2 -r 2 -p " " -- "$current_ref")" # On a branch
     fi
+
+    printf '%s' "$result"
 }
 
 function() {
