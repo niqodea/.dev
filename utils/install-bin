@@ -22,3 +22,7 @@ breadcrumbs_path="$root/bin-submodules/breadcrumbs"
 git -C "$root" submodule update --init "$breadcrumbs_path"
 cargo build --manifest-path="$breadcrumbs_path/Cargo.toml" --release
 ,copy-in-home "$backup_path" "$breadcrumbs_path/target/release/breadcrumbs" .local/bin/breadcrumbs
+
+lm_path="$root/bin-submodules/lm"
+git -C "$root" submodule update --init "$lm_path"
+,copy-in-home "$backup_path" "$lm_path/lm" .local/bin/lm

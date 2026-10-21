@@ -26,3 +26,6 @@
 [submodule ".foundation/bin-submodules/hburger"]
 	path = .foundation/bin-submodules/hburger
 	url = https://github.com/niqodea/hburger.git
+[submodule "utils/bin-submodules/lm"]
+	path = utils/bin-submodules/lm
+	url = https://github.com/niqodea/lm.git
