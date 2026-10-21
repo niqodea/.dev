@@ -21,4 +21,20 @@ git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' 
 
 # An empty pattern matches every file with a line in it, which here means every regular tracked Lua file
 # --codes names each warning's rule, which an inline ignore has to name too
-git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs luacheck --config "$root/.luacheckrc" --quiet --codes
+# The plain formatter prints only the warnings, so a clean run prints nothing, like every other check here
+git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs luacheck --config "$root/.luacheckrc" --formatter plain --codes
+
+# -n parses the files without running their commands, on a server of its own, so no tmux session sees them
+git -C "$root" grep --files-with-matches '' -- '*.tmux.conf' | sed "s|^|$root/|" | xargs tmux -L lint -f /dev/null start-server ';' source-file -n
+
+# jq does not name the file a parse error is in, so each file is checked on its own
+git -C "$root" grep --files-with-matches '' -- '*.json' | sed "s|^|$root/|" | while IFS= read -r path; do
+    if ! jq empty "$path"; then
+        >&2 echo "$path: not valid JSON"
+        exit 1
+    fi
+done
+
+git config --file "$root/git/dotfiles/.gitconfig.sample" --list > /dev/null
+# -G reads the config and prints it for a host instead of connecting, and -T keeps it from warning when no terminal is attached
+ssh -T -G -F "$root/utils/dotfiles/.ssh%2Fconfig.sample" lint > /dev/null
