@@ -71,6 +71,10 @@ for module in $modules; do
     fi
 
     for source_dotfile_path in "$source_dotfiles_path/."[!.]*; do
+        # A module without dotfiles leaves the pattern itself in $source_dotfile_path
+        if [ ! -e "$source_dotfile_path" ]; then
+            continue
+        fi
         install_dotfile "$source_dotfile_path" "$(basename "$source_dotfile_path" | sed "s/%2F/\//g")"
     done
 
