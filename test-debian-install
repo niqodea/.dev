@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -eu
+
+root="$(dirname "$(realpath "$0")")"
+
+# Installs HEAD on a fresh Debian, as a user who can sudo, so uncommitted changes are left out
+# The repository goes in through stdin, so the container needs no folder shared with this machine
+git -C "$root" bundle create - HEAD | docker run --rm --interactive debian:13 sh -c '
+set -eu
+cat >/tmp/repo.bundle
+apt-get update
+apt-get install --yes git sudo
+# A person answers yes to apt prompts, which nobody is here to do
+echo "APT::Get::Assume-Yes \"true\";" >/etc/apt/apt.conf.d/assume-yes
+useradd --create-home user
+echo "user ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/user
+su user -c "git clone /tmp/repo.bundle ~/dev && ~/dev/install-foundation && ~/dev/install-bin && ~/dev/install-dotfiles"
+'
