@@ -4,7 +4,7 @@
 [core]
     excludesfile = ~/.gitignore  # Ignored in every repository
 [merge]
-    conflictstyle = diff3  # Conflicts also show the common ancestor
+    conflictstyle = zdiff3  # Conflicts also show the common ancestor, and leave out the lines both sides share
 [pull]
     rebase = true  # Pulling rebases local commits instead of adding a merge commit
 [push]
