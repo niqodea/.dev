@@ -6,7 +6,8 @@ set -eu
 root="$(realpath "$(dirname "$(realpath "$0")")/..module")"
 backup_path="$1"
 
-grammar_path="$root/bin-submodules/tree-sitter-python"
+grammar_path="$root/submodules/tree-sitter-python"
+# Fetched here, since installing a module fetches only that module's submodules, and this script also runs for other modules
 git -C "$root" submodule update --init --depth 1 "$grammar_path"
 grammar_commit="$(git -C "$grammar_path" rev-parse HEAD)"
 

@@ -10,8 +10,7 @@ Each directory at the root of the repository is a module with the following stan
 - `program-versions`: the range of versions each installed program works with
 - `dotfiles/`: the dotfiles to install
 - `exported-dotfiles/`: dotfiles installed by other modules
-- `bin-submodules/`: git submodules containing programs to install
-- `dotfiles-submodules/`: git submodules containing dotfiles to install
+- `submodules/`: git submodules the module installs from
 - `README.md`: information about the module
 
 ### Dotfiles management
@@ -41,10 +40,9 @@ Then, we create symbolic links to these files in the dotfiles directory of the m
 
 We use git submodules to make our repository smaller and easier to manage, especially when working with external projects.
 
-Submodules in `bin-submodules` hold programs of our own, and the sources we build from, like a tree-sitter grammar.
-
-Submodules in `dotfiles-submodules` include files we link to in the dotfiles directory.
+A module's `submodules` directory holds what it installs from outside sources, like programs we build and plugins we link to in the dotfiles directory.
 This helps us know which files we handle and which come from outside sources.
+Installing a module's programs or dotfiles first fetches its submodules at the commits the repository pins.
 
 ### Breadcrumbs
 

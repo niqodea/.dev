@@ -26,11 +26,9 @@ if [ -e "$install_tart_path" ]; then
     "$install_tart_path" "$backup_path"
 fi
 
-breadcrumbs_path="$root/bin-submodules/breadcrumbs"
-git -C "$root" submodule update --init --depth 1 "$breadcrumbs_path"
+breadcrumbs_path="$root/submodules/breadcrumbs"
 cargo build --manifest-path="$breadcrumbs_path/Cargo.toml" --release
 ,copy-in-home "$backup_path" "$breadcrumbs_path/target/release/breadcrumbs" .local/bin/breadcrumbs
 
-lm_path="$root/bin-submodules/lm"
-git -C "$root" submodule update --init --depth 1 "$lm_path"
+lm_path="$root/submodules/lm"
 ,copy-in-home "$backup_path" "$lm_path/lm" .local/bin/lm

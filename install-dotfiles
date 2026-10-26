@@ -60,14 +60,10 @@ for module in $modules; do
 
     echo "Installing dotfiles for module $module"
     source_dotfiles_path="$module_path/dotfiles"
-    dotfiles_submodules_path="$module_path/dotfiles-submodules"
 
-    if [ -d "$dotfiles_submodules_path" ]; then
-        echo "Pulling Git submodules for dotfiles of module $module"
-        for submodule_path in "$dotfiles_submodules_path/"*; do
-            submodule_canon_path="$(readlink -f "$submodule_path")" # git takes a submodule by its real path, not through a symlink
-            git -C "$root" submodule update --init --depth 1 "$submodule_canon_path"
-        done
+    if [ -d "$module_path/submodules" ]; then
+        echo "Fetching the submodules of module $module"
+        git -C "$root" submodule update --init --depth 1 -- "$module_path/submodules"
     fi
 
     for source_dotfile_path in "$source_dotfiles_path/."[!.]*; do

@@ -1,25 +1,25 @@
-[submodule "nvim/dotfiles-submodules/fzf-lua"]
-	path = nvim/dotfiles-submodules/fzf-lua
+[submodule "nvim/submodules/fzf-lua"]
+	path = nvim/submodules/fzf-lua
 	url = https://github.com/ibhagwan/fzf-lua.git
-[submodule "nvim/dotfiles-submodules/lasso.nvim"]
-	path = nvim/dotfiles-submodules/lasso.nvim
+[submodule "nvim/submodules/lasso.nvim"]
+	path = nvim/submodules/lasso.nvim
 	url = https://github.com/niqodea/lasso.nvim.git
-[submodule "python/bin-submodules/ropify"]
-	path = python/bin-submodules/ropify
+[submodule "python/submodules/ropify"]
+	path = python/submodules/ropify
 	url = https://github.com/niqodea/ropify
-[submodule "python/bin-submodules/tree-sitter-python"]
-	path = python/bin-submodules/tree-sitter-python
+[submodule "python/submodules/tree-sitter-python"]
+	path = python/submodules/tree-sitter-python
 	url = https://github.com/tree-sitter/tree-sitter-python.git
     ignore = dirty
-[submodule "tmux/dotfiles-submodules/tmux-matryoshka"]
-	path = tmux/dotfiles-submodules/tmux-matryoshka
+[submodule "tmux/submodules/tmux-matryoshka"]
+	path = tmux/submodules/tmux-matryoshka
 	url = https://github.com/niqodea/tmux-matryoshka
-[submodule "utils/bin-submodules/breadcrumbs"]
-	path = utils/bin-submodules/breadcrumbs
+[submodule "utils/submodules/breadcrumbs"]
+	path = utils/submodules/breadcrumbs
 	url = https://github.com/niqodea/breadcrumbs.git
-[submodule ".foundation/bin-submodules/hburger"]
-	path = .foundation/bin-submodules/hburger
+[submodule ".foundation/submodules/hburger"]
+	path = .foundation/submodules/hburger
 	url = https://github.com/niqodea/hburger.git
-[submodule "utils/bin-submodules/lm"]
-	path = utils/bin-submodules/lm
+[submodule "utils/submodules/lm"]
+	path = utils/submodules/lm
 	url = https://github.com/niqodea/lm.git

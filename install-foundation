@@ -22,8 +22,9 @@ install_script="$(curl --fail --silent --show-error --location --max-time 60 'ht
 RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
 "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$HOME/.cargo/bin/cargo" cargo
 
-hburger_path="$foundation_path/bin-submodules/hburger"
-git -C "$root" submodule update --init --depth 1 "$hburger_path"
+echo "Fetching the submodules of the foundation"
+git -C "$root" submodule update --init --depth 1 -- "$foundation_path/submodules"
+hburger_path="$foundation_path/submodules/hburger"
 "$HOME/.cargo/bin/cargo" build --manifest-path="$hburger_path/Cargo.toml" --release
 "$foundation_path/bin/,copy-in-home" "$backup_path" "$hburger_path/target/release/hburger" .local/bin/hburger
 
