@@ -26,6 +26,6 @@ UV_TOOL_DIR="$ty_path" UV_TOOL_BIN_DIR="$ty_path/bin" uv tool install "ty==$ty_v
 ,link-in-local-bin "$backup_path" "$ty_path/bin/ty" ty
 
 ropify_path="$root/bin-submodules/ropify"
-git -C "$root" submodule update --init "$ropify_path"
+git -C "$root" submodule update --init --depth 1 "$ropify_path"
 UV_TOOL_BIN_DIR="$HOME/.local/opt/uv-tool-bin" uv tool install "$ropify_path"
 ,link-in-local-bin "$backup_path" "$HOME/.local/opt/uv-tool-bin/ropify" ropify

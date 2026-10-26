@@ -66,7 +66,7 @@ for module in $modules; do
         echo "Pulling Git submodules for dotfiles of module $module"
         for submodule_path in "$dotfiles_submodules_path/"*; do
             submodule_canon_path="$(readlink -f "$submodule_path")" # git takes a submodule by its real path, not through a symlink
-            git -C "$root" submodule update --init "$submodule_canon_path"
+            git -C "$root" submodule update --init --depth 1 "$submodule_canon_path"
         done
     fi
 

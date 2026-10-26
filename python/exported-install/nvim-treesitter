@@ -7,7 +7,7 @@ root="$(realpath "$(dirname "$(realpath "$0")")/..module")"
 backup_path="$1"
 
 grammar_path="$root/bin-submodules/tree-sitter-python"
-git -C "$root" submodule update --init "$grammar_path"
+git -C "$root" submodule update --init --depth 1 "$grammar_path"
 grammar_commit="$(git -C "$grammar_path" rev-parse HEAD)"
 
 # Two builds of the same grammar differ byte for byte, so each grammar commit is built once and that build is copied
