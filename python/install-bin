@@ -6,7 +6,36 @@ root="$(dirname "$(realpath "$0")")"
 backup_path="$1"
 os="$2"
 
-"$root/install-releases/$os" "$backup_path"
+uv_version='0.13.1'
+
+# Each download's sha256 changes with the version above, and comes from the release's own digest on GitHub
+case "$os-$(uname -m)" in
+    'macos-arm64')
+        uv_target='aarch64-apple-darwin'
+        uv_sha256='cfe454573412ff7380d15fc7dae5997ab53ffce72fce0a78e91ddbc84001acd2'
+        ;;
+    'macos-x86_64')
+        uv_target='x86_64-apple-darwin'
+        uv_sha256='bb7b805bdcf3d0bc8c74ceb94569e6b3e8aa35bd492acdbb9d46bf46d9d4ff6b'
+        ;;
+    'debian-aarch64')
+        uv_target='aarch64-unknown-linux-gnu'
+        uv_sha256='9041c73c99fdc5892cf128140beb354eca9231d502068cc36e6cb53a8e59ad14'
+        ;;
+    'debian-x86_64')
+        uv_target='x86_64-unknown-linux-gnu'
+        uv_sha256='eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220'
+        ;;
+    *)
+        >&2 echo "Unsupported processor: $(uname -m)"
+        exit 1
+        ;;
+esac
+
+# Downloaded on every system, since Debian 13 does not package uv
+uv_path="$(,download-release "https://github.com/astral-sh/uv/releases/download/$uv_version/uv-$uv_target.tar.gz" "$uv_sha256" uv "$uv_version")"
+,link-in-local-bin "$backup_path" "$uv_path/uv" uv
+,link-in-local-bin "$backup_path" "$uv_path/uvx" uvx
 
 python_version="$(awk '$1 == "python3" { print $2 }' "$root/program-versions")"
 UV_PYTHON_BIN_DIR="$HOME/.local/opt/uv-python-bin" uv python install "$python_version"
