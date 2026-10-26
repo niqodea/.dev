@@ -8,7 +8,6 @@
 - (maybe) move all dotfiles to separate git submodule
 - Write READMEs for all modules
 - (maybe) add configuration for optimized Xournal++ use (one hand for keyboard, other for pen) (if not possible with this tool, find another that best accommodates this workflow)
-- Install imagemagick, and write aliases for it and ffmpeg
 - Add linting for other file types to ./lint
 - Explore frecency solutions (zsh, nvim, ...)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported

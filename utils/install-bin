@@ -6,13 +6,15 @@ root="$(dirname "$(realpath "$0")")"
 backup_path="$1"
 os="$2"
 
-,install-package pass ffmpeg
+,install-package pass ffmpeg imagemagick
 pass_path="$(,get-package-path pass)"
 ,link-in-local-bin "$backup_path" "$pass_path" pass
 ffmpeg_path="$(,get-package-path ffmpeg)"
 ,link-in-local-bin "$backup_path" "$ffmpeg_path" ffmpeg
 ffprobe_path="$(,get-package-path ffprobe)"
 ,link-in-local-bin "$backup_path" "$ffprobe_path" ffprobe
+magick_path="$(,get-package-path magick)"
+,link-in-local-bin "$backup_path" "$magick_path" magick
 
 "$root/install-docker/$os" "$backup_path"
 docker_path="$(,get-package-path docker)"

@@ -1,4 +1,6 @@
 # program   at least   below
 pass        1.7        1.8
 ffmpeg      5.1        10
+# The magick command comes with ImageMagick 7
+magick      7          8
 docker      29         30
