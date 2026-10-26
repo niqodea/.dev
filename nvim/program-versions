@@ -1,4 +1,3 @@
 # program     at least   below
 # 'autocomplete' needs 0.12
 nvim          0.12       0.13
-tree-sitter   0.25       0.26

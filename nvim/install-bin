@@ -8,20 +8,22 @@ os="$2"
 
 "$root/install-releases/$os" "$backup_path"
 
-grammar_path="$root/submodules/tree-sitter-python"
-grammar_commit="$(git -C "$grammar_path" rev-parse HEAD)"
+grammar_version='v0.25.0'
+# Changes with the version above, and comes from the release's own digest on GitHub
+grammar_sha256='7bce887eb2f33e94bf74a69645cf5138d4096720e54fd3269a6124c06b93c584'
+grammar_path="$(,download-release "https://github.com/tree-sitter/tree-sitter-python/releases/download/$grammar_version/tree-sitter-python.tar.gz" "$grammar_sha256" tree-sitter-python "$grammar_version")"
 
-# Two builds of the same grammar differ byte for byte, so each grammar commit is built once and that build is copied
-build_path="$HOME/.local/opt/tree-sitter-python-$grammar_commit"
-if [ ! -e "$build_path" ]; then
-    mkdir -p "$HOME/.local/opt"
-    tmp="$(mktemp -d "$HOME/.local/opt/.tree-sitter-python.XXXXXX")"
+# nvim's releases load only native parsers, and the grammar's releases ship none, so the parser is built from its sources
+# Two builds of the same sources differ byte for byte, so each version is built once and that build is copied
+parser_path="$HOME/.local/opt/tree-sitter-python-parser-$grammar_version"
+if [ ! -e "$parser_path" ]; then
+    tmp="$(mktemp -d "$HOME/.local/opt/.tree-sitter-python-parser.XXXXXX")"
     trap 'rm -rf "$tmp"' EXIT
-    tree-sitter build "$grammar_path" -o "$tmp/python.so"
-    mv "$tmp" "$build_path"
+    cc -shared -fPIC -O2 -I "$grammar_path/src" "$grammar_path/src/parser.c" "$grammar_path/src/scanner.c" -o "$tmp/python.so"
+    mv "$tmp" "$parser_path"
 fi
 
 site_path="$HOME/.local/share/nvim/site"
 mkdir -p "$site_path/parser" "$site_path/queries/python"
-rsync --archive --checksum --backup --backup-dir="$backup_path/.local/share/nvim/site/parser" "$build_path/python.so" "$site_path/parser/python.so"
+rsync --archive --checksum --backup --backup-dir="$backup_path/.local/share/nvim/site/parser" "$parser_path/python.so" "$site_path/parser/python.so"
 rsync --archive --checksum --backup --backup-dir="$backup_path/.local/share/nvim/site/queries/python" "$grammar_path/queries/highlights.scm" "$site_path/queries/python/highlights.scm"
