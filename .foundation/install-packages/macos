@@ -1,5 +1,0 @@
-#!/bin/sh
-
-set -eu
-
-"$HOME/.local/bin/,install-package" rsync jq shellcheck luacheck

@@ -1,4 +1,4 @@
-# A verbatim copy of the fuzzy completion that fzf ships, kept in step with the fzf version in .foundation/install-releases
+# A verbatim copy of the fuzzy completion that fzf ships, kept in step with the fzf version in install-foundation
 # Ref: https://github.com/junegunn/fzf/blob/c0a193e031f01fb50bf6f7be4381990a3753f7cf/shell/completion.zsh
 
 #     ____      ____

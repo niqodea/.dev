@@ -44,6 +44,12 @@ A module's `submodules` directory holds what it installs from outside sources, l
 This helps us know which files we handle and which come from outside sources.
 Installing a module's programs or dotfiles first fetches its submodules at the commits the repository pins.
 
+### Differences between systems
+
+What stays installed and runs again and again, like a command or a file the shell profile loads, comes in one file per system, as in `<command>/debian` and `<command>/macos`.
+Installing picks the file for the system once, so running it never has to check.
+Install steps run once, so a script that installs picks the system with a `case` inside it instead.
+
 ### Breadcrumbs
 
 Our project uses symlinks extensively to make sure each file has only one main version.

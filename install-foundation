@@ -14,12 +14,44 @@ os=$("$foundation_path/identify")
 mkdir -p "$HOME/$DOTDEV_ATDIR"
 backup_path="$HOME/$DOTDEV_ATDIR/backups/$(date '+%Y_%m_%d-%H_%M_%S')"
 
-"$foundation_path/install-system-tools/$os"
+case "$os" in
+    debian)
+        # apt only knows the packages in its local lists, and a fresh machine can have them empty or out of date
+        sudo apt update
+        # What the foundation needs that a minimal Debian lacks
+        sudo apt install curl gcc libc6-dev lsof procps
+        ;;
+    macos)
+        # Install the Command Line Tools without the dialog that 'xcode-select --install' opens, which a script cannot wait for
+        # Copied from Homebrew's installer
+        # Ref: https://github.com/Homebrew/install/blob/8ab1549dfa1189fd4d818a2116592d8f0ee06d8c/install.sh#L885-L909
+        if [ ! -e /Library/Developer/CommandLineTools/usr/bin/git ]; then
+            (
+                # This temporary file prompts the 'softwareupdate' utility to list the Command Line Tools
+                clt_placeholder="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+                trap 'sudo rm -f "$clt_placeholder"' EXIT
+                sudo touch "$clt_placeholder"
+                clt_label="$(/usr/sbin/softwareupdate -l |
+                    grep -B 1 -E 'Command Line Tools' |
+                    awk -F'*' '/^ *\*/ {print $2}' |
+                    sed -e 's/^ *Label: //' -e 's/^ *//' |
+                    sort -V |
+                    tail -n1)"
+                sudo /usr/sbin/softwareupdate -i "$clt_label"
+                sudo /usr/bin/xcode-select --switch /Library/Developer/CommandLineTools
+            )
+        fi
+        ;;
+    *)
+        >&2 echo "Unsupported system: $os"
+        exit 1
+        ;;
+esac
 
 mkdir -p "$HOME/.local/bin"
 
-install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
-RUSTUP_VERSION=1.29.1 sh -c "$install_script" rustup-init -y --no-modify-path
+rustup_install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
+RUSTUP_VERSION=1.29.1 sh -c "$rustup_install_script" rustup-init -y --no-modify-path
 "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$HOME/.cargo/bin/cargo" cargo
 
 echo "Fetching the submodules of the foundation"
@@ -40,10 +72,12 @@ for command in "$foundation_path/bin/"*; do
     fi
 done
 
-# A system's package manager may use the foundation's commands
-install_package_manager_path="$foundation_path/install-package-manager/$os"
-if [ -e "$install_package_manager_path" ]; then
-    "$install_package_manager_path"
+# Homebrew is installed after the foundation's commands, which it uses, and Debian comes with apt
+if [ "$os" = macos ]; then
+    # The script is about 35 KB, so a download still running after a minute has stalled
+    homebrew_install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/Homebrew/install/8ab1549dfa1189fd4d818a2116592d8f0ee06d8c/install.sh')"
+    prefix="$("$HOME/.local/bin/,get-package-prefix")"
+    /bin/bash -c "$homebrew_install_script" install.sh --path="$prefix"
 fi
 
 "$foundation_path/bin/,copy-in-home" "$backup_path" "$foundation_path/profile" .profile
@@ -53,13 +87,66 @@ if [ -e "$os_profile_path" ]; then
     "$foundation_path/bin/,copy-in-home" "$backup_path" "$os_profile_path" .profile.d/os
 fi
 
-"$foundation_path/install-packages/$os" "$backup_path"
-"$foundation_path/install-releases/$os" "$backup_path"
+case "$os" in
+    debian)
+        # Debian names the Lua linter lua-check
+        "$HOME/.local/bin/,install-package" rsync jq shellcheck lua-check fzf
+        # fzf is a package on this system only, so it is linked here and not with the packages of every system
+        "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$("$foundation_path/bin/,get-package-path" fzf)" fzf
+        ;;
+    macos)
+        "$HOME/.local/bin/,install-package" rsync jq shellcheck luacheck
+        ;;
+    *)
+        >&2 echo "Unsupported system: $os"
+        exit 1
+        ;;
+esac
 # Every installed program is linked into ~/.local/bin
 for program in rsync jq shellcheck luacheck; do
     program_path="$("$foundation_path/bin/,get-package-path" "$program")"
     "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$program_path" "$program"
 done
+
+shfmt_version='v3.14.1'
+fzf_version='0.74.5'
+
+# Each download's sha256 changes with the versions above, and comes from the release's own digest on GitHub
+case "$os-$(uname -m)" in
+    'debian-aarch64')
+        shfmt_platform='linux_arm64'
+        shfmt_sha256='5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489'
+        ;;
+    'debian-x86_64')
+        shfmt_platform='linux_amd64'
+        shfmt_sha256='76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf'
+        ;;
+    'macos-arm64')
+        shfmt_platform='darwin_arm64'
+        shfmt_sha256='b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5'
+        fzf_platform='darwin_arm64'
+        fzf_sha256='ada808c7401b9949ce8842274ac16a6b6193fd32dcada396884a6a9a89e5985a'
+        ;;
+    'macos-x86_64')
+        shfmt_platform='darwin_amd64'
+        shfmt_sha256='d33eee0da0f92835b3562e9767a05cee7e4eaeef47daa03bfd09da17b4b590a6'
+        fzf_platform='darwin_amd64'
+        fzf_sha256='aca6cab692e6c069e724a43070a448e18586c7c0fdd1139f6d487ec1680599ed'
+        ;;
+    *)
+        >&2 echo "Unsupported processor: $(uname -m)"
+        exit 1
+        ;;
+esac
+
+# Downloaded on every system, since Debian 13 has shfmt 3.8, which is too old for this setup
+shfmt_path="$("$HOME/.local/bin/,download-release" "https://github.com/mvdan/sh/releases/download/$shfmt_version/shfmt_${shfmt_version}_$shfmt_platform" "$shfmt_sha256" shfmt "$shfmt_version")"
+"$foundation_path/bin/,link-in-local-bin" "$backup_path" "$shfmt_path/shfmt" shfmt
+
+if [ "$os" = macos ]; then
+    fzf_path="$("$HOME/.local/bin/,download-release" "https://github.com/junegunn/fzf/releases/download/v$fzf_version/fzf-$fzf_version-$fzf_platform.tar.gz" "$fzf_sha256" fzf "$fzf_version")"
+    "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$fzf_path/fzf" fzf
+fi
 
 "$foundation_path/bin/,copy-in-home" "$backup_path" "$foundation_path/program-versions" "$DOTDEV_ATDIR/program-versions/foundation"
 
