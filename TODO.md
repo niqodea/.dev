@@ -1,6 +1,5 @@
 # TODO
 
-- Add nvim git command to visualize merge conflicts with windiff
 - (maybe) move nvim lua files dealing with git as exported git dotfiles
 - write handy snippets (e.g. python)
 - (maybe) check out https://github.com/abhinav/tmux-fastcopy or alternatives

@@ -66,7 +66,7 @@ local function get_version_buf(commit, file_buf)
     local short_commit = run_git({ 'rev-parse', '--short', commit })[1]
     local buf = vim.fn.bufadd(short_commit .. ':' .. vim.fn.fnamemodify(path, ':.'))
     -- Another tab may have filled this buffer already, and a commit's version never changes
-    if vim.b[buf].git_version ~= nil then
+    if vim.b[buf].git_version_filled then
         return buf
     end
     -- Found from the path alone, since a file deleted with its folder leaves no folder to run git in
@@ -83,53 +83,115 @@ local function get_version_buf(commit, file_buf)
     end
     vim.bo[buf].modifiable = false
     vim.bo[buf].filetype = vim.bo[file_buf].filetype
-    -- The file whose old version this buffer holds
-    vim.b[buf].git_version = file_buf
+    vim.b[buf].git_version_filled = true
     return buf
 end
 
--- Opens the file as it was where HEAD left its base branch in a split to the right, or closes that split
 -- A tab holds one comparison, since Vim diffs all of a tab's diff windows together
-local function toggle_diff()
-    -- Pressed in the old-version pane, toggle_diff works on the file the pane is an old version of
-    local file_buf = vim.b.git_version or vim.api.nvim_get_current_buf()
-    local version_window = vim.iter(vim.api.nvim_tabpage_list_wins(0)):find(function(window)
-        return vim.b[vim.api.nvim_win_get_buf(window)].git_version ~= nil
-    end)
-    if version_window ~= nil then
-        -- Read before closing, since closing wipes the buffer
-        local compared_buf = vim.b[vim.api.nvim_win_get_buf(version_window)].git_version
-        local compared_window = vim.w[version_window].git_file_window
-        vim.api.nvim_win_close(version_window, false)
-        -- Vim restores a file's last 'diff' in a window, so the compared file is shown there briefly for diffoff
-        if vim.api.nvim_win_is_valid(compared_window) and vim.api.nvim_buf_is_valid(compared_buf)
-            and vim.api.nvim_win_get_buf(compared_window) ~= compared_buf then
-            vim.api.nvim_win_call(compared_window, function()
-                local view = vim.fn.winsaveview()
-                local shown_buf = vim.api.nvim_get_current_buf()
-                vim.cmd('noautocmd keepalt keepjumps buffer ' .. compared_buf)
-                vim.cmd('diffoff')
-                vim.cmd('noautocmd keepalt keepjumps buffer ' .. shown_buf)
-                vim.fn.winrestview(view)
-            end)
-        end
-        if compared_buf == file_buf then
-            return
-        end
-        vim.notify('Replaced the diff of ' .. vim.fn.bufname(compared_buf))
+local tab_taken_warning = 'This tab already shows a comparison, which <leader>g/ closes'
+
+-- The windows of the current tab that show a version of a file to compare with it
+local function get_panes()
+    return vim.tbl_filter(function(window)
+        return vim.w[window].git_file_window ~= nil
+    end, vim.api.nvim_tabpage_list_wins(0))
+end
+
+-- Shows a buffer beside a file's window, diffed against the file
+local function open_pane(buf, split, file_window)
+    local window = vim.api.nvim_open_win(buf, false, { split = split, win = file_window })
+    vim.api.nvim_win_call(window, function() vim.cmd('diffthis') end)
+    vim.w[window].git_file_window = file_window
+    -- The file window can show another buffer by the time the pane closes
+    vim.w[window].git_file_buf = vim.api.nvim_win_get_buf(file_window)
+end
+
+-- Opens the file as it was where HEAD left its base branch in a split to the right
+local function open_diff()
+    if #get_panes() > 0 then
+        vim.notify(tab_taken_warning, vim.log.levels.WARN)
+        return
     end
+    local file_buf = vim.api.nvim_get_current_buf()
     local base_branch = run_git({ 'base-branch' })[1]
     local branch_point = run_git({ 'merge-base', base_branch, 'HEAD' })[1]
     local version_buf = get_version_buf(branch_point, file_buf)
-    local file_window = vim.api.nvim_get_current_win()
     vim.cmd('diffthis')
-    local new_version_window = vim.api.nvim_open_win(version_buf, false, { split = 'right' })
-    vim.api.nvim_win_call(new_version_window, function() vim.cmd('diffthis') end)
-    vim.w[new_version_window].git_file_window = file_window
+    open_pane(version_buf, 'right', vim.api.nvim_get_current_win())
 end
 
-vim.keymap.set('n', '<leader>gd', toggle_diff)
+-- One side of a conflicted file, read-only and named after the side, as in ours:<file>
+local function get_side_buf(side, lines, file_buf)
+    local buf = vim.fn.bufadd(side .. ':' .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(file_buf), ':.'))
+    vim.bo[buf].buftype = 'nofile'
+    vim.bo[buf].bufhidden = 'wipe'
+    vim.fn.bufload(buf)
+    -- Another window can still show this buffer, read-only, from an earlier conflict on the same file
+    vim.bo[buf].modifiable = true
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].filetype = vim.bo[file_buf].filetype
+    return buf
+end
+
+-- Opens ours to the left of a conflicted file and theirs to the right
+local function open_conflict()
+    if #get_panes() > 0 then
+        vim.notify(tab_taken_warning, vim.log.levels.WARN)
+        return
+    end
+    local file_buf = vim.api.nvim_get_current_buf()
+    local path = vim.api.nvim_buf_get_name(file_buf)
+    local root = assert(vim.fs.root(path, '.git'), path .. ' is in no git repository')
+    -- One line per stage the file has in the index, as in "100644 <object> 2\t<path>"
+    local unmerged = run_git({ '-C', root, 'ls-files', '--unmerged', '--', vim.fs.relpath(root, path) })
+    if #unmerged == 0 then
+        error(path .. ' has no conflict')
+    end
+    local objects_by_stage = {}
+    for _, line in ipairs(unmerged) do
+        local object, stage = line:match('^%S+ (%S+) (%d)\t')
+        objects_by_stage[tonumber(stage)] = object
+    end
+    -- git keeps ours as stage 2 and theirs as stage 3, and a side that deleted the file has no stage
+    local our_lines = objects_by_stage[2] and run_git({ '-C', root, 'cat-file', 'blob', objects_by_stage[2] }) or {}
+    local their_lines = objects_by_stage[3] and run_git({ '-C', root, 'cat-file', 'blob', objects_by_stage[3] }) or {}
+    local our_buf = get_side_buf('ours', our_lines, file_buf)
+    local their_buf = get_side_buf('theirs', their_lines, file_buf)
+    local file_window = vim.api.nvim_get_current_win()
+    vim.cmd('diffthis')
+    open_pane(our_buf, 'left', file_window)
+    open_pane(their_buf, 'right', file_window)
+end
+
+-- Closes the current tab's comparison, and leaves diff mode in the compared file's window
+local function close_comparison()
+    local panes = get_panes()
+    if #panes == 0 then
+        return
+    end
+    local file_window = vim.w[panes[1]].git_file_window
+    local file_buf = vim.w[panes[1]].git_file_buf
+    for _, window in ipairs(panes) do
+        vim.api.nvim_win_close(window, false)
+    end
+    -- Vim restores a file's last 'diff' in a window, so the file is shown there briefly for diffoff
+    if vim.api.nvim_win_is_valid(file_window) and vim.api.nvim_buf_is_valid(file_buf) then
+        vim.api.nvim_win_call(file_window, function()
+            local view = vim.fn.winsaveview()
+            local shown_buf = vim.api.nvim_get_current_buf()
+            vim.cmd('noautocmd keepalt keepjumps buffer ' .. file_buf)
+            vim.cmd('diffoff')
+            vim.cmd('noautocmd keepalt keepjumps buffer ' .. shown_buf)
+            vim.fn.winrestview(view)
+        end)
+    end
+end
+
+vim.keymap.set('n', '<leader>gd', open_diff)
 vim.keymap.set('n', '<leader>gD', diff_all)
+vim.keymap.set('n', '<leader>gm', open_conflict)
+vim.keymap.set('n', '<leader>g/', close_comparison)
 vim.api.nvim_create_user_command('GitSetBase', function(args)
     run_git({ 'base-branch', args.args })
 end, { nargs = 1, complete = complete_branch })
