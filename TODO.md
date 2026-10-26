@@ -13,7 +13,6 @@
 - Explore frecency solutions (zsh, nvim, ...)
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported
 - Look into other tools for a richer, semantic diff
-- Implement nvim string/lines diff solution (search the web, an idea could be to compare yank register and visual selection)
 - (maybe) add GPU usage to the load levels in the tmux status bar
 - Check for new functionalities of nvim, git versions
 - Add git-active-files to https://github.com/ahmetsait/toolgit
