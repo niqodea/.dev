@@ -18,7 +18,6 @@
 - (maybe) add GPU usage to the load levels in the tmux status bar
 - Check for new functionalities of nvim, git versions
 - Add git-active-files to https://github.com/ahmetsait/toolgit
-- Do not install a program that is already available in the path (perhaps opt-in)
 - Remove distinction between bin- and dotfiles- submodules, the distinction is getting fuzzier
 - Build on the session's Claude pane
   - (paused) Tell a Claude waiting for a permission apart from one that finished, in the status bar and the picker, once Claude Code fires a hook when a permission prompt is answered (https://github.com/anthropics/claude-code/issues/77700). Until then, a Claude whose prompt was approved would show as waiting until its tool finishes
