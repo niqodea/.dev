@@ -7,8 +7,8 @@
 [submodule "python/submodules/ropify"]
 	path = python/submodules/ropify
 	url = https://github.com/niqodea/ropify
-[submodule "python/submodules/tree-sitter-python"]
-	path = python/submodules/tree-sitter-python
+[submodule "nvim/submodules/tree-sitter-python"]
+	path = nvim/submodules/tree-sitter-python
 	url = https://github.com/tree-sitter/tree-sitter-python.git
     ignore = dirty
 [submodule "tmux/submodules/tmux-matryoshka"]
