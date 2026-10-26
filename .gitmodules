@@ -1,6 +1,3 @@
-[submodule "nvim/dotfiles-submodules/aerial.nvim"]
-	path = nvim/dotfiles-submodules/aerial.nvim
-	url = https://github.com/stevearc/aerial.nvim.git
 [submodule "nvim/dotfiles-submodules/fzf-lua"]
 	path = nvim/dotfiles-submodules/fzf-lua
 	url = https://github.com/ibhagwan/fzf-lua.git

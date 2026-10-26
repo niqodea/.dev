@@ -44,22 +44,4 @@ vim.keymap.set('i', '<CR>', function()
     return '<C-y>'
 end, { expr = true })
 
-vim.cmd('packadd aerial.nvim')
-require('aerial').setup({
-    backends = { 'lsp' },
-    -- With diagnostics off, aerial would wait for them, so it updates when the buffer changes instead
-    -- Ref: https://github.com/stevearc/aerial.nvim/issues/54#issuecomment-1028611526
-    lsp = {
-        diagnostics_trigger_update = false,
-    },
-    layout = {
-        max_width = 0.9,
-        min_width = 0.9,
-    },
-    float = {
-        relative = 'win',
-        max_height = 0.9,
-        min_height = 0.9,
-    }
-})
-vim.keymap.set('n', lsp_prefix..'s', '<cmd>AerialOpen float<CR>')
+vim.keymap.set('n', lsp_prefix..'s', require('x.modules.lsp-symbols').open)
