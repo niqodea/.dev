@@ -4,7 +4,7 @@ set -eu
 
 backup_path="$1"
 
-neovim_version='v0.12.3'
+neovim_version='v0.12.6'
 tree_sitter_version='v0.25.10'
 
 # Each download's sha256 changes with the versions above, and comes from the release's own digest on GitHub
@@ -12,13 +12,13 @@ case "$(uname -m)" in
     'aarch64')
         neovim_arch='arm64'
         tree_sitter_arch='arm64'
-        neovim_sha256='e055af73fa9c72b37456da8d204fa5c09850bc07e80e9176fe3b87d4afb7a3fc'
+        neovim_sha256='8f1f64a0bdb97247034038c3823c6cbad5bdf9ecd5751b85494b71c3ee04c815'
         tree_sitter_sha256='07fbff8ae0eeb0d3e496e14fc1a30dcc730cc2c97d70e601e5357f2e51958af5'
         ;;
     'x86_64')
         neovim_arch='x86_64'
         tree_sitter_arch='x64'
-        neovim_sha256='c441b547142860bf01bcce39e36cbed185c41112813e15443b16e5237750724d'
+        neovim_sha256='474430d53e6264f6d6dd18db42d6dc9df3a1b56ca9e88a325bbf860e1a811d87'
         tree_sitter_sha256='8283ddba69253c698f6e987ba0e2f9285e079c8db4d36ebe1394b5bb3a0ebdfd'
         ;;
     *)
