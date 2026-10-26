@@ -4,9 +4,6 @@
 [submodule "nvim/dotfiles-submodules/fzf-lua"]
 	path = nvim/dotfiles-submodules/fzf-lua
 	url = https://github.com/ibhagwan/fzf-lua.git
-[submodule "nvim/dotfiles-submodules/gitsigns.nvim"]
-	path = nvim/dotfiles-submodules/gitsigns.nvim
-	url = https://github.com/lewis6991/gitsigns.nvim.git
 [submodule "nvim/dotfiles-submodules/lasso.nvim"]
 	path = nvim/dotfiles-submodules/lasso.nvim
 	url = https://github.com/niqodea/lasso.nvim.git
