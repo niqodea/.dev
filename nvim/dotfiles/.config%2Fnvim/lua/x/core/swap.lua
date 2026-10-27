@@ -15,13 +15,13 @@ local function recover(base)
         -- Swap files name a file under the home directory as ~user/...
         local path = info.fname:gsub('^~' .. vim.pesc(user) .. '/', home .. '/')
 
-        if (
+        if
             -- swapinfo() reports a pid only while the nvim that owns the swap file is running
-            info.pid > 0 or
+            info.pid > 0
             -- Buffers without a file, like directory listings, leave swap files without a name
-            info.fname == '' or
-            vim.fs.relpath(base, path) == nil
-        ) then
+            or info.fname == ''
+            or vim.fs.relpath(base, path) == nil
+        then
             goto continue
         end
 
@@ -32,20 +32,21 @@ local function recover(base)
 
         local bufnr = vim.fn.bufadd(path)
         if vim.bo[bufnr].modified then
-            table.insert(qf_list, { bufnr = bufnr, lnum = 1, text = "buffer modified, could not recover from " .. swap })
+            table.insert(
+                qf_list,
+                { bufnr = bufnr, lnum = 1, text = 'buffer modified, could not recover from ' .. swap }
+            )
             goto continue
         end
 
         vim.api.nvim_buf_call(bufnr, function()
             local ok, message = pcall(vim.cmd, 'silent recover ' .. vim.fn.fnameescape(swap))
             -- E308 warns that the file changed on disk after the crash, once the recovery is done
-            if not ok and not message:find('E308:') then
-                error(message)
-            end
+            if not ok and not message:find('E308:') then error(message) end
         end)
         vim.bo[bufnr].buflisted = true
         assert(os.remove(swap))
-        table.insert(qf_list, { bufnr = bufnr, lnum = 1, text = "recovered, :write to keep or :edit! to drop" })
+        table.insert(qf_list, { bufnr = bufnr, lnum = 1, text = 'recovered, :write to keep or :edit! to drop' })
 
         ::continue::
     end
@@ -58,16 +59,9 @@ local function recover(base)
     vim.cmd('copen')
 end
 
+local function recover_cwd() recover(vim.fn.getcwd()) end
 
-local function recover_cwd()
-    recover(vim.fn.getcwd())
-end
-
-
-local function recover_path(args)
-    recover(vim.fs.abspath(vim.fn.expand(args.args)))
-end
-
+local function recover_path(args) recover(vim.fs.abspath(vim.fn.expand(args.args))) end
 
 -- Recover what crashed nvims left unsaved in their swap files, and remove the swap files
 vim.api.nvim_create_user_command('RecoverCwd', recover_cwd, {})

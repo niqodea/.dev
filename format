@@ -13,3 +13,6 @@ git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfi
 # zsh files are marked by their name
 # shfmt cannot parse the always blocks in the fzf completion, which is kept as fzf wrote it
 git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zsh.sample' ':!zsh/dotfiles/.zsh-modules/core/fzf-completion.zsh' | sed "s|^|$root/|" | xargs shfmt --write
+
+# An empty pattern matches every file with a line in it, which here means every regular tracked Lua file
+git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs stylua --config-path "$root/.stylua.toml"

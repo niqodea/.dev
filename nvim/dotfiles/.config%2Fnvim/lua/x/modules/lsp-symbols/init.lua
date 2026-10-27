@@ -26,9 +26,7 @@ local function get_symbols(source_buf)
     local responses = assert(vim.lsp.buf_request_sync(source_buf, 'textDocument/documentSymbol', params, 1000))
     local symbols = {}
     for client_id, response in pairs(responses) do
-        if response.err ~= nil then
-            error(response.err.message)
-        end
+        if response.err ~= nil then error(response.err.message) end
         local encoding = vim.lsp.get_client_by_id(client_id).offset_encoding
         -- nvim asks for each symbol nested in its parent, rather than for a flat list
         local function add_symbols(document_symbols, depth)
@@ -60,9 +58,7 @@ end
 local function fill_symbols_buf(symbols_buf)
     local source_buf = vim.b[symbols_buf].symbols_source
     -- A file that was closed, or that lost its server, leaves the list as it last was
-    if not can_list_symbols(source_buf) then
-        return
-    end
+    if not can_list_symbols(source_buf) then return end
     local symbols = get_symbols(source_buf)
     local lines = {}
     local tag_starts = {}
@@ -81,15 +77,16 @@ local function fill_symbols_buf(symbols_buf)
             hl_group = symbol.kind.hl_group,
         })
     end
-    vim.b[symbols_buf].symbol_positions = vim.tbl_map(function(symbol) return { symbol.line, symbol.column } end, symbols)
+    vim.b[symbols_buf].symbol_positions = vim.tbl_map(
+        function(symbol) return { symbol.line, symbol.column } end,
+        symbols
+    )
 end
 
 -- Goes from a symbols buffer to the name of the symbol under the cursor
 local function jump_to_symbol()
     local position = vim.b.symbol_positions[vim.api.nvim_win_get_cursor(0)[1]]
-    if position == nil then
-        return
-    end
+    if position == nil then return end
     vim.cmd.buffer(vim.b.symbols_source)
     vim.api.nvim_win_set_cursor(0, position)
 end
@@ -125,9 +122,7 @@ local function open_symbols()
     -- The cursor lands on the last symbol starting at or above the line it left, which is the symbol it was in or the one before
     local row = 1
     for index, position in ipairs(vim.b[symbols_buf].symbol_positions) do
-        if position[1] <= cursor_line then
-            row = index
-        end
+        if position[1] <= cursor_line then row = index end
     end
     vim.api.nvim_win_set_cursor(0, { row, 0 })
 end

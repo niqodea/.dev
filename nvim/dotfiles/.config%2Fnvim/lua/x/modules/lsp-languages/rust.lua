@@ -6,9 +6,9 @@ vim.lsp.config('rust_analyzer', {
         ['rust-analyzer'] = {
             imports = {
                 granularity = {
-                    group = "module",
+                    group = 'module',
                 },
-                prefix = "self",
+                prefix = 'self',
             },
             cargo = {
                 buildScripts = {
@@ -16,7 +16,7 @@ vim.lsp.config('rust_analyzer', {
                 },
             },
             procMacro = {
-                enable = true
+                enable = true,
             },
         },
     },

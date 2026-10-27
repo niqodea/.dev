@@ -1,14 +1,8 @@
-vim.api.nvim_create_user_command('GitActiveFiles', function()
-    vim.cmd('terminal git active-files')
-end, {})
+vim.api.nvim_create_user_command('GitActiveFiles', function() vim.cmd('terminal git active-files') end, {})
 
-vim.api.nvim_create_user_command('GitRecentFiles', function()
-    vim.cmd('terminal git recent-files')
-end, {})
+vim.api.nvim_create_user_command('GitRecentFiles', function() vim.cmd('terminal git recent-files') end, {})
 
-vim.api.nvim_create_user_command('GitStatus', function()
-    vim.cmd('terminal git status --short')
-end, {})
+vim.api.nvim_create_user_command('GitStatus', function() vim.cmd('terminal git status --short') end, {})
 
 local function run_git(arguments)
     local output = vim.fn.systemlist(vim.list_extend({ 'git' }, arguments))
@@ -43,7 +37,10 @@ local function diff_all()
             in_header = false
             local line_number = line:match('^@@ %-%S+ %+(%d+)')
             -- A hunk that only deletes the first lines starts at line 0
-            table.insert(items, { filename = root .. '/' .. path, lnum = math.max(tonumber(line_number), 1), text = '' })
+            table.insert(
+                items,
+                { filename = root .. '/' .. path, lnum = math.max(tonumber(line_number), 1), text = '' }
+            )
         elseif in_header then
             -- A deleted file has only its old path, and an added one only its new path
             -- git ends a name that contains a space with a tab, which is not part of the name
@@ -66,9 +63,7 @@ local function get_version_buf(commit, file_buf)
     local short_commit = run_git({ 'rev-parse', '--short', commit })[1]
     local buf = vim.fn.bufadd(short_commit .. ':' .. vim.fn.fnamemodify(path, ':.'))
     -- Another tab may have filled this buffer already, and a commit's version never changes
-    if vim.b[buf].git_version_filled then
-        return buf
-    end
+    if vim.b[buf].git_version_filled then return buf end
     -- Found from the path alone, since a file deleted with its folder leaves no folder to run git in
     local root = assert(vim.fs.root(path, '.git'), path .. ' is in no git repository')
     local relative_path = vim.fs.relpath(root, path)
@@ -92,9 +87,10 @@ local tab_taken_warning = 'This tab already shows a comparison, which <leader>g/
 
 -- The windows of the current tab that show a version of a file to compare with it
 local function get_panes()
-    return vim.tbl_filter(function(window)
-        return vim.w[window].git_file_window ~= nil
-    end, vim.api.nvim_tabpage_list_wins(0))
+    return vim.tbl_filter(
+        function(window) return vim.w[window].git_file_window ~= nil end,
+        vim.api.nvim_tabpage_list_wins(0)
+    )
 end
 
 -- Shows a buffer beside a file's window, diffed against the file
@@ -145,9 +141,7 @@ local function open_conflict()
     local root = assert(vim.fs.root(path, '.git'), path .. ' is in no git repository')
     -- One line per stage the file has in the index, as in "100644 <object> 2\t<path>"
     local unmerged = run_git({ '-C', root, 'ls-files', '--unmerged', '--', vim.fs.relpath(root, path) })
-    if #unmerged == 0 then
-        error(path .. ' has no conflict')
-    end
+    if #unmerged == 0 then error(path .. ' has no conflict') end
     local objects_by_stage = {}
     for _, line in ipairs(unmerged) do
         local object, stage = line:match('^%S+ (%S+) (%d)\t')
@@ -167,9 +161,7 @@ end
 -- Closes the current tab's comparison, and leaves diff mode in the compared file's window
 local function close_comparison()
     local panes = get_panes()
-    if #panes == 0 then
-        return
-    end
+    if #panes == 0 then return end
     local file_window = vim.w[panes[1]].git_file_window
     local file_buf = vim.w[panes[1]].git_file_buf
     for _, window in ipairs(panes) do
@@ -192,6 +184,8 @@ vim.keymap.set('n', '<leader>gd', open_diff)
 vim.keymap.set('n', '<leader>gD', diff_all)
 vim.keymap.set('n', '<leader>gm', open_conflict)
 vim.keymap.set('n', '<leader>g/', close_comparison)
-vim.api.nvim_create_user_command('GitSetBase', function(args)
-    run_git({ 'base-branch', args.args })
-end, { nargs = 1, complete = complete_branch })
+vim.api.nvim_create_user_command(
+    'GitSetBase',
+    function(args) run_git({ 'base-branch', args.args }) end,
+    { nargs = 1, complete = complete_branch }
+)

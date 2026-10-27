@@ -23,6 +23,7 @@ git -C "$root" grep --files-with-matches '' -- '*.zsh' '*.zshrc' '*.zshenv' '*.z
 # --codes names each warning's rule, which an inline ignore has to name too
 # The plain formatter prints only the warnings, so a clean run prints nothing, like every other check here
 git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs luacheck --config "$root/.luacheckrc" --formatter plain --codes
+git -C "$root" grep --files-with-matches '' -- '*.lua' | sed "s|^|$root/|" | xargs stylua --config-path "$root/.stylua.toml" --check
 
 # -n parses the files without running their commands, on a server of its own, so no tmux session sees them
 git -C "$root" grep --files-with-matches '' -- '*.tmux.conf' | sed "s|^|$root/|" | xargs tmux -L lint -f /dev/null start-server ';' source-file -n

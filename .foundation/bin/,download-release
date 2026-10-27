@@ -3,7 +3,7 @@
 set -eu
 
 # Downloads a program's release file, checks its sha256 and unpacks it into ~/.local/opt/<program>-<version>, then prints that path
-# The file is a .tar.gz archive, a .gz of the executable <program>, or that executable itself
+# The file is a .tar.gz archive, a .zip archive with its files at the top, a .gz of the executable <program>, or that executable itself
 url="$1"
 sha256="$2"
 program="$3"
@@ -25,6 +25,9 @@ if [ ! -e "$path" ]; then
             else
                 tar -xf "$tmp/download" -C "$tmp/$program" --strip-components=1
             fi
+            ;;
+        *.zip)
+            unzip -q "$tmp/download" -d "$tmp/$program"
             ;;
         *.gz)
             gunzip --to-stdout "$tmp/download" > "$tmp/$program/$program"

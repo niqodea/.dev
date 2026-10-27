@@ -1,9 +1,9 @@
 -- One column for git signs, always shown so the text does not shift
 vim.wo.signcolumn = 'yes:1'
 
-vim.api.nvim_set_hl(0, "GitSignAdd", { ctermfg = 'DarkGreen' })
-vim.api.nvim_set_hl(0, "GitSignChange", { ctermfg = 'DarkYellow' })
-vim.api.nvim_set_hl(0, "GitSignDelete", { ctermfg = 'DarkRed' })
+vim.api.nvim_set_hl(0, 'GitSignAdd', { ctermfg = 'DarkGreen' })
+vim.api.nvim_set_hl(0, 'GitSignChange', { ctermfg = 'DarkYellow' })
+vim.api.nvim_set_hl(0, 'GitSignDelete', { ctermfg = 'DarkRed' })
 
 local signs_namespace = vim.api.nvim_create_namespace('git-signs')
 
@@ -16,18 +16,12 @@ local function update_signs(buf)
     vim.api.nvim_buf_clear_namespace(buf, signs_namespace, 0, -1)
     local path = vim.api.nvim_buf_get_name(buf)
     -- Terminals, folders, scratch buffers and unnamed buffers hold no file that git could know
-    if vim.bo[buf].buftype ~= '' or path == '' then
-        return
-    end
+    if vim.bo[buf].buftype ~= '' or path == '' then return end
     local root = vim.fs.root(path, '.git')
-    if root == nil then
-        return
-    end
+    if root == nil then return end
     local committed_lines = vim.fn.systemlist({ 'git', '-C', root, 'show', 'HEAD:' .. vim.fs.relpath(root, path) })
     -- A file missing from the last commit, like a new one, has nothing to compare against, so it gets no signs
-    if vim.v.shell_error ~= 0 then
-        return
-    end
+    if vim.v.shell_error ~= 0 then return end
     local buffer_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local committed_text = table.concat(committed_lines, '\n') .. '\n'
     local buffer_text = table.concat(buffer_lines, '\n') .. '\n'
@@ -55,30 +49,27 @@ vim.api.nvim_create_autocmd({ 'TextChanged', 'InsertLeave', 'BufEnter', 'FocusGa
 
 local fzf_lua = require('x.core.fuzzy').fzf_lua
 
-vim.keymap.set('n', '<leader>fg-', function()
-    fzf_lua.git_files()
-end)
-vim.keymap.set('n', '<leader>fg/', function()
-    fzf_lua.live_grep({ cmd = "git grep --line-number --column" })
-end)
-vim.keymap.set('n', '<leader>fg*', function()
-    fzf_lua.grep_cword({ cmd = "git grep --line-number --column" })
-end)
-vim.keymap.set('v', '<leader>fg*', function()
-    fzf_lua.grep_visual({ cmd = "git grep --line-number --column" })
-end)
+vim.keymap.set('n', '<leader>fg-', function() fzf_lua.git_files() end)
+vim.keymap.set('n', '<leader>fg/', function() fzf_lua.live_grep({ cmd = 'git grep --line-number --column' }) end)
+vim.keymap.set('n', '<leader>fg*', function() fzf_lua.grep_cword({ cmd = 'git grep --line-number --column' }) end)
+vim.keymap.set('v', '<leader>fg*', function() fzf_lua.grep_visual({ cmd = 'git grep --line-number --column' }) end)
 
 -- The capital F searches from the current file's folder
-vim.keymap.set('n', '<leader>Fg-', function()
-    fzf_lua.git_files({ cwd = vim.fn.expand('%:p:h') }) end)
-vim.keymap.set('n', '<leader>Fg/', function()
-    fzf_lua.live_grep({ cwd = vim.fn.expand('%:p:h'), cmd = "git grep --line-number --column" })
-end)
-vim.keymap.set('n', '<leader>Fg*', function()
-    fzf_lua.grep_cword({ cwd = vim.fn.expand('%:p:h'), cmd = "git grep --line-number --column" })
-end)
-vim.keymap.set('v', '<leader>Fg*', function()
-    fzf_lua.grep_visual({ cwd = vim.fn.expand('%:p:h'), cmd = "git grep --line-number --column" })
-end)
+vim.keymap.set('n', '<leader>Fg-', function() fzf_lua.git_files({ cwd = vim.fn.expand('%:p:h') }) end)
+vim.keymap.set(
+    'n',
+    '<leader>Fg/',
+    function() fzf_lua.live_grep({ cwd = vim.fn.expand('%:p:h'), cmd = 'git grep --line-number --column' }) end
+)
+vim.keymap.set(
+    'n',
+    '<leader>Fg*',
+    function() fzf_lua.grep_cword({ cwd = vim.fn.expand('%:p:h'), cmd = 'git grep --line-number --column' }) end
+)
+vim.keymap.set(
+    'v',
+    '<leader>Fg*',
+    function() fzf_lua.grep_visual({ cwd = vim.fn.expand('%:p:h'), cmd = 'git grep --line-number --column' }) end
+)
 
 require('x.modules.git-commands')

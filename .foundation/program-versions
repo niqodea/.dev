@@ -7,3 +7,4 @@ shellcheck   0.9        1
 # Formatting zsh needs 3.13
 shfmt        3.13       4
 luacheck     1.1        2
+stylua       2.6        3

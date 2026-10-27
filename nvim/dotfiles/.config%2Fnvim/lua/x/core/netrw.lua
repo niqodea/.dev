@@ -7,13 +7,11 @@ vim.g.netrw_fastbrowse = 2
 -- into an empty path that it reads as the current directory, and // into /
 local ROOT = '//'
 
-
 local function explore(arguments)
     -- m' adds the file you leave to the jumplist, for CTRL-O to come back to
     vim.cmd("normal! m'")
     vim.cmd('Explore ' .. arguments)
 end
-
 
 local function explore_cwd()
     -- `Explore .` does nothing inside a netrw listing, so the folder is named in full
@@ -21,41 +19,33 @@ local function explore_cwd()
     explore(vim.fn.fnameescape(cwd))
 end
 
-
 local function explore_git_root()
     local handle = io.popen('git rev-parse --show-toplevel 2> /dev/null')
     local git_root = handle:read('*line')
     handle:close()
 
-    if git_root == nil then
-        error('Not in a git repository')
-    end
+    if git_root == nil then error('Not in a git repository') end
 
     explore(vim.fn.fnameescape(git_root))
 end
-
 
 local function explore_directory()
     local name = vim.fn.expand('%:t')
     explore('')
 
     for i, line in ipairs(vim.api.nvim_buf_get_lines(0, 0, -1, false)) do
-        if (
-            line == name or
-            line == name .. '*' or  -- executable
-            vim.startswith(line, name .. '@\t')  -- symlink, followed by its target
-        ) then
+        if
+            line == name
+            or line == name .. '*' -- executable
+            or vim.startswith(line, name .. '@\t') -- symlink, followed by its target
+        then
             vim.api.nvim_win_set_cursor(0, { i, 0 })
             return
         end
     end
 end
 
-
-local function explore_path(args)
-    explore(args.args)
-end
-
+local function explore_path(args) explore(args.args) end
 
 local function browse_up_directory()
     if vim.fn.fnamemodify(vim.b.netrw_curdir, ':p:h:h') == '/' then
@@ -67,7 +57,6 @@ local function browse_up_directory()
     vim.cmd('execute "normal \\<Plug>NetrwBrowseUpDir"')
 end
 
-
 local function rename_without_overwriting()
     local line = vim.api.nvim_get_current_line()
     -- Strip the marks netrw puts after a name: / for a directory, * for an executable, and @ for a
@@ -76,9 +65,7 @@ local function rename_without_overwriting()
     local old_path = vim.fs.joinpath(vim.b.netrw_curdir, name)
     local new_path = vim.fn.input('Moving ' .. old_path .. ' to : ', old_path, 'file')
 
-    if new_path == '' or new_path == old_path then
-        return
-    end
+    if new_path == '' or new_path == old_path then return end
     if vim.uv.fs_stat(new_path) ~= nil then
         vim.notify('Already exists: ' .. new_path, vim.log.levels.ERROR)
         return
@@ -91,7 +78,6 @@ local function rename_without_overwriting()
     end
     vim.cmd('execute "normal \\<Plug>NetrwRefresh"')
 end
-
 
 -- netrw sets its keys on each listing it opens, so ours are set on each listing too
 vim.api.nvim_create_autocmd('FileType', {

@@ -19,7 +19,7 @@ case "$os" in
         # apt only knows the packages in its local lists, and a fresh machine can have them empty or out of date
         sudo apt update
         # What the foundation needs that a minimal Debian lacks
-        sudo apt install curl gcc libc6-dev lsof procps
+        sudo apt install curl gcc libc6-dev lsof procps unzip
         ;;
     macos)
         # Install the Command Line Tools without the dialog that 'xcode-select --install' opens, which a script cannot wait for
@@ -109,6 +109,7 @@ for program in rsync jq shellcheck luacheck; do
 done
 
 shfmt_version='v3.14.1'
+stylua_version='v2.6.0'
 fzf_version='0.74.5'
 
 # Each download's sha256 changes with the versions above, and comes from the release's own digest on GitHub
@@ -116,20 +117,28 @@ case "$os-$(uname -m)" in
     'debian-aarch64')
         shfmt_platform='linux_arm64'
         shfmt_sha256='5f2db09dae91fca848f7adbdd014632e921a383863a2ad7e0450ad3aba0c6489'
+        stylua_platform='linux-aarch64'
+        stylua_sha256='8e67539e5fdf7a81cd03cf592b0df18d3bb96ee17a5ea5d9bf67b86387b903b0'
         ;;
     'debian-x86_64')
         shfmt_platform='linux_amd64'
         shfmt_sha256='76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf'
+        stylua_platform='linux-x86_64'
+        stylua_sha256='a485f72bbfa22e4642e77a84b5edc2611a5cab7477b34e2e709dd8f78e919895'
         ;;
     'macos-arm64')
         shfmt_platform='darwin_arm64'
         shfmt_sha256='b7c872db63553ccffc7253aba3ed7d4885a27d83f1ba567b1138c6315a5847e5'
+        stylua_platform='macos-aarch64'
+        stylua_sha256='dab9b66d340ca5ffc8225211f1dcf89b84783e09b8cbec8c518497eba81f3c42'
         fzf_platform='darwin_arm64'
         fzf_sha256='ada808c7401b9949ce8842274ac16a6b6193fd32dcada396884a6a9a89e5985a'
         ;;
     'macos-x86_64')
         shfmt_platform='darwin_amd64'
         shfmt_sha256='d33eee0da0f92835b3562e9767a05cee7e4eaeef47daa03bfd09da17b4b590a6'
+        stylua_platform='macos-x86_64'
+        stylua_sha256='90779aa873837b2dff8eb3361bd27950303914c24265a59cae0a0d0629d71585'
         fzf_platform='darwin_amd64'
         fzf_sha256='aca6cab692e6c069e724a43070a448e18586c7c0fdd1139f6d487ec1680599ed'
         ;;
@@ -142,6 +151,9 @@ esac
 # Downloaded on every system, since Debian 13 has shfmt 3.8, which is too old for this setup
 shfmt_path="$("$HOME/.local/bin/,download-release" "https://github.com/mvdan/sh/releases/download/$shfmt_version/shfmt_${shfmt_version}_$shfmt_platform" "$shfmt_sha256" shfmt "$shfmt_version")"
 "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$shfmt_path/shfmt" shfmt
+
+stylua_path="$("$HOME/.local/bin/,download-release" "https://github.com/JohnnyMorganz/StyLua/releases/download/$stylua_version/stylua-$stylua_platform.zip" "$stylua_sha256" stylua "$stylua_version")"
+"$foundation_path/bin/,link-in-local-bin" "$backup_path" "$stylua_path/stylua" stylua
 
 if [ "$os" = macos ]; then
     fzf_path="$("$HOME/.local/bin/,download-release" "https://github.com/junegunn/fzf/releases/download/v$fzf_version/fzf-$fzf_version-$fzf_platform.tar.gz" "$fzf_sha256" fzf "$fzf_version")"

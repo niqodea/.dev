@@ -3,9 +3,9 @@ local M = {}
 vim.cmd('packadd fzf-lua')
 M.fzf_lua = require('fzf-lua')
 
-M.fzf_lua.setup{
+M.fzf_lua.setup {
     -- A POSIX find, which works on macOS too
-    files = { cmd = 'find . -type f' }
+    files = { cmd = 'find . -type f' },
 }
 
 vim.keymap.set('n', '<leader>f-', function() M.fzf_lua.files() end)
@@ -17,7 +17,11 @@ vim.keymap.set('v', '<leader>f*', function() M.fzf_lua.grep_visual() end)
 vim.keymap.set('n', '<leader>fb', function() M.fzf_lua.buffers({ ignore_current_buffer = true }) end)
 
 -- Recently opened files in the current folder, newest first, this session's too
-vim.keymap.set('n', '<leader>fr', function() M.fzf_lua.oldfiles({ cwd_only = true, include_current_session = true }) end)
+vim.keymap.set(
+    'n',
+    '<leader>fr',
+    function() M.fzf_lua.oldfiles({ cwd_only = true, include_current_session = true }) end
+)
 
 -- The capital F searches from the current file's folder
 vim.keymap.set('n', '<leader>F-', function() M.fzf_lua.files({ cwd = vim.fn.expand('%:p:h') }) end)

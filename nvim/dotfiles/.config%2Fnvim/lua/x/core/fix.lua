@@ -14,7 +14,7 @@ end
 
 local language_files = vim.api.nvim_get_runtime_file('lua/x/core/fix-languages/*.lua', true)
 for _, language_file in ipairs(language_files) do
-    local language = language_file:match(".+/([^/]+)%.lua")
+    local language = language_file:match('.+/([^/]+)%.lua')
     require('x.core.fix-languages.' .. language)(M.set_qflist, M.set_loclist)
 end
 

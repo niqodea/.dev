@@ -1,5 +1,4 @@
 return function(set_qflist, set_loclist)
-
     local mypy_title = 'Mypy'
     local mypy_base_command = 'mypy --show-column-numbers --no-error-summary '
     vim.api.nvim_create_user_command('PythonMypy', function()
@@ -23,5 +22,4 @@ return function(set_qflist, set_loclist)
         local command = ruff_base_command .. vim.fn.shellescape(vim.fn.getcwd())
         set_qflist(ruff_title, command)
     end, {})
-
 end
