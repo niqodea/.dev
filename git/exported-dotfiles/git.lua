@@ -19,12 +19,14 @@ local function update_signs(buf)
     if vim.bo[buf].buftype ~= '' or path == '' then return end
     local root = vim.fs.root(path, '.git')
     if root == nil then return end
-    local committed_lines = vim.fn.systemlist({ 'git', '-C', root, 'show', 'HEAD:' .. vim.fs.relpath(root, path) })
+    -- vim.system keeps the warnings git writes to stderr out of the committed text
+    local result = vim.system({ 'git', '-C', root, 'show', 'HEAD:' .. vim.fs.relpath(root, path) }, { text = true })
+        :wait()
     -- A file missing from the last commit, like a new one, has nothing to compare against, so it gets no signs
-    if vim.v.shell_error ~= 0 then return end
-    local buffer_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    local committed_text = table.concat(committed_lines, '\n') .. '\n'
-    local buffer_text = table.concat(buffer_lines, '\n') .. '\n'
+    if result.code ~= 0 then return end
+    -- Both texts end in a newline, as the buffer's lines give no way to tell a file that lacks one
+    local committed_text = result.stdout:sub(-1) == '\n' and result.stdout or result.stdout .. '\n'
+    local buffer_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n') .. '\n'
     -- Each hunk is { old start, old count, new start, new count }, like a git diff hunk header
     local hunks = vim.text.diff(committed_text, buffer_text, { result_type = 'indices' })
     for _, hunk in ipairs(hunks) do

@@ -4,12 +4,14 @@ vim.api.nvim_create_user_command('GitRecentFiles', function() vim.cmd('terminal 
 
 vim.api.nvim_create_user_command('GitStatus', function() vim.cmd('terminal git status --short') end, {})
 
+-- git's output as lines, without the warnings it writes to stderr, which could pass for output
 local function run_git(arguments)
-    local output = vim.fn.systemlist(vim.list_extend({ 'git' }, arguments))
-    if vim.v.shell_error ~= 0 then
-        error('git ' .. table.concat(arguments, ' ') .. ' failed: ' .. table.concat(output, ' '), 0)
+    local result = vim.system(vim.list_extend({ 'git' }, arguments), { text = true }):wait()
+    if result.code ~= 0 then
+        error('git ' .. table.concat(arguments, ' ') .. ' failed: ' .. vim.trim(result.stderr):gsub('\n', ' '), 0)
     end
-    return output
+    -- No output is no lines, which callers count on, and the last line's newline ends it rather than starting another
+    return result.stdout == '' and {} or vim.split(result.stdout:gsub('\n$', ''), '\n', { plain = true })
 end
 
 local function complete_branch(argument)
