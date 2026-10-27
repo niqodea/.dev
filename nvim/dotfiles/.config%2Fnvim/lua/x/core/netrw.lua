@@ -27,6 +27,8 @@ local function explore_git_root()
 end
 
 local function explore_directory()
+    -- In a listing, the current file is the folder already shown
+    if vim.bo.filetype == 'netrw' then return end
     local name = vim.fn.expand('%:t')
     explore('')
 

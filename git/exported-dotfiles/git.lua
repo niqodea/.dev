@@ -16,7 +16,8 @@ local function update_signs(buf)
     vim.api.nvim_buf_clear_namespace(buf, signs_namespace, 0, -1)
     local path = vim.api.nvim_buf_get_name(buf)
     -- Terminals, folders, scratch buffers and unnamed buffers hold no file that git could know
-    if vim.bo[buf].buftype ~= '' or path == '' then return end
+    -- A folder is checked by its path, since netrw sets its listing's buftype only after BufEnter
+    if vim.bo[buf].buftype ~= '' or path == '' or vim.fn.isdirectory(path) == 1 then return end
     local root = vim.fs.root(path, '.git')
     if root == nil then return end
     -- vim.system keeps the warnings git writes to stderr out of the committed text
