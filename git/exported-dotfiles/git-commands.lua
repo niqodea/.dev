@@ -114,6 +114,8 @@ local function open_diff()
     local version_buf = get_version_buf(branch_point, file_buf)
     vim.cmd('diffthis')
     open_pane(version_buf, 'right', vim.api.nvim_get_current_win())
+    -- Vim lines up the windows of a diff only as one scrolls, which a new window has not done yet
+    vim.cmd('syncbind')
 end
 
 -- One side of a conflicted file, read-only and named after the side, as in ours:<file>
