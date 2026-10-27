@@ -20,10 +20,7 @@ local function explore_cwd()
 end
 
 local function explore_git_root()
-    local handle = io.popen('git rev-parse --show-toplevel 2> /dev/null')
-    local git_root = handle:read('*line')
-    handle:close()
-
+    local git_root = vim.fs.root(vim.fn.getcwd(), '.git')
     if git_root == nil then error('Not in a git repository') end
 
     explore(vim.fn.fnameescape(git_root))
