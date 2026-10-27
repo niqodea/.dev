@@ -7,7 +7,7 @@ vim.api.nvim_create_user_command('GitStatus', function() vim.cmd('terminal git s
 local function run_git(arguments)
     local output = vim.fn.systemlist(vim.list_extend({ 'git' }, arguments))
     if vim.v.shell_error ~= 0 then
-        error('git ' .. table.concat(arguments, ' ') .. ' failed: ' .. table.concat(output, ' '))
+        error('git ' .. table.concat(arguments, ' ') .. ' failed: ' .. table.concat(output, ' '), 0)
     end
     return output
 end
@@ -57,9 +57,16 @@ local function diff_all()
     vim.cmd('copen')
 end
 
+-- Where the file in a buffer really lives, which is what git knows, since it keeps a symlink as the link
+-- A deleted file has no real path, so it keeps the one it had
+local function get_real_path(buf)
+    local path = vim.api.nvim_buf_get_name(buf)
+    return vim.uv.fs_realpath(path) or path
+end
+
 -- The file in a buffer as it was at a commit, read-only and named after the commit
 local function get_version_buf(commit, file_buf)
-    local path = vim.api.nvim_buf_get_name(file_buf)
+    local path = get_real_path(file_buf)
     local short_commit = run_git({ 'rev-parse', '--short', commit })[1]
     local buf = vim.fn.bufadd(short_commit .. ':' .. vim.fn.fnamemodify(path, ':.'))
     -- Another tab may have filled this buffer already, and a commit's version never changes
@@ -109,6 +116,13 @@ local function open_diff()
         return
     end
     local file_buf = vim.api.nvim_get_current_buf()
+    -- The branch point comes from the repository nvim runs in, so files of other repositories are refused
+    local path = get_real_path(file_buf)
+    local root = vim.uv.fs_realpath(run_git({ 'rev-parse', '--show-toplevel' })[1])
+    if vim.fs.root(path, '.git') ~= root then
+        vim.notify(path .. ' is outside ' .. root .. ', where nvim runs', vim.log.levels.ERROR)
+        return
+    end
     local base_branch = run_git({ 'base-branch' })[1]
     local branch_point = run_git({ 'merge-base', base_branch, 'HEAD' })[1]
     local version_buf = get_version_buf(branch_point, file_buf)
@@ -143,7 +157,7 @@ local function open_conflict()
     local root = assert(vim.fs.root(path, '.git'), path .. ' is in no git repository')
     -- One line per stage the file has in the index, as in "100644 <object> 2\t<path>"
     local unmerged = run_git({ '-C', root, 'ls-files', '--unmerged', '--', vim.fs.relpath(root, path) })
-    if #unmerged == 0 then error(path .. ' has no conflict') end
+    if #unmerged == 0 then error(path .. ' has no conflict', 0) end
     local objects_by_stage = {}
     for _, line in ipairs(unmerged) do
         local object, stage = line:match('^%S+ (%S+) (%d)\t')
@@ -182,12 +196,21 @@ local function close_comparison()
     end
 end
 
-vim.keymap.set('n', '<leader>gd', open_diff)
-vim.keymap.set('n', '<leader>gD', diff_all)
-vim.keymap.set('n', '<leader>gm', open_conflict)
-vim.keymap.set('n', '<leader>g/', close_comparison)
+-- A failure shows as its message alone, since the Lua stack trace says nothing to the person who pressed the key
+-- The errors here are raised at level 0 or by assert, so their message carries no file and line either
+local function report_errors(callback)
+    return function(...)
+        local ok, message = pcall(callback, ...)
+        if not ok then vim.notify(message, vim.log.levels.ERROR) end
+    end
+end
+
+vim.keymap.set('n', '<leader>gd', report_errors(open_diff))
+vim.keymap.set('n', '<leader>gD', report_errors(diff_all))
+vim.keymap.set('n', '<leader>gm', report_errors(open_conflict))
+vim.keymap.set('n', '<leader>g/', report_errors(close_comparison))
 vim.api.nvim_create_user_command(
     'GitSetBase',
-    function(args) run_git({ 'base-branch', args.args }) end,
+    report_errors(function(args) run_git({ 'base-branch', args.args }) end),
     { nargs = 1, complete = complete_branch }
 )
