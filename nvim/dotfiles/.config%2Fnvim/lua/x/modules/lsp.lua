@@ -1,3 +1,13 @@
+-- Servers work on the folder nvim runs in, like the git keys, and leave files outside it alone
+-- A file counts where it really lives, so a symlink counts for its target, and a file not saved yet for its path
+vim.lsp.config('*', {
+    root_dir = function(buf, on_dir)
+        local cwd = vim.fn.getcwd()
+        local path = vim.uv.fs_realpath(vim.api.nvim_buf_get_name(buf)) or vim.api.nvim_buf_get_name(buf)
+        if vim.fs.relpath(cwd, path) then on_dir(cwd) end
+    end,
+})
+
 local language_files = vim.api.nvim_get_runtime_file('lua/x/modules/lsp-languages/*.lua', true)
 for _, language_file in ipairs(language_files) do
     local language = language_file:match('.+/([^/]+)%.lua')

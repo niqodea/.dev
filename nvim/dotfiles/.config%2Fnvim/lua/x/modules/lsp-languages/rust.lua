@@ -1,7 +1,6 @@
 vim.lsp.config('rust_analyzer', {
     cmd = { 'rust-analyzer' },
     filetypes = { 'rust' },
-    root_markers = { '.' },
     settings = {
         ['rust-analyzer'] = {
             imports = {
