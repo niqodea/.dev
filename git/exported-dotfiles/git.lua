@@ -29,7 +29,8 @@ local function update_signs(buf)
     local committed_text = result.stdout:sub(-1) == '\n' and result.stdout or result.stdout .. '\n'
     local buffer_text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n') .. '\n'
     -- Each hunk is { old start, old count, new start, new count }, like a git diff hunk header
-    local hunks = vim.text.diff(committed_text, buffer_text, { result_type = 'indices' })
+    -- linematch splits a hunk into the lines that changed and the lines added or deleted, as 'diffopt' does
+    local hunks = vim.text.diff(committed_text, buffer_text, { result_type = 'indices', linematch = 40 })
     for _, hunk in ipairs(hunks) do
         local old_count, first_line, new_count = hunk[2], hunk[3], hunk[4]
         if new_count == 0 then
