@@ -3,7 +3,6 @@
 - (maybe) check out https://github.com/abhinav/tmux-fastcopy or alternatives
 - (maybe) consider using a mini-modal solution to pane resizing, both in tmux and nvim, to make it unnecessary for alt and ctrl to be pressed together (inspiration: https://github.com/whame/tmux-modal)
 - (maybe) move all dotfiles to separate git submodule
-- Write READMEs for all modules
 - (maybe) build a tablet note-taking app that takes the pen in one hand and the keyboard in the other, combining both, since no app found does this
 
 - (maybe) refactor nvim dev modules to always be directories with an `init.lua` and other files that can be exported

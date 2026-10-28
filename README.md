@@ -66,6 +66,10 @@ No real command starts with one, so ours can never shadow a command that a packa
 Two kinds of names are exceptions: `git-<name>` scripts, which git only runs as `git <name>` under that exact name, and the `..` aliases, since no command is named with dots alone.
 Ref: [Start all of your commands with a comma](https://rhodesmill.org/brandon/2009/commands-with-comma/)
 
+### Atdirs
+
+An atdir is a folder named `$DOTDEV_ATDIR`, which is `.@<user>`, where programs keep state that belongs to the directory it sits in.
+
 ## Foundation
 
 The `.foundation` directory holds what every module builds on, so it is not a module itself.
