@@ -1,23 +1,29 @@
 #!/bin/sh
 
+# Opens a session in the terminal this runs in: inside tmux it switches the client to the session, outside tmux it attaches the terminal to it
+
 set -eu
 
-# "=" for the exact name, since tmux otherwise matches a prefix of another one, and reads a bare "~" as the marked pane
-if ! tmux has-session -t "=$1" 2> /dev/null; then
-    if [ "$1" = '~' ]; then
-        # The home session belongs to no project
-        tmux new-session -d -n "" -s '~' -c "$HOME"
-    elif [ -d "$HOME/$1/$DOTDEV_ATDIR/project" ]; then
-        # Every shell inside a project has DOTDEV_PROJECT set to the project's name
-        tmux new-session -d -n "" -s "$1" -c "$HOME/$1" -e DOTDEV_PROJECT="$1"
-    else
-        >&2 echo "No project named $1"
-        exit 1
-    fi
+session="$1"
+
+if [ "$session" = '~' ]; then
+    # The home session belongs to no project
+    set -- -s '~' -c "$HOME"
+elif [ -d "$HOME/$session/$DOTDEV_ATDIR/project" ]; then
+    # Every shell inside a project has DOTDEV_PROJECT set to the project's name
+    set -- -s "$session" -c "$HOME/$session" -e DOTDEV_PROJECT="$session"
+else
+    >&2 echo "No project named $session"
+    exit 1
 fi
 
 if [ -n "${TMUX-}" ]; then
-    tmux switch-client -t "=$1"
+    # "=" for the exact name, since tmux otherwise matches a prefix of another one, and reads a bare "~" as the marked pane
+    if ! tmux has-session -t "=$session" 2> /dev/null; then
+        tmux new-session -d -n "" "$@"
+    fi
+    tmux switch-client -t "=$session"
 else
-    tmux attach-session -t "=$1"
+    # Attaches if the session exists, and otherwise creates it at the terminal's size, since a shell started at another size draws its first prompt for that width
+    tmux new-session -A -n "" "$@"
 fi
