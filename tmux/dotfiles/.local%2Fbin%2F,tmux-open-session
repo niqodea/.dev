@@ -23,7 +23,9 @@ if [ -n "${TMUX-}" ]; then
         tmux new-session -d -n "" "$@"
     fi
     tmux switch-client -t "=$session"
+elif tmux has-session -t "=$session" 2> /dev/null; then
+    tmux attach-session -t "=$session"
 else
-    # Attaches if the session exists, and otherwise creates it at the terminal's size, since a shell started at another size draws its first prompt for that width
-    tmux new-session -A -n "" "$@"
+    # Created attached, so it starts at the terminal's size, since a shell started at another size draws its first prompt for that width
+    tmux new-session -n "" "$@"
 fi
