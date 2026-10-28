@@ -18,15 +18,6 @@ function set_tmux_pane_zsh_extra_modules {
     tmux set-option -t "$TMUX_PANE" -p @zsh_extra_modules "$DOTDEV_ZSH_EXTRA_MODULES"
 }
 
-function set_tmux_ssh_workstation() {
-    workstation="$1"
-    tmux set-option -p @ssh_workstation "$workstation"
-}
-
-function unset_tmux_ssh_workstation() {
-    tmux set-option -p -u @ssh_workstation
-}
-
 function() {
     if [ "$DOTDEV_ZSH_TMUX_SETUP" = 'true' ]; then
         return
@@ -49,7 +40,4 @@ function() {
     chpwd_functions+=(set_tmux_pane_cwd)
     set_tmux_pane_zsh_extra_modules
     precmd_functions+=(set_tmux_pane_zsh_extra_modules)
-
-    pre_ssh_workstation_functions+=(set_tmux_ssh_workstation)
-    post_ssh_workstation_functions+=(unset_tmux_ssh_workstation)
 }

@@ -11,6 +11,11 @@ case "$pane_type" in
         tmux display-message "Pane runs Claude, quit it from Claude"
         exit
         ;;
+    workstation)
+        # The workstation keeps its session when the connection ends
+        tmux kill-pane
+        exit
+        ;;
     *)
         tmux display-message -l "Unknown pane type: $pane_type"
         exit

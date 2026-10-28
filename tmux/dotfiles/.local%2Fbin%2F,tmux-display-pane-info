@@ -13,6 +13,10 @@ case "$pane_type" in
         # Claude is the pane's process, and the options above already show its status
         exit
         ;;
+    workstation)
+        # ssh is the pane's process, and the options above already show the workstation
+        exit
+        ;;
     *)
         echo "Unknown pane type: $pane_type"
         exit 1

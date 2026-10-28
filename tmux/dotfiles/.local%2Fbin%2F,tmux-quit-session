@@ -12,6 +12,10 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
             tmux display-message -l "Pane $pane_id runs Claude, quit it from Claude"
             exit
             ;;
+        workstation)
+            # The workstation keeps its session when the connection ends
+            continue
+            ;;
         *)
             tmux display-message -l "Pane $pane_id has unknown type: $pane_type"
             exit
