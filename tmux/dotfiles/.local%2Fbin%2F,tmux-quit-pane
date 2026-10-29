@@ -16,6 +16,11 @@ case "$pane_type" in
         tmux kill-pane
         exit
         ;;
+    view)
+        # A view holds nothing that closing it would lose
+        tmux kill-pane
+        exit
+        ;;
     *)
         tmux display-message -l "Unknown pane type: $pane_type"
         exit

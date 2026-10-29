@@ -16,6 +16,10 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
             # The workstation keeps its session when the connection ends
             continue
             ;;
+        view)
+            # A view holds nothing that closing it would lose
+            continue
+            ;;
         *)
             tmux display-message -l "Pane $pane_id has unknown type: $pane_type"
             exit

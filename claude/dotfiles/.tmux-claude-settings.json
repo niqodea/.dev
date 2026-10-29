@@ -2,6 +2,14 @@
   "hooks": {
     "SessionStart": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "tmux set-option -p -t \"$TMUX_PANE\" @claude_transcript \"$(jq -r .transcript_path)\""
+          }
+        ]
+      },
+      {
         "matcher": "startup|resume|clear",
         "hooks": [
           {

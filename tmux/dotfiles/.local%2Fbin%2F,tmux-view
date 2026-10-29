@@ -1,0 +1,24 @@
+#!/bin/sh
+
+set -eu
+
+# Shows the text read from stdin in a view pane next to the current pane, in nvim read-only
+# The argument is the text's file extension, like md, which gives it nvim's highlighting
+# Runs this script again with show in the view pane, which opens the text and removes it when the pane closes
+
+if [ "$1" = show ]; then
+    dir="$2"
+    trap 'rm -r "$dir"' EXIT
+    # tmux closes a pane with SIGHUP, which would otherwise end the script without the EXIT trap
+    trap 'exit' HUP
+    # Text that grows, like a conversation or a log, has its newest part at the end, where nvim starts
+    # The window shows only the text, though other files can still open in other windows
+    # Set before startup ends, winfixbuf makes nvim open a second window, which the option misses
+    nvim -R -c 'autocmd VimEnter * setlocal winfixbuf' + "$dir/view.$3"
+    exit
+fi
+
+dir=$(mktemp -d)
+cat > "$dir/view.$1"
+pane=$(tmux split-window -h -P -F '#{pane_id}' "'$0' show '$dir' '$1'")
+tmux set-option -p -t "$pane" @pane_type view
