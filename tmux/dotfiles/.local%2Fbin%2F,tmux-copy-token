@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Label the tokens on screen, and copy the one whose label is typed.
+
+Opens a popup that covers the pane exactly and runs this script again with `pick`, which prints
+the pane's text with labels over its tokens, so they look drawn on the pane. Labels replace
+characters instead of adding any, so every character stays in its column.
+"""
+
+import itertools
+import os
+import re
+import subprocess
+import sys
+import tty
+
+# What a URL may hold, which stops at spaces, quotes and brackets
+_URL = r"[^\s\"'`<>()\[\]{},;]"
+# A path holds nothing before an =, as in --config=/etc/x
+_PATH = r"[^\s\"'`<>()\[\]{},;=]"
+# Each pattern claims the text it matches, and later patterns only match the text left
+# A URL or a path ends before punctuation that can end a sentence
+PATTERNS = [
+    # URL
+    re.compile(rf"[a-z][a-z0-9+.-]*://{_URL}+(?<![.:!?])"),
+    # Email
+    re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"),
+    # Path, which a lone / is not
+    re.compile(rf"(?:{_PATH}+/|/{_PATH}){_PATH}*(?<![.:!?])"),
+    # IP address, with an optional port
+    re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?!\w)"),
+    # UUID
+    re.compile(
+        r"(?<![\w-])[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?![\w-])", re.IGNORECASE
+    ),
+    # Git SHA, which holds a digit unlike hex words such as "defaced", and is not part of a longer name
+    re.compile(r"(?<![\w-])(?=[0-9a-f]*\d)[0-9a-f]{7,40}(?![\w-])"),
+    # Anything else long, like a secret or a pod name, which holds a digit unlike long words
+    re.compile(r"(?<![\w-])(?=[\w-]*\d)[\w-]{12,}(?![\w-])"),
+]
+
+HOME_ROW = "asdfghjkl"
+# q is never a label, so it always quits
+ALPHABET = HOME_ROW + "wertyuiopzxcvbnm"
+
+DIM = "\033[2m"
+# Capitals stand out more than lowercase letters
+LABEL = "\033[0;30;43m"
+PLAIN = "\033[0m"
+
+
+def main() -> None:
+    # Copy mode can show history, scrolled back by scroll_position lines, and is empty outside it
+    scroll, width, height = run(
+        [
+            "tmux",
+            "display-message",
+            "-p",
+            "#{e|+:0,#{scroll_position}} #{pane_width} #{pane_height}",
+        ]
+    ).split()
+    top = -int(scroll)
+    bottom = top + int(height) - 1
+    lines = run(
+        ["tmux", "capture-pane", "-p", "-S", str(top), "-E", str(bottom)]
+    ).splitlines()
+    tokens = find_tokens(lines)
+    if not tokens:
+        run(["tmux", "display-message", "No tokens on screen"])
+        return
+    if sys.argv[1:] != ["pick"]:
+        # P puts the popup at the pane, and -EE keeps it open when the script fails, to show why
+        popup = ["-B", "-EE", "-x", "P", "-y", "P", "-w", width, "-h", height]
+        run(["tmux", "display-popup", *popup, sys.argv[0], "pick"])
+        return
+
+    # The longest tokens, like URLs, are the likeliest to be copied, so they get the easiest labels
+    # Among tokens of one length, the newest output comes first, since tokens are found bottom up
+    texts = sorted(dict.fromkeys(text for _, _, text in tokens), key=len, reverse=True)
+    labels = dict(zip(texts, make_labels(len(texts))))
+    draw(lines, tokens, labels)
+
+    tty.setcbreak(sys.stdin.fileno())
+    typed = read_key()
+    # A key that starts no label, like q or Escape, quits without waiting for a second one
+    if not any(label.startswith(typed) for label in labels.values()):
+        return
+    if len(next(iter(labels.values()))) == 2:
+        typed += read_key()
+    token = next((text for text, label in labels.items() if label == typed), None)
+    if token is not None:
+        subprocess.run([",clipboard", "write"], input=token, text=True, check=True)
+        run(["tmux", "display-message", "-l", f"Copied {token}"])
+
+
+def find_tokens(lines: list[str]) -> list[tuple[int, int, str]]:
+    """Find each token as its row, its column and its text, from the bottom line up."""
+    tokens = []
+    for row in reversed(range(len(lines))):
+        rest = lines[row]
+        found = []
+        for pattern in PATTERNS:
+            for match in pattern.finditer(rest):
+                found.append((row, match.start(), match.group()))
+                # Spaces in place of a claimed token keep later patterns off it
+                rest = (
+                    rest[: match.start()]
+                    + " " * len(match.group())
+                    + rest[match.end() :]
+                )
+        tokens.extend(sorted(found))
+    return tokens
+
+
+def make_labels(count: int) -> list[str]:
+    """Make `count` labels, all one letter or all two, so that no label starts another."""
+    if count <= len(ALPHABET):
+        return list(ALPHABET[:count])
+    # Two letters come from the home row while it has enough pairs
+    letters = HOME_ROW if count <= len(HOME_ROW) ** 2 else ALPHABET
+    return ["".join(pair) for pair in itertools.product(letters, repeat=2)][:count]
+
+
+def draw(
+    lines: list[str], tokens: list[tuple[int, int, str]], labels: dict[str, str]
+) -> None:
+    out = []
+    for row, line in enumerate(lines):
+        position = 0
+        drawn = DIM
+        for _, column, text in (token for token in tokens if token[0] == row):
+            label = labels[text].upper()
+            drawn += (
+                line[position:column] + LABEL + label + PLAIN + text[len(label) :] + DIM
+            )
+            position = column + len(text)
+        out.append(drawn + line[position:] + PLAIN)
+    # The cursor is hidden, and a newline after the last line would scroll the popup up by one
+    sys.stdout.write("\033[?25l" + "\n".join(out))
+    sys.stdout.flush()
+
+
+def read_key() -> str:
+    return os.read(sys.stdin.fileno(), 1).decode(errors="replace").lower()
+
+
+def run(command: list[str]) -> str:
+    return subprocess.run(command, capture_output=True, text=True, check=True).stdout
+
+
+if __name__ == "__main__":
+    main()

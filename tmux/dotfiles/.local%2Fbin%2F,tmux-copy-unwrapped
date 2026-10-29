@@ -1,0 +1,27 @@
+#!/bin/sh
+
+set -eu
+
+# A program that wraps or justifies its text breaks lines and pads them with spaces, so each paragraph is joined back into one line with single spaces
+# A blank line ends a paragraph, and a list item starts a line of its own
+awk '
+function flush() {
+    if (paragraph == "") return
+    printf "%s%s", (count++ ? separator : ""), paragraph
+    paragraph = ""
+    separator = "\n"
+}
+{
+    sub(/^[[:space:]]+/, "")
+    sub(/[[:space:]]+$/, "")
+    gsub(/[[:space:]]+/, " ")
+}
+$0 == "" {
+    flush()
+    if (count) separator = "\n\n"
+    next
+}
+/^(-|\*|•|[0-9]+[.)]) / { flush() }
+{ paragraph = (paragraph == "" ? $0 : paragraph " " $0) }
+END { flush() }
+' | ,clipboard write
