@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Answers the requests waiting in an approval queue, in the terminal: y or n
+stages a decision on each, and Enter has ,approval carry the staged ones out.
+"""
+
+import fcntl
+import itertools
+import json
+import subprocess
+import sys
+import termios
+import time
+import tty
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, assert_never
+
+type Decision = Literal["approve", "refuse"]
+
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+# Only for failures, since red reads as an error
+RED = "\033[31m"
+RESET = "\033[0m"
+HIDE_CURSOR = "\033[?25l"
+SHOW_CURSOR = "\033[?25h"
+
+
+@dataclass(frozen=True)
+class WaitingJob:
+    id: str
+    queued_at_ns: int
+    # What the action described, one cell per column
+    columns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Waiting:
+    queue_name: str
+    jobs: tuple[WaitingJob, ...]
+
+
+@dataclass(frozen=True)
+class Succeeded:
+    pass
+
+
+@dataclass(frozen=True)
+class Refused:
+    pass
+
+
+@dataclass(frozen=True)
+class Failed:
+    error: str
+
+
+type Outcome = Succeeded | Refused | Failed
+
+
+def main() -> None:
+    waiting = list_waiting()
+    lock_path = (
+        Path.home() / ".local/state/approval-answer" / f"{waiting.queue_name}.lock"
+    )
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    # The > mark shows the selected job, and the terminal's own cursor would only
+    # point somewhere else
+    print(HIDE_CURSOR, end="", flush=True)
+    try:
+        with lock_path.open("w") as lock:
+            # One screen per queue, so no job is answered twice. The system drops
+            # the lock when the process ends, however it ends
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("This queue is already open somewhere else. Any key closes")
+                read_key()
+                return
+            answer(waiting.jobs)
+    finally:
+        print(SHOW_CURSOR, end="", flush=True)
+
+
+def list_waiting() -> Waiting:
+    # Left on the terminal, since ,approval explains its errors there, like a
+    # queue that is not set
+    result = subprocess.run(
+        [",approval", "list"], check=False, stdout=subprocess.PIPE, text=True
+    )
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+    match json.loads(result.stdout):
+        case {"queue": str(queue_name), "jobs": list(jobs)}:
+            return Waiting(queue_name, tuple(decode_waiting_job(job) for job in jobs))
+        case listing:
+            raise ValueError(f"Unexpected listing {listing}")
+
+
+def answer(jobs: Sequence[WaitingJob]) -> None:
+    """Show every waiting job, stage decisions on them, and have ,approval carry
+    those out on Enter.
+    """
+    if len(jobs) == 0:
+        print("No request waits in this queue. Any key closes")
+        read_key()
+        return
+    answers: dict[int, Decision] = {}
+    cursor = 0
+    while True:
+        draw_jobs(jobs, answers, {}, cursor)
+        print("j/k move   y approve   n refuse   enter commit   N refuse all   q quit")
+        match read_key():
+            case "j":
+                cursor = min(cursor + 1, len(jobs) - 1)
+            case "k":
+                cursor = max(cursor - 1, 0)
+            case "y" | "n" as key:
+                answers = {**answers, cursor: "approve" if key == "y" else "refuse"}
+                cursor = min(cursor + 1, len(jobs) - 1)
+            # cbreak mode turns the Enter key's carriage return into a newline
+            case "\n":
+                outcomes = commit(jobs, answers)
+                draw_jobs(jobs, answers, outcomes, None)
+                print("Any key closes")
+                read_key()
+                return
+            case "N":
+                refusals: dict[int, Decision] = {
+                    index: "refuse" for index in range(len(jobs))
+                }
+                commit(jobs, refusals)
+                return
+            case "q":
+                return
+            case _:
+                pass
+
+
+def draw_jobs(
+    jobs: Sequence[WaitingJob],
+    answers: Mapping[int, Decision],
+    outcomes: Mapping[int, Outcome],
+    cursor: int | None,
+) -> None:
+    """Draw one row per job in aligned columns, with its answer, a line below for
+    its outcome, and the cursor.
+    """
+    # Clears the screen, so each key press redraws the jobs in place
+    print("\033[H\033[2J", end="")
+    now_ns = time.time_ns()
+    rows = [(format_age(now_ns - job.queued_at_ns), *job.columns) for job in jobs]
+    # Actions of different CLIs print different numbers of columns
+    widths = [
+        max(len(cell) for cell in column)
+        for column in itertools.zip_longest(*rows, fillvalue="")
+    ]
+    for index, row in enumerate(rows):
+        pointer = ">" if index == cursor else " "
+        decision = answers.get(index)
+        cells = "  ".join(cell.ljust(width) for cell, width in zip(row, widths))
+        print(f"{pointer} {format_mark(decision)}  {cells.rstrip()}")
+        # Blank until the job has an outcome, so no row moves when one appears
+        outcome = outcomes.get(index)
+        print(f"     {format_outcome(outcome)}" if outcome is not None else "")
+    print()
+
+
+def commit(
+    jobs: Sequence[WaitingJob], answers: Mapping[int, Decision]
+) -> dict[int, Outcome]:
+    """Have ,approval carry out the staged decisions in queue order, and return
+    their outcomes.
+    """
+    outcomes: dict[int, Outcome] = {}
+    for index, decision in sorted(answers.items()):
+        outcomes[index] = decide(jobs[index].id, decision)
+    return outcomes
+
+
+def decide(id_: str, decision: Decision) -> Outcome:
+    result = subprocess.run(
+        [",approval", "decide", id_, decision],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        lines = result.stderr.strip().splitlines()
+        return Failed(
+            lines[-1] if len(lines) > 0 else f"exited with {result.returncode}"
+        )
+    return decode_outcome(json.loads(result.stdout))
+
+
+def read_key() -> str:
+    """Read one key press, without waiting for Enter."""
+    fd = sys.stdin.fileno()
+    settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        return sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, settings)
+
+
+def decode_waiting_job(item: object) -> WaitingJob:
+    match item:
+        case {
+            "id": str(id_),
+            "queued_at_ns": int(queued_at_ns),
+            "columns": list(columns),
+        }:
+            strings = tuple(cell for cell in columns if isinstance(cell, str))
+            if len(strings) != len(columns):
+                raise ValueError(f"Expected only strings: {columns}")
+            return WaitingJob(id_, queued_at_ns, strings)
+        case _:
+            raise ValueError(f"Unexpected job {item}")
+
+
+def decode_outcome(item: object) -> Outcome:
+    match item:
+        case {"result": "succeeded"}:
+            return Succeeded()
+        case {"result": "refused"}:
+            return Refused()
+        case {"result": "failed", "error": str(error)}:
+            return Failed(error)
+        case _:
+            raise ValueError(f"Unexpected outcome {item}")
+
+
+def format_mark(decision: Decision | None) -> str:
+    match decision:
+        case None:
+            return " "
+        case "approve":
+            return f"{GREEN}y{RESET}"
+        case "refuse":
+            return f"{YELLOW}n{RESET}"
+        case _:
+            assert_never(decision)
+
+
+def format_outcome(outcome: Outcome) -> str:
+    match outcome:
+        case Succeeded():
+            return f"{GREEN}succeeded{RESET}"
+        case Refused():
+            return f"{YELLOW}refused{RESET}"
+        case Failed(error):
+            return f"{RED}failed: {error}{RESET}"
+        case _:
+            assert_never(outcome)
+
+
+def format_age(age_ns: int) -> str:
+    """Write the age in at most three characters, like 5m, 12h or 3d."""
+    minutes = age_ns // 60_000_000_000
+    if minutes < 60:
+        return f"{minutes}m".rjust(3)
+    if minutes < 48 * 60:
+        return f"{minutes // 60}h".rjust(3)
+    return f"{minutes // (24 * 60)}d".rjust(3)
+
+
+if __name__ == "__main__":
+    main()

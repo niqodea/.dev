@@ -1,0 +1,12 @@
+#!/bin/sh
+
+# Shows the changes CLIs asked for: the ones waiting for our decision, and the last ones decided
+
+set -eu
+
+if [ "$#" -ne 0 ]; then
+    >&2 echo 'usage: approval-status'
+    exit 2
+fi
+
+exec ,approval status
