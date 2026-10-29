@@ -8,6 +8,9 @@ root="$(dirname "$(realpath "$0")")"
 # git grep reads only regular tracked files, so symlinks and submodules are left out
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shellcheck
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shfmt --diff
+# --quiet prints only the problems, so a clean run prints nothing, like every other check here
+git -C "$root" grep --files-with-matches '^#!/usr/bin/env python3$' | sed "s|^|$root/|" | xargs ruff check --quiet
+git -C "$root" grep --files-with-matches '^#!/usr/bin/env python3$' | sed "s|^|$root/|" | xargs ruff format --quiet --diff
 
 # The profile and the files it loads from profile.d are shell, and only their location says so
 git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfiles/.profile.d%2F*' | sed "s|^|$root/|" | xargs shellcheck --shell=sh
