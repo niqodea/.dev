@@ -4,13 +4,9 @@ Module for [Claude Code](https://claude.com/claude-code), an AI coding agent tha
 
 ## Concepts
 
-### One Claude per session
+### Claude pane
 
-Each tmux session has at most one Claude, opened in a split next to the current pane and started in the session's start directory.
-Asking for Claude again moves to the one that already runs instead of opening a second one.
-
-Claude is the pane's process rather than a command typed into a shell, so the pane closes when Claude exits.
-The pane's type is `claude`, which tells our tmux commands to treat it differently from a zsh pane.
+Claude runs in a tmux [special pane](../tmux/README.md#special-panes) of type `claude`, started in the session's start directory.
 
 ### Waiting status
 
