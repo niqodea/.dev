@@ -26,7 +26,7 @@ A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`
 
 - `actions/<action>`: an executable, not on `PATH`, that `,approval` runs with `describe` or `run` and then the request's arguments.
   `describe` only reads: it checks the arguments and prints the request's row as tab-separated columns.
-  `run` makes the change, exits with 0 when it succeeded and prints the reason to stderr when not, and fails when what `describe` showed is no longer true.
+  `run` makes the change, exits with 0 when it succeeded and prints the reason to stderr when not.
 - `auto-approved`: the requests that run without asking.
   A line lists an action and its first arguments, and matches a request that starts with the same words.
   Lines have no patterns and no negation: a condition that needs more becomes an argument, or an action that checks it.

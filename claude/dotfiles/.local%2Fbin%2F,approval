@@ -68,8 +68,8 @@ class Refused:
 @dataclass(frozen=True)
 class Failed:
     job: Job
-    # The last line the action printed to stderr, like that the data changed
-    # after the request
+    # The last line the action printed to stderr, like why the change was
+    # rejected
     error: str
 
 
