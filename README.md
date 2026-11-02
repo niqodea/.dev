@@ -11,6 +11,7 @@ Each directory at the root of the repository is a module with the following stan
 - `dotfiles/`: the dotfiles to install
 - `exported-dotfiles/`: dotfiles installed by other modules
 - `submodules/`: git submodules the module installs from
+- `<program>/`: the source of a program of our own that only makes sense in this setup
 - `README.md`: information about the module
 
 ### Dotfiles management
@@ -100,7 +101,7 @@ To install dotfiles, run:
 Note: both scripts install all the modules if no module is specified.
 
 `install-bin` installs a program with the package manager, unless one of our systems lacks a version that works: then it downloads the program on every system, into `~/.local/opt/<program>-<version>`, since the download works everywhere and a second way to install it would only be more to maintain.
-Programs of our own are built from their submodule and copied into `~/.local/bin`, and every other program is linked there.
+Programs of our own are built from their submodule, or from their folder in the module, and copied into `~/.local/bin`, and every other program is linked there.
 Each module's `program-versions` file lists the versions our setup works with, not the ones each system ships, so two systems can run different versions.
 `install-bin` ends by checking them with `,check-program-versions`, which reads each version from where the program is installed instead of running it.
 

@@ -20,7 +20,6 @@ M-' lists the waiting Claudes in a popup and moves to the one we pick.
 
 Claude only reads.
 A CLI that changes something asks `,approval` for the change instead of making it, with `,approval submit <cli> <action> <argument>...`, and we decide.
-`,approval` needs the [python](../python/README.md) module.
 
 A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`:
 
@@ -33,9 +32,9 @@ A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`
   Lines have no patterns and no negation: a condition that needs more becomes an argument, or an action that checks it.
 
 Any other request waits in the queue that `APPROVAL_QUEUE` names, until we decide on it.
-`,approval-answer` lets us decide in any terminal, and any other front end can be built on `,approval list`, `,approval count` and `,approval decide`.
+Only `,approval-answer` decides, in any terminal: `,approval` itself can only submit a request and report what waits.
 In tmux, every session gets a queue of its own, and M-y opens `,approval-answer` in a popup when a request waits.
 The `approval-status` skill, with the script it runs, shows Claude what waits and what was decided.
-`,approval` gives an action only `PATH` and `HOME`, and stops it after a time limit.
+`,approval` gives an action only `PATH` and `HOME`, and stops it, with every process it started, after a time limit.
 
 This steers how Claude works, and protects nothing: Claude's shell has the same logins the actions use.

@@ -8,6 +8,11 @@ root="$(dirname "$(realpath "$0")")"
 git -C "$root" grep --files-with-matches '^#!/bin/sh$' | sed "s|^|$root/|" | xargs shfmt --write
 git -C "$root" grep --files-with-matches '^#!/usr/bin/env python3$' | sed "s|^|$root/|" | xargs ruff format --quiet
 
+# ls-files lists no file inside a submodule, so only our own Cargo projects are formatted
+git -C "$root" ls-files '*/Cargo.toml' | sed "s|^|$root/|" | while IFS= read -r manifest_path; do
+    cargo fmt --manifest-path "$manifest_path"
+done
+
 # The profile and the files it loads from profile.d are shell, and only their location says so
 git -C "$root" ls-files '.foundation/profile' '.foundation/profile.d/*' '*/dotfiles/.profile.d%2F*' | sed "s|^|$root/|" | xargs shfmt --write
 

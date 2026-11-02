@@ -2,7 +2,13 @@
 
 set -eu
 
+root="$(dirname "$(realpath "$0")")"
+backup_path="$1"
 os="$2"
+
+cargo build --manifest-path="$root/approval/Cargo.toml" --release
+,copy-in-home "$backup_path" "$root/approval/target/release/approval" .local/bin/,approval
+,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,approval-answer
 
 version='2.1.303'
 
