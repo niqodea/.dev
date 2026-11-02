@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Label the tokens on screen, and copy the one whose label is typed.
+"""Label the matches on screen, and copy the one whose label is typed.
 
 Opens a popup that covers the pane exactly and runs this script again with `pick`, which prints
-the pane's text with labels over its tokens, so they look drawn on the pane. Labels replace
+the pane's text with labels over its matches, so they look drawn on the pane. Labels replace
 characters instead of adding any, so every character stays in its column.
 """
 
@@ -63,9 +63,9 @@ def main() -> None:
     lines = run(
         ["tmux", "capture-pane", "-p", "-S", str(top), "-E", str(bottom)]
     ).splitlines()
-    tokens = find_tokens(lines)
-    if not tokens:
-        run(["tmux", "display-message", "No tokens on screen"])
+    matches = find_matches(lines)
+    if not matches:
+        run(["tmux", "display-message", "Nothing to fish on screen"])
         return
     if sys.argv[1:] != ["pick"]:
         # P puts the popup at the pane, and -EE keeps it open when the script fails, to show why
@@ -73,11 +73,11 @@ def main() -> None:
         run(["tmux", "display-popup", *popup, sys.argv[0], "pick"])
         return
 
-    # The longest tokens, like URLs, are the likeliest to be copied, so they get the easiest labels
-    # Among tokens of one length, the newest output comes first, since tokens are found bottom up
-    texts = sorted(dict.fromkeys(text for _, _, text in tokens), key=len, reverse=True)
+    # The longest matches, like URLs, are the likeliest to be copied, so they get the easiest labels
+    # Among matches of one length, the newest output comes first, since matches are found bottom up
+    texts = sorted(dict.fromkeys(text for _, _, text in matches), key=len, reverse=True)
     labels = dict(zip(texts, make_labels(len(texts))))
-    draw(lines, tokens, labels)
+    draw(lines, matches, labels)
 
     tty.setcbreak(sys.stdin.fileno())
     typed = read_key()
@@ -86,29 +86,29 @@ def main() -> None:
         return
     if len(next(iter(labels.values()))) == 2:
         typed += read_key()
-    token = next((text for text, label in labels.items() if label == typed), None)
-    if token is not None:
-        subprocess.run([",clipboard", "write"], input=token, text=True, check=True)
-        run(["tmux", "display-message", "-l", f"Copied {token}"])
+    match = next((text for text, label in labels.items() if label == typed), None)
+    if match is not None:
+        subprocess.run([",clipboard", "write"], input=match, text=True, check=True)
+        run(["tmux", "display-message", "-l", f"Copied {match}"])
 
 
-def find_tokens(lines: list[str]) -> list[tuple[int, int, str]]:
-    """Find each token as its row, its column and its text, from the bottom line up."""
-    tokens = []
+def find_matches(lines: list[str]) -> list[tuple[int, int, str]]:
+    """Find each match as its row, its column and its text, from the bottom line up."""
+    matches = []
     for row in reversed(range(len(lines))):
         rest = lines[row]
         found = []
         for pattern in PATTERNS:
             for match in pattern.finditer(rest):
                 found.append((row, match.start(), match.group()))
-                # Spaces in place of a claimed token keep later patterns off it
+                # Spaces in place of a claimed match keep later patterns off it
                 rest = (
                     rest[: match.start()]
                     + " " * len(match.group())
                     + rest[match.end() :]
                 )
-        tokens.extend(sorted(found))
-    return tokens
+        matches.extend(sorted(found))
+    return matches
 
 
 def make_labels(count: int) -> list[str]:
@@ -121,13 +121,13 @@ def make_labels(count: int) -> list[str]:
 
 
 def draw(
-    lines: list[str], tokens: list[tuple[int, int, str]], labels: dict[str, str]
+    lines: list[str], matches: list[tuple[int, int, str]], labels: dict[str, str]
 ) -> None:
     out = []
     for row, line in enumerate(lines):
         position = 0
         drawn = DIM
-        for _, column, text in (token for token in tokens if token[0] == row):
+        for _, column, text in (match for match in matches if match[0] == row):
             label = labels[text].upper()
             drawn += (
                 line[position:column] + LABEL + label + PLAIN + text[len(label) :] + DIM
