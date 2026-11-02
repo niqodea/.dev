@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Answers the requests waiting in an approval queue, in the terminal: y or n
-stages a decision on each, and Enter has ,approval carry the staged ones out.
+stages a decision on each, from the list or from a request's details, and Enter
+has ,approval carry the staged ones out.
 """
 
 import fcntl
 import itertools
 import json
+import shutil
 import subprocess
 import sys
 import termios
+import textwrap
 import time
 import tty
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +26,11 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 # Only for failures, since red reads as an error
 RED = "\033[31m"
+# For secondary text, like ages and key hints
+DIM = "\033[2m"
+BOLD = "\033[1m"
 RESET = "\033[0m"
+CLEAR_SCREEN = "\033[H\033[2J"
 HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
 
@@ -33,6 +41,9 @@ class WaitingJob:
     queued_at_ns: int
     # What the action described, one cell per column
     columns: tuple[str, ...]
+    # Every name and value worth reading before deciding, like an email's
+    # recipient and text, in the order describe printed them
+    fields: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -110,15 +121,22 @@ def answer(jobs: Sequence[WaitingJob]) -> None:
     cursor = 0
     while True:
         draw_jobs(jobs, answers, {}, cursor)
-        print("j/k move   y approve   n refuse   enter commit   N refuse all   q quit")
+        print(
+            f"{DIM}j/k move   y approve   n refuse   o open details   enter commit"
+            f"   N refuse all   q quit{RESET}"
+        )
+        decision: Decision | None = None
         match read_key():
             case "j":
                 cursor = min(cursor + 1, len(jobs) - 1)
             case "k":
                 cursor = max(cursor - 1, 0)
-            case "y" | "n" as key:
-                answers = {**answers, cursor: "approve" if key == "y" else "refuse"}
-                cursor = min(cursor + 1, len(jobs) - 1)
+            case "y":
+                decision = "approve"
+            case "n":
+                decision = "refuse"
+            case "o" if jobs[cursor].fields:
+                decision = show_details(jobs[cursor], answers.get(cursor))
             # cbreak mode turns the Enter key's carriage return into a newline
             case "\n":
                 outcomes = commit(jobs, answers)
@@ -136,6 +154,18 @@ def answer(jobs: Sequence[WaitingJob]) -> None:
                 return
             case _:
                 pass
+        if decision is not None:
+            # Pressing y or n again on a job that already has that decision
+            # clears it
+            if answers.get(cursor) == decision:
+                answers = {
+                    index: staged
+                    for index, staged in answers.items()
+                    if index != cursor
+                }
+            else:
+                answers = {**answers, cursor: decision}
+            cursor = min(cursor + 1, len(jobs) - 1)
 
 
 def draw_jobs(
@@ -144,13 +174,16 @@ def draw_jobs(
     outcomes: Mapping[int, Outcome],
     cursor: int | None,
 ) -> None:
-    """Draw one row per job in aligned columns, with its answer, a line below for
-    its outcome, and the cursor.
+    """Draw one row per job in aligned columns, with its answer, a mark when it
+    has fields, a line below for its outcome, and the cursor.
     """
-    # Clears the screen, so each key press redraws the jobs in place
-    print("\033[H\033[2J", end="")
+    # Each key press redraws the jobs in place
+    print(CLEAR_SCREEN, end="")
     now_ns = time.time_ns()
-    rows = [(format_age(now_ns - job.queued_at_ns), *job.columns) for job in jobs]
+    rows = [
+        (format_age(now_ns - job.queued_at_ns), *map(show_controls, job.columns))
+        for job in jobs
+    ]
     # Actions of different CLIs print different numbers of columns
     widths = [
         max(len(cell) for cell in column)
@@ -158,13 +191,92 @@ def draw_jobs(
     ]
     for index, row in enumerate(rows):
         pointer = ">" if index == cursor else " "
-        decision = answers.get(index)
-        cells = "  ".join(cell.ljust(width) for cell, width in zip(row, widths))
-        print(f"{pointer} {format_mark(decision)}  {cells.rstrip()}")
+        decision_mark = format_mark(answers.get(index))
+        fields_mark = f"{DIM}+{RESET}" if jobs[index].fields else " "
+        age, *cells = (cell.ljust(width) for cell, width in zip(row, widths))
+        row_text = "  ".join(cells).rstrip()
+        print(f"{pointer} {decision_mark} {fields_mark}  {DIM}{age}{RESET}  {row_text}")
         # Blank until the job has an outcome, so no row moves when one appears
         outcome = outcomes.get(index)
-        print(f"     {format_outcome(outcome)}" if outcome is not None else "")
+        print(f"       {format_outcome(outcome)}" if outcome is not None else "")
     print()
+
+
+def show_details(job: WaitingJob, decision: Decision | None) -> Decision | None:
+    """Show the job's row with its fields below, which j and k scroll, until the
+    person presses y or n to decide on the job, or q to go back without deciding.
+    """
+    first_line = 0
+    while True:
+        # Read on every key press, so the fields fit the terminal after a resize
+        width, height = shutil.get_terminal_size()
+        lines = format_fields(job.fields, width)
+        # The row, the keys and the blank line between each of them and the
+        # fields take 4 lines
+        line_count = max(height - 4, 1)
+        first_line = min(first_line, max(len(lines) - line_count, 0))
+        row = "  ".join(map(show_controls, job.columns))
+        print(CLEAR_SCREEN, end="")
+        print(f"{format_mark(decision)}  {BOLD}{row}{RESET}")
+        print()
+        print("\n".join(lines[first_line : first_line + line_count]))
+        print()
+        print(
+            f"{DIM}j/k scroll   y approve   n refuse   q back{RESET}",
+            end="",
+            flush=True,
+        )
+        match read_key():
+            case "j":
+                first_line += 1
+            case "k":
+                first_line = max(first_line - 1, 0)
+            case "y":
+                return "approve"
+            case "n":
+                return "refuse"
+            case "q":
+                return None
+            case _:
+                pass
+
+
+def format_fields(fields: Sequence[tuple[str, str]], width: int) -> list[str]:
+    """Lay out the fields as a table with a name column and a value column.
+
+    A long value wraps to the width and continues down the value column.
+    """
+    names = [show_controls(name) for name, _ in fields]
+    name_width = max(len(name) for name in names)
+    # Wrapped, not cut off, so no word of a value is hidden
+    value_width = max(width - name_width - 2, 1)
+    lines: list[str] = []
+    for name, (_, value) in zip(names, fields):
+        value_lines = [
+            wrapped
+            for line in show_controls(value).split("\n")
+            for wrapped in textwrap.wrap(line, value_width) or [""]
+        ]
+        label = f"{DIM}{name.ljust(name_width)}{RESET}"
+        lines.append(f"{label}  {value_lines[0]}".rstrip())
+        lines.extend(f"{' ' * name_width}  {line}".rstrip() for line in value_lines[1:])
+    return lines
+
+
+def show_controls(text: str) -> str:
+    """Write control characters and Unicode format characters as escapes, like
+    \\x1b, except line breaks and tabs.
+
+    A control character can move the cursor, clear the screen or change colors.
+    A format character can be invisible or reverse the order text is shown in.
+    Either can make the screen show something other than the text.
+    """
+    return "".join(
+        char.encode("unicode_escape").decode()
+        if unicodedata.category(char) in ("Cc", "Cf") and char not in "\n\t"
+        else char
+        for char in text
+    )
 
 
 def commit(
@@ -211,13 +323,25 @@ def decode_waiting_job(item: object) -> WaitingJob:
             "id": str(id_),
             "queued_at_ns": int(queued_at_ns),
             "columns": list(columns),
+            "fields": list(fields),
         }:
             strings = tuple(cell for cell in columns if isinstance(cell, str))
             if len(strings) != len(columns):
                 raise ValueError(f"Expected only strings: {columns}")
-            return WaitingJob(id_, queued_at_ns, strings)
+            return WaitingJob(id_, queued_at_ns, strings, decode_fields(fields))
         case _:
             raise ValueError(f"Unexpected job {item}")
+
+
+def decode_fields(items: Sequence[object]) -> tuple[tuple[str, str], ...]:
+    fields: list[tuple[str, str]] = []
+    for item in items:
+        match item:
+            case [str(name), str(value)]:
+                fields.append((name, value))
+            case _:
+                raise ValueError(f"Unexpected field {item}")
+    return tuple(fields)
 
 
 def decode_outcome(item: object) -> Outcome:

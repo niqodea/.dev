@@ -44,6 +44,9 @@ class Job:
     request: Request
     # What the action's describe printed, one cell per column
     columns: tuple[str, ...]
+    # Every name and value worth reading before deciding, like an email's
+    # recipient and text, in the order describe printed them
+    fields: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -141,9 +144,7 @@ examples:
 
 
 def submit(queue_name: str, request: Request) -> None:
-    action_path = get_action_path(request)
-    columns = describe(action_path, request.arguments)
-    job = Job(request, columns)
+    job = describe(request)
     if is_auto_approved(request):
         outcome = run_job(job)
         record_outcome(queue_name, outcome)
@@ -181,17 +182,29 @@ def locate_action(request: Request) -> Path:
     return get_clis_directory() / request.cli / "actions" / request.action
 
 
-def describe(action_path: Path, arguments: Sequence[str]) -> tuple[str, ...]:
-    """Return the action's row for these arguments, which also checks them."""
+def describe(request: Request) -> Job:
+    """Run the action's describe, which checks the request's arguments, and
+    return the job with the row and the fields it printed.
+    """
+    action_path = get_action_path(request)
     try:
-        result = run_action(action_path, "describe", arguments)
+        result = run_action(action_path, "describe", request.arguments)
     except subprocess.TimeoutExpired:
         raise InvalidRequest(
             f"Invalid request: took over {ACTION_TIMEOUT_SECONDS} s to describe"
         )
     if result.returncode != 0:
         raise InvalidRequest(f"Invalid request: {get_error(result)}")
-    return tuple(result.stdout.strip().split("\t"))
+    try:
+        match json.loads(result.stdout):
+            case {"row": list(row), "fields": list(fields)}:
+                return Job(request, decode_strings(row), decode_fields(fields))
+            case description:
+                raise ValueError(f"Unexpected description {description}")
+    except ValueError as error:
+        raise InvalidRequest(
+            f"Invalid request: describe printed no row and fields: {error}"
+        )
 
 
 def is_auto_approved(request: Request) -> bool:
@@ -241,6 +254,7 @@ def print_waiting_jobs(queue_name: str) -> None:
             "id": queued_job.path.stem,
             "queued_at_ns": get_queued_at_ns(queued_job.path),
             "columns": list(queued_job.job.columns),
+            "fields": encode_fields(queued_job.job.fields),
         }
         for queued_job in queued_jobs
     ]
@@ -341,6 +355,7 @@ def encode_job(job: Job) -> dict[str, Json]:
         "action": job.request.action,
         "arguments": list(job.request.arguments),
         "columns": list(job.columns),
+        "fields": encode_fields(job.fields),
     }
 
 
@@ -351,9 +366,10 @@ def decode_job(item: object) -> Job:
             "action": str(action),
             "arguments": list(arguments),
             "columns": list(columns),
+            "fields": list(fields),
         }:
             request = Request(cli, action, decode_strings(arguments))
-            return Job(request, decode_strings(columns))
+            return Job(request, decode_strings(columns), decode_fields(fields))
         case _:
             raise ValueError(f"Unexpected job {item}")
 
@@ -363,6 +379,21 @@ def decode_strings(items: Sequence[object]) -> tuple[str, ...]:
     if len(strings) != len(items):
         raise ValueError(f"Expected only strings: {items}")
     return strings
+
+
+def encode_fields(fields: Sequence[tuple[str, str]]) -> list[Json]:
+    return [[name, value] for name, value in fields]
+
+
+def decode_fields(items: Sequence[object]) -> tuple[tuple[str, str], ...]:
+    fields: list[tuple[str, str]] = []
+    for item in items:
+        match item:
+            case [str(name), str(value)]:
+                fields.append((name, value))
+            case _:
+                raise ValueError(f"Unexpected field {item}")
+    return tuple(fields)
 
 
 def encode_outcome(outcome: Outcome) -> dict[str, Json]:
