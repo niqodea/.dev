@@ -138,6 +138,9 @@ def answer(jobs: Sequence[WaitingJob]) -> None:
             case "o" if jobs[cursor].fields:
                 decision = show_details(jobs[cursor], answers.get(cursor))
             # cbreak mode turns the Enter key's carriage return into a newline
+            case "\n" if not answers:
+                # With nothing staged, there is no outcome to show
+                return
             case "\n":
                 outcomes = commit(jobs, answers)
                 draw_jobs(jobs, answers, outcomes, None)
