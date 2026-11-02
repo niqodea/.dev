@@ -23,10 +23,11 @@ A CLI that changes something asks `,approval` for the change instead of making i
 
 A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`:
 
-- `actions/<action>`: an executable, not on `PATH`, that `,approval` runs with `describe` or `run` and then the request's arguments.
-  `describe` only reads: it checks the arguments and prints the request as JSON, `{"row": ["<cell>", ...], "fields": [["<name>", "<value>"], ...]}`.
-  The row lists the request in a few short cells, and the fields hold every name and value worth reading before deciding, like an email's recipient and text.
-  `run` makes the change, exits with 0 when it succeeded and prints the reason to stderr when not.
+- `actions/<action>`: an executable, not on `PATH`, that `,approval` runs with `parse` or `run` and then the request's arguments.
+  `parse` only parses the arguments, without reading or changing anything, and prints the name of each argument on a line of its own, or fails with the reason when the action cannot run with them.
+  `,approval` queues nothing until `parse` succeeds, and shows each argument's value next to its name when we open a request.
+  `run` checks what can change while the request waits, like whether a pod still exists, makes the change, exits with 0 when it succeeded and prints the reason to stderr when not.
+  We see a request only as its CLI, its action and its arguments with their names, so the arguments name everything the change touches.
 - `auto-approved`: the requests that run without asking.
   A line lists an action and its first arguments, and matches a request that starts with the same words.
   Lines have no patterns and no negation: a condition that needs more becomes an argument, or an action that checks it.

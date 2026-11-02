@@ -10,8 +10,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Decision, Job, Outcome, Queue, QueuedJob, format_age, get_now_ns, read_queue_name,
-    read_variable,
+    Actions, Decision, Outcome, ParsedRequest, Queue, QueuedJob, format_age, get_now_ns,
+    read_queue_name, read_variable,
 };
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
@@ -91,7 +91,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
     let mut answers: BTreeMap<usize, Decision> = BTreeMap::new();
     let mut cursor = 0;
     loop {
-        draw_jobs(jobs, &answers, &BTreeMap::new(), Some(cursor));
+        draw_jobs(jobs, &answers, &BTreeMap::new(), Some(cursor))?;
         println!(
             "{DIM}j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit{RESET}"
         );
@@ -106,9 +106,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
             }
             b'y' => Some(Decision::Approve),
             b'n' => Some(Decision::Refuse),
-            b'o' if !jobs[cursor].job.fields.is_empty() => {
-                show_details(&jobs[cursor].job, answers.get(&cursor).copied())?
-            }
+            b'o' => show_details(&jobs[cursor].parsed_request, answers.get(&cursor).copied())?,
             // cbreak mode turns the Enter key's carriage return into a newline
             b'\n' if answers.is_empty() => {
                 // With nothing staged, there is no outcome to show
@@ -116,7 +114,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
             }
             b'\n' => {
                 let outcomes = commit(queue, actions, jobs, &answers);
-                draw_jobs(jobs, &answers, &outcomes, None);
+                draw_jobs(jobs, &answers, &outcomes, None)?;
                 println!("Any key closes");
                 read_key()?;
                 return Ok(());
@@ -144,62 +142,31 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
     }
 }
 
-/// Draw one row per job in aligned columns, with its answer, a mark when it has
-/// fields, a line below for its outcome, and the cursor.
+/// Draw one row per job with its age and request, its answer, a line below for
+/// its outcome, and the cursor.
+///
+/// A request longer than the terminal is cut at its edge, so every row takes
+/// one line.
 fn draw_jobs(
     jobs: &[QueuedJob],
     answers: &BTreeMap<usize, Decision>,
     outcomes: &BTreeMap<usize, Result<Outcome, String>>,
     cursor: Option<usize>,
-) {
+) -> Result<(), String> {
+    // Read on every draw, so the rows fit the terminal after a resize
+    let (width, _) = get_terminal_size()?;
     // Each key press redraws the jobs in place
     print!("{CLEAR_SCREEN}");
     let now_ns = get_now_ns();
-    let rows: Vec<Vec<String>> = jobs
-        .iter()
-        .map(|queued_job| {
-            let age = format_age(now_ns.saturating_sub(queued_job.queued_at_ns));
-            [age]
-                .into_iter()
-                .chain(
-                    queued_job
-                        .job
-                        .columns
-                        .iter()
-                        .map(|cell| show_controls(cell)),
-                )
-                .collect()
-        })
-        .collect();
-    // Actions of different CLIs print different numbers of columns
-    let mut widths: Vec<usize> = Vec::new();
-    for row in &rows {
-        for (index, cell) in row.iter().enumerate() {
-            let width = cell.chars().count();
-            match widths.get_mut(index) {
-                Some(widest) => *widest = (*widest).max(width),
-                None => widths.push(width),
-            }
-        }
-    }
-    for (index, (queued_job, row)) in jobs.iter().zip(&rows).enumerate() {
+    for (index, queued_job) in jobs.iter().enumerate() {
         let pointer = if cursor == Some(index) { ">" } else { " " };
         let decision_mark = format_mark(answers.get(&index).copied());
-        let fields_mark = if queued_job.job.fields.is_empty() {
-            " ".to_string()
-        } else {
-            format!("{DIM}+{RESET}")
-        };
-        let cells: Vec<String> = row
-            .iter()
-            .zip(&widths)
-            .map(|(cell, width)| format!("{cell:<width$}"))
-            .collect();
-        let row_text = cells[1..].join("  ");
+        let age = format_age(now_ns.saturating_sub(queued_job.queued_at_ns));
+        let prefix = format!("{pointer} {decision_mark}  {DIM}{age}{RESET}  ");
+        let request_width = width.saturating_sub(count_shown_chars(&prefix));
         println!(
-            "{pointer} {decision_mark} {fields_mark}  {DIM}{}{RESET}  {}",
-            cells[0],
-            row_text.trim_end()
+            "{prefix}{}",
+            cut(&queued_job.parsed_request.request.format(), request_width)
         );
         // Blank until the job has an outcome, so no row moves when one appears
         match outcomes.get(&index) {
@@ -208,17 +175,48 @@ fn draw_jobs(
         }
     }
     println!();
+    Ok(())
 }
 
-/// Show the job's CLI and action with its fields below, which j and k scroll,
-/// until the person presses y or n to decide on the job, or q to go back
-/// without deciding.
-fn show_details(job: &Job, decision: Option<Decision>) -> Result<Option<Decision>, String> {
+/// Count the characters the terminal shows, leaving out color codes like
+/// \x1b[2m.
+fn count_shown_chars(text: &str) -> usize {
+    let mut count = 0;
+    let mut is_in_code = false;
+    for character in text.chars() {
+        match (is_in_code, character) {
+            (false, '\x1b') => is_in_code = true,
+            (false, _) => count += 1,
+            (true, 'm') => is_in_code = false,
+            (true, _) => {}
+        }
+    }
+    count
+}
+
+/// Cut the text to the width, ending it with … when it is longer.
+fn cut(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(width.saturating_sub(1)).collect();
+    format!("{kept}…")
+}
+
+/// Show the job's CLI and action with each argument below, next to its name,
+/// which j and k scroll, until the person presses y or n to decide on the job,
+/// or q to go back without deciding.
+fn show_details(
+    parsed_request: &ParsedRequest,
+    decision: Option<Decision>,
+) -> Result<Option<Decision>, String> {
+    let request = &parsed_request.request;
     let mut first_line = 0;
     loop {
-        // Read on every key press, so the fields fit the terminal after a resize
+        // Read on every key press, so the arguments fit the terminal after a
+        // resize
         let (width, height) = get_terminal_size()?;
-        let lines = format_fields(&job.fields, width);
+        let lines = format_arguments(&parsed_request.argument_names, &request.arguments, width);
         // The header, the keys, and a blank line below the header and above the
         // keys take 4 lines
         let line_count = height.saturating_sub(4).max(1);
@@ -228,8 +226,8 @@ fn show_details(job: &Job, decision: Option<Decision>) -> Result<Option<Decision
         println!(
             "{}  {BOLD}{} {}{RESET}",
             format_mark(decision),
-            job.request.cli,
-            job.request.action
+            request.cli,
+            request.action
         );
         println!();
         println!("{}", shown.join("\n"));
@@ -249,11 +247,14 @@ fn show_details(job: &Job, decision: Option<Decision>) -> Result<Option<Decision
     }
 }
 
-/// Lay out the fields as a table with a name column and a value column.
+/// Lay out the arguments as a table with a name column and a value column.
 ///
 /// A long value wraps to the width and continues down the value column.
-fn format_fields(fields: &[(String, String)], width: usize) -> Vec<String> {
-    let names: Vec<String> = fields.iter().map(|(name, _)| show_controls(name)).collect();
+fn format_arguments(argument_names: &[String], arguments: &[String], width: usize) -> Vec<String> {
+    let names: Vec<String> = argument_names
+        .iter()
+        .map(|name| show_controls(name))
+        .collect();
     let name_width = names
         .iter()
         .map(|name| name.chars().count())
@@ -262,7 +263,7 @@ fn format_fields(fields: &[(String, String)], width: usize) -> Vec<String> {
     // Wrapped, not cut off, so no word of a value is hidden
     let value_width = width.saturating_sub(name_width + 2).max(1);
     let mut lines = Vec::new();
-    for (name, (_, value)) in names.iter().zip(fields) {
+    for (name, value) in names.iter().zip(arguments) {
         let value = show_controls(value);
         let value_lines: Vec<String> = value
             .split('\n')

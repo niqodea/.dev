@@ -80,23 +80,23 @@ fn run(command: Command) -> Result<(), String> {
 }
 
 fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), String> {
-    let job = actions.describe(request)?;
-    if actions.is_auto_approved(&job.request)? {
-        return match actions.run(&job.request) {
+    let parsed_request = actions.parse(request)?;
+    let request = &parsed_request.request;
+    if actions.is_auto_approved(request)? {
+        return match actions.run(request) {
             Ok(output) => {
-                let answered_job = queue.record(job, Outcome::Succeeded { output })?;
+                let answered_job =
+                    queue.record(parsed_request.request, Outcome::Succeeded { output })?;
                 println!(
                     "{}",
-                    format_outcome(&answered_job.job.columns, &answered_job.outcome)
+                    format_outcome(&answered_job.request, &answered_job.outcome)
                 );
                 Ok(())
             }
             Err(error) => {
-                let answered_job = queue.record(job, Outcome::Failed { error })?;
-                Err(format_outcome(
-                    &answered_job.job.columns,
-                    &answered_job.outcome,
-                ))
+                let answered_job =
+                    queue.record(parsed_request.request, Outcome::Failed { error })?;
+                Err(format_outcome(&answered_job.request, &answered_job.outcome))
             }
         };
     }
@@ -105,10 +105,10 @@ fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), Stri
             "Not queued: {MAX_PENDING_JOBS} requests already wait for a decision in this queue"
         ));
     }
-    queue.add(&job)?;
+    queue.add(&parsed_request)?;
     println!(
         "waiting: {}. Someone with write access will decide whether to do it",
-        format_row(&job.columns)
+        parsed_request.request.format()
     );
     Ok(())
 }
@@ -122,7 +122,7 @@ fn print_status(queue: &Queue) -> Result<(), String> {
     );
     for queued_job in &queued_jobs {
         let age = format_age(now_ns.saturating_sub(queued_job.queued_at_ns));
-        println!("  {age}  {}", format_row(&queued_job.job.columns));
+        println!("  {age}  {}", queued_job.parsed_request.request.format());
     }
     let answered_jobs = queue.read_answered_jobs()?;
     let shown = &answered_jobs[answered_jobs.len().saturating_sub(STATUS_ANSWERED_COUNT)..];
@@ -133,18 +133,14 @@ fn print_status(queue: &Queue) -> Result<(), String> {
     );
     for answered_job in shown {
         let age = format_age(now_ns.saturating_sub(answered_job.answered_at_ns));
-        let outcome = format_outcome(&answered_job.job.columns, &answered_job.outcome);
+        let outcome = format_outcome(&answered_job.request, &answered_job.outcome);
         println!("  {age}  {outcome}");
     }
     Ok(())
 }
 
-fn format_row(columns: &[String]) -> String {
-    columns.join("  ")
-}
-
-fn format_outcome(columns: &[String], outcome: &Outcome) -> String {
-    let row = format_row(columns);
+fn format_outcome(request: &Request, outcome: &Outcome) -> String {
+    let row = request.format();
     match outcome {
         Outcome::Succeeded { output } if output.is_empty() => format!("succeeded: {row}"),
         Outcome::Succeeded { output } => format!("succeeded: {row}: {output}"),

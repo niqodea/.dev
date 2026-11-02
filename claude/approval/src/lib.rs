@@ -1,5 +1,5 @@
-//! The approval queue: the actions CLIs install, the jobs waiting in a queue for
-//! a person's decision, and the log of the jobs answered.
+//! The approval queue: the actions CLIs install, the requests waiting in a
+//! queue for a person's decision, and the log of the requests answered.
 
 use std::env;
 use std::fs;
@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
 // Long enough for a write over the network, short enough that a stuck action
 // does not hold the person deciding
@@ -32,21 +33,20 @@ pub struct Request {
     pub arguments: Vec<String>,
 }
 
+/// A request whose action parsed its arguments, with the name the action gave
+/// each one
 #[derive(Serialize, Deserialize)]
-pub struct Job {
+pub struct ParsedRequest {
     #[serde(flatten)]
     pub request: Request,
-    // What the action's describe printed, one cell per column
-    pub columns: Vec<String>,
-    // Every name and value worth reading before deciding, like an email's
-    // recipient and text, in the order describe printed them
-    pub fields: Vec<(String, String)>,
+    // One for each argument, in the same order
+    pub argument_names: Vec<String>,
 }
 
 pub struct QueuedJob {
     // Also names the job's file
     pub queued_at_ns: u64,
-    pub job: Job,
+    pub parsed_request: ParsedRequest,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,7 +63,9 @@ pub enum Outcome {
 #[derive(Serialize, Deserialize)]
 pub struct AnsweredJob {
     pub answered_at_ns: u64,
-    pub job: Job,
+    // Entries already in the log use the key job
+    #[serde(rename = "job")]
+    pub request: Request,
     #[serde(flatten)]
     pub outcome: Outcome,
 }
@@ -82,19 +84,24 @@ pub struct Queue {
     directory: PathBuf,
 }
 
-/// What an action's describe prints
-#[derive(Deserialize)]
-// A key nothing reads would hold content the person never sees, like a
-// misspelled field
-#[serde(deny_unknown_fields)]
-struct Description {
-    row: Vec<String>,
-    fields: Vec<(String, String)>,
+impl Request {
+    /// Write the request on one line as the words that ask for it, each quoted
+    /// the way zsh and bash 4.2 or later read it back, so a value with a space
+    /// reads as one word.
+    #[must_use]
+    pub fn format(&self) -> String {
+        [&self.cli, &self.action]
+            .into_iter()
+            .chain(&self.arguments)
+            .map(|word| quote(word))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 #[derive(Clone, Copy)]
 enum Verb {
-    Describe,
+    Parse,
     Run,
 }
 
@@ -121,19 +128,21 @@ impl Actions {
         }
     }
 
-    /// Run the action's describe, which checks the request's arguments, and
-    /// return the job with the row and the fields it printed.
+    /// Run the action's parse, which rejects arguments the action cannot run
+    /// with, without reading or changing anything, and return the request with
+    /// the name parse printed for each argument.
     ///
     /// # Errors
     ///
-    /// When no such action is installed, or its describe rejects the request.
-    pub fn describe(&self, request: Request) -> Result<Job, String> {
+    /// When no such action is installed, its parse rejects the request, or it
+    /// prints an empty name, or not exactly one name per argument.
+    pub fn parse(&self, request: Request) -> Result<ParsedRequest, String> {
         let action_path = self.locate(&request)?;
-        let output = match self.run_action(&action_path, Verb::Describe, &request.arguments) {
+        let output = match self.run_action(&action_path, Verb::Parse, &request.arguments) {
             Ok(output) => output,
             Err(ActionError::TimedOut) => {
                 return Err(format!(
-                    "Invalid request: took over {} s to describe",
+                    "Invalid request: took over {} s to parse",
                     ACTION_TIMEOUT.as_secs()
                 ));
             }
@@ -142,21 +151,22 @@ impl Actions {
         if !output.status.success() {
             return Err(format!("Invalid request: {}", get_error(&output)));
         }
-        let description: Description = serde_json::from_str(&output.stdout).map_err(|error| {
-            format!("Invalid request: describe printed no row and fields: {error}")
-        })?;
-        // A row is how a person tells requests apart, so it is never empty
-        if description.row.is_empty() {
-            return Err("Invalid request: describe printed an empty row".to_string());
+        let argument_names: Vec<String> = output.stdout.lines().map(str::to_string).collect();
+        // A name off by one would label every value after it with the wrong
+        // name
+        if argument_names.len() != request.arguments.len() {
+            return Err(format!(
+                "Invalid request: parse prints one name per argument, and printed {} for the {}",
+                argument_names.len(),
+                request.arguments.len()
+            ));
         }
-        // A value is read by its name, so it needs one
-        if description.fields.iter().any(|(name, _)| name.is_empty()) {
-            return Err("Invalid request: describe printed a field with no name".to_string());
+        if argument_names.iter().any(String::is_empty) {
+            return Err("Invalid request: parse printed an empty name".to_string());
         }
-        Ok(Job {
+        Ok(ParsedRequest {
             request,
-            columns: description.row,
-            fields: description.fields,
+            argument_names,
         })
     }
 
@@ -225,7 +235,7 @@ impl Actions {
         arguments: &[String],
     ) -> Result<ActionOutput, ActionError> {
         let verb = match verb {
-            Verb::Describe => "describe",
+            Verb::Parse => "parse",
             Verb::Run => "run",
         };
         let mut child = process::Command::new(action_path)
@@ -289,12 +299,12 @@ impl Queue {
     /// # Errors
     ///
     /// When the job's file cannot be written.
-    pub fn add(&self, job: &Job) -> Result<(), String> {
+    pub fn add(&self, parsed_request: &ParsedRequest) -> Result<(), String> {
         let directory = self.get_pending_directory();
         fs::create_dir_all(&directory)
             .map_err(|error| format!("Cannot create {}: {error}", directory.display()))?;
         let path = self.get_pending_path(get_now_ns());
-        fs::write(&path, encode(job))
+        fs::write(&path, encode(parsed_request))
             .map_err(|error| format!("Cannot write {}: {error}", path.display()))
     }
 
@@ -314,15 +324,15 @@ impl Queue {
         if !path.exists() {
             return Err("the request no longer waits in this queue".to_string());
         }
-        let job: Job = decode(&read_file(&path)?, &path)?;
+        let ParsedRequest { request, .. } = decode(&read_file(&path)?, &path)?;
         let outcome = match decision {
-            Decision::Approve => match actions.run(&job.request) {
+            Decision::Approve => match actions.run(&request) {
                 Ok(output) => Outcome::Succeeded { output },
                 Err(error) => Outcome::Failed { error },
             },
             Decision::Refuse => Outcome::Refused,
         };
-        let answered_job = self.record(job, outcome)?;
+        let answered_job = self.record(request, outcome)?;
         fs::remove_file(&path)
             .map_err(|error| format!("Cannot remove {}: {error}", path.display()))?;
         Ok(answered_job)
@@ -333,10 +343,10 @@ impl Queue {
     /// # Errors
     ///
     /// When the log cannot be written.
-    pub fn record(&self, job: Job, outcome: Outcome) -> Result<AnsweredJob, String> {
+    pub fn record(&self, request: Request, outcome: Outcome) -> Result<AnsweredJob, String> {
         let answered_job = AnsweredJob {
             answered_at_ns: get_now_ns(),
-            job,
+            request,
             outcome,
         };
         let path = self.get_log_path();
@@ -361,8 +371,11 @@ impl Queue {
         let mut queued_jobs = Vec::new();
         for queued_at_ns in self.list_queue_times_ns()? {
             let path = self.get_pending_path(queued_at_ns);
-            let job = decode(&read_file(&path)?, &path)?;
-            queued_jobs.push(QueuedJob { queued_at_ns, job });
+            let parsed_request = decode(&read_file(&path)?, &path)?;
+            queued_jobs.push(QueuedJob {
+                queued_at_ns,
+                parsed_request,
+            });
         }
         Ok(queued_jobs)
     }
@@ -518,6 +531,60 @@ fn get_error(output: &ActionOutput) -> String {
         (None, Some(code)) => format!("exited with {code}"),
         (None, None) => "stopped by a signal".to_string(),
     }
+}
+
+/// Quote the word unless every character in it reads the same to a shell
+/// without quotes.
+///
+/// A word with a control or format character goes in $'', with each such
+/// character written as an escape, and any other word in single quotes.
+fn quote(word: &str) -> String {
+    // zsh expands a word that starts with =, like =ls, to the command's path
+    let is_plain = !word.is_empty()
+        && !word.starts_with('=')
+        && word
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "-_./:=@%+,".contains(character));
+    if is_plain {
+        return word.to_string();
+    }
+    // A control character can move the cursor or clear the screen, a format
+    // character can be invisible or reverse the text after it, and a line
+    // break would split the request over several lines
+    if word.chars().any(is_control_or_format) {
+        let escaped: String = word
+            .chars()
+            .map(|character| match character {
+                '\\' => r"\\".to_string(),
+                '\'' => r"\'".to_string(),
+                '\n' => r"\n".to_string(),
+                '\t' => r"\t".to_string(),
+                // \x writes one byte, which is the character itself only for
+                // ASCII
+                character if character.is_ascii_control() => {
+                    format!(r"\x{:02x}", u32::from(character))
+                }
+                character if u32::from(character) <= 0xffff && is_control_or_format(character) => {
+                    format!(r"\u{:04x}", u32::from(character))
+                }
+                character if is_control_or_format(character) => {
+                    format!(r"\U{:08x}", u32::from(character))
+                }
+                character => character.to_string(),
+            })
+            .collect();
+        return format!("$'{escaped}'");
+    }
+    // A single quote cannot be escaped inside single quotes, so it closes them,
+    // follows escaped, and opens them again
+    format!("'{}'", word.replace('\'', r"'\''"))
+}
+
+fn is_control_or_format(character: char) -> bool {
+    matches!(
+        character.general_category(),
+        GeneralCategory::Control | GeneralCategory::Format
+    )
 }
 
 fn is_plain_name(name: &str) -> bool {
