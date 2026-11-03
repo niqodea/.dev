@@ -4,7 +4,8 @@
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Outcome, Queue, Request, format_age, get_now_ns, read_queue_directory, read_variable,
+    Actions, Outcome, ParsedRequest, Queue, Request, format_age, get_now_ns, read_queue_directory,
+    read_variable,
 };
 use clap::{Parser, Subcommand};
 
@@ -81,12 +82,10 @@ fn run(command: Command) -> Result<(), String> {
 
 fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), String> {
     let parsed_request = actions.parse(request)?;
-    let request = &parsed_request.request;
-    if actions.is_auto_approved(request)? {
-        return match actions.run(request) {
+    if actions.is_auto_approved(&parsed_request)? {
+        return match actions.run(&parsed_request) {
             Ok(output) => {
-                let answered_job =
-                    queue.record(parsed_request.request, Outcome::Succeeded { output })?;
+                let answered_job = queue.record(parsed_request, Outcome::Succeeded { output })?;
                 println!(
                     "{}",
                     format_outcome(&answered_job.request, &answered_job.outcome)
@@ -94,8 +93,7 @@ fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), Stri
                 Ok(())
             }
             Err(error) => {
-                let answered_job =
-                    queue.record(parsed_request.request, Outcome::Failed { error })?;
+                let answered_job = queue.record(parsed_request, Outcome::Failed { error })?;
                 Err(format_outcome(&answered_job.request, &answered_job.outcome))
             }
         };
@@ -108,7 +106,7 @@ fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), Stri
     queue.add(&parsed_request)?;
     println!(
         "waiting: {}. Someone with write access will decide whether to do it",
-        parsed_request.request.format()
+        parsed_request.format()
     );
     Ok(())
 }
@@ -122,7 +120,7 @@ fn print_status(queue: &Queue) -> Result<(), String> {
     );
     for queued_job in &queued_jobs {
         let age = format_age(now_ns.saturating_sub(queued_job.queued_at_ns));
-        println!("  {age}  {}", queued_job.parsed_request.request.format());
+        println!("  {age}  {}", queued_job.parsed_request.format());
     }
     let answered_jobs = queue.read_answered_jobs()?;
     let shown = &answered_jobs[answered_jobs.len().saturating_sub(STATUS_ANSWERED_COUNT)..];
@@ -139,7 +137,7 @@ fn print_status(queue: &Queue) -> Result<(), String> {
     Ok(())
 }
 
-fn format_outcome(request: &Request, outcome: &Outcome) -> String {
+fn format_outcome(request: &ParsedRequest, outcome: &Outcome) -> String {
     let row = request.format();
     match outcome {
         Outcome::Succeeded { output } if output.is_empty() => format!("succeeded: {row}"),

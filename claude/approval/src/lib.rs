@@ -10,6 +10,7 @@ use std::process::{self, Child, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
@@ -26,21 +27,38 @@ pub enum Decision {
     Refuse,
 }
 
-#[derive(Serialize, Deserialize)]
+/// What a CLI asks for: an action, and the words it runs the action with
 pub struct Request {
     pub cli: String,
     pub action: String,
     pub arguments: Vec<String>,
 }
 
-/// A request whose action parsed its arguments, with the name the action gave
-/// each one
+/// A request whose action parsed its words, with each word under the name the
+/// action gave it, in the order the words came in
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ParsedRequest {
-    #[serde(flatten)]
-    pub request: Request,
-    // One for each argument, in the same order
-    pub argument_names: Vec<String>,
+    pub cli: String,
+    pub action: String,
+    pub arguments: IndexMap<String, Value>,
+}
+
+/// The words under one name: one word, or the words of a name that repeats
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Value {
+    One(String),
+    Many(Vec<String>),
+}
+
+/// A request that runs without asking: any request for the action whose
+/// arguments include these
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Rule {
+    action: String,
+    arguments: IndexMap<String, Value>,
 }
 
 pub struct QueuedJob {
@@ -63,9 +81,7 @@ pub enum Outcome {
 #[derive(Serialize, Deserialize)]
 pub struct AnsweredJob {
     pub answered_at_ns: u64,
-    // Entries already in the log use the key job
-    #[serde(rename = "job")]
-    pub request: Request,
+    pub request: ParsedRequest,
     #[serde(flatten)]
     pub outcome: Outcome,
 }
@@ -83,18 +99,28 @@ pub struct Queue {
     directory: PathBuf,
 }
 
-impl Request {
+impl ParsedRequest {
     /// Write the request on one line as the words that ask for it, each quoted
     /// the way zsh and bash 4.2 or later read it back, so a value with a space
     /// reads as one word.
     #[must_use]
     pub fn format(&self) -> String {
-        [&self.cli, &self.action]
+        let words: Vec<String> = [self.cli.clone(), self.action.clone()]
             .into_iter()
-            .chain(&self.arguments)
-            .map(|word| quote(word))
-            .collect::<Vec<_>>()
-            .join(" ")
+            .chain(self.get_words())
+            .collect();
+        format_words(&words)
+    }
+
+    /// Return the words the action runs with, in the order they came in.
+    fn get_words(&self) -> Vec<String> {
+        self.arguments
+            .values()
+            .flat_map(|value| match value {
+                Value::One(word) => vec![word.clone()],
+                Value::Many(words) => words.clone(),
+            })
+            .collect()
     }
 }
 
@@ -127,16 +153,17 @@ impl Actions {
         }
     }
 
-    /// Run the action's parse, which rejects arguments the action cannot run
+    /// Run the action's parse, which rejects words the action cannot run
     /// with, without reading or changing anything, and return the request with
-    /// the name parse printed for each argument.
+    /// each word under the name parse printed for it.
     ///
     /// # Errors
     ///
     /// When no such action is installed, its parse rejects the request, or it
-    /// prints an empty name, or not exactly one name per argument.
+    /// prints an empty name, not exactly one name per word, or a name apart
+    /// from its other words.
     pub fn parse(&self, request: Request) -> Result<ParsedRequest, String> {
-        let action_path = self.locate(&request)?;
+        let action_path = self.locate(&request.cli, &request.action)?;
         let output = match self.run_action(&action_path, Verb::Parse, &request.arguments) {
             Ok(output) => output,
             Err(ActionError::TimedOut) => {
@@ -163,9 +190,35 @@ impl Actions {
         if argument_names.iter().any(String::is_empty) {
             return Err("Invalid request: parse printed an empty name".to_string());
         }
+        let mut arguments: IndexMap<String, Value> = IndexMap::new();
+        let mut previous_name: Option<&str> = None;
+        for (name, word) in argument_names.iter().zip(request.arguments) {
+            match arguments.get_mut(name) {
+                None => {
+                    arguments.insert(name.clone(), Value::One(word));
+                }
+                // The words run in the order of their names, so a name whose
+                // words are apart would put its later words in the wrong place
+                Some(_) if previous_name != Some(name.as_str()) => {
+                    return Err(format!(
+                        "Invalid request: parse printed {name} apart from its other words"
+                    ));
+                }
+                Some(value) => {
+                    let mut words = match std::mem::replace(value, Value::Many(Vec::new())) {
+                        Value::One(first) => vec![first],
+                        Value::Many(words) => words,
+                    };
+                    words.push(word);
+                    *value = Value::Many(words);
+                }
+            }
+            previous_name = Some(name);
+        }
         Ok(ParsedRequest {
-            request,
-            argument_names,
+            cli: request.cli,
+            action: request.action,
+            arguments,
         })
     }
 
@@ -174,9 +227,9 @@ impl Actions {
     /// # Errors
     ///
     /// Why the action failed, like the last line it printed to stderr.
-    pub fn run(&self, request: &Request) -> Result<String, String> {
-        let action_path = self.locate(request)?;
-        match self.run_action(&action_path, Verb::Run, &request.arguments) {
+    pub fn run(&self, request: &ParsedRequest) -> Result<String, String> {
+        let action_path = self.locate(&request.cli, &request.action)?;
+        match self.run_action(&action_path, Verb::Run, &request.get_words()) {
             Ok(output) if output.status.success() => Ok(output.stdout.trim().to_string()),
             Ok(output) => Err(get_error(&output)),
             Err(ActionError::TimedOut) => Err(format!("took over {} s", ACTION_TIMEOUT.as_secs())),
@@ -185,44 +238,39 @@ impl Actions {
         }
     }
 
-    /// Whether a line of the CLI's auto-approved file equals the request's
-    /// first words, the action and its first arguments.
+    /// Whether a rule in the CLI's auto-approved file names the request's
+    /// action, and only arguments the request has, with the same values.
     ///
     /// # Errors
     ///
-    /// When the auto-approved file cannot be read.
-    pub fn is_auto_approved(&self, request: &Request) -> Result<bool, String> {
-        let path = self.clis_directory.join(&request.cli).join("auto-approved");
+    /// When the auto-approved file cannot be read, or holds something other
+    /// than a list of rules.
+    pub fn is_auto_approved(&self, request: &ParsedRequest) -> Result<bool, String> {
+        let path = self
+            .clis_directory
+            .join(&request.cli)
+            .join("auto-approved.json");
         if !path.exists() {
             return Ok(false);
         }
-        let text = read_file(&path)?;
-        let words: Vec<&str> = [request.action.as_str()]
-            .into_iter()
-            .chain(request.arguments.iter().map(String::as_str))
-            .collect();
-        let is_listed = text.lines().any(|line| {
-            let rule: Vec<&str> = line.split_whitespace().collect();
-            let is_comment = rule.first().is_some_and(|word| word.starts_with('#'));
-            !rule.is_empty() && !is_comment && words.starts_with(&rule)
+        let rules: Vec<Rule> = decode(&read_file(&path)?, &path)?;
+        let is_listed = rules.iter().any(|rule| {
+            rule.action == request.action
+                && rule
+                    .arguments
+                    .iter()
+                    .all(|(name, value)| request.arguments.get(name) == Some(value))
         });
         Ok(is_listed)
     }
 
-    fn locate(&self, request: &Request) -> Result<PathBuf, String> {
-        let path = self
-            .clis_directory
-            .join(&request.cli)
-            .join("actions")
-            .join(&request.action);
+    fn locate(&self, cli: &str, action: &str) -> Result<PathBuf, String> {
+        let path = self.clis_directory.join(cli).join("actions").join(action);
         // A name becomes part of a path, so it may not climb out of its
         // directory
-        let is_named_plainly = is_plain_name(&request.cli) && is_plain_name(&request.action);
+        let is_named_plainly = is_plain_name(cli) && is_plain_name(action);
         if !is_named_plainly || !path.is_file() {
-            return Err(format!(
-                "No such request: {} {}",
-                request.cli, request.action
-            ));
+            return Err(format!("No such request: {cli} {action}"));
         }
         Ok(path)
     }
@@ -321,7 +369,7 @@ impl Queue {
         if !path.exists() {
             return Err("the request no longer waits in this queue".to_string());
         }
-        let ParsedRequest { request, .. } = decode(&read_file(&path)?, &path)?;
+        let request: ParsedRequest = decode(&read_file(&path)?, &path)?;
         let outcome = match decision {
             Decision::Approve => match actions.run(&request) {
                 Ok(output) => Outcome::Succeeded { output },
@@ -340,7 +388,7 @@ impl Queue {
     /// # Errors
     ///
     /// When the log cannot be written.
-    pub fn record(&self, request: Request, outcome: Outcome) -> Result<AnsweredJob, String> {
+    pub fn record(&self, request: ParsedRequest, outcome: Outcome) -> Result<AnsweredJob, String> {
         let answered_job = AnsweredJob {
             answered_at_ns: get_now_ns(),
             request,
@@ -519,6 +567,17 @@ fn get_error(output: &ActionOutput) -> String {
         (None, Some(code)) => format!("exited with {code}"),
         (None, None) => "stopped by a signal".to_string(),
     }
+}
+
+/// Write the words on one line, each quoted the way zsh and bash 4.2 or later
+/// read it back, so a value with a space reads as one word.
+#[must_use]
+pub fn format_words(words: &[String]) -> String {
+    words
+        .iter()
+        .map(|word| quote(word))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Quote the word unless every character in it reads the same to a shell

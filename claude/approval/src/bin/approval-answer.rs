@@ -9,9 +9,10 @@ use std::mem::MaybeUninit;
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Decision, Outcome, ParsedRequest, Queue, QueuedJob, format_age, get_now_ns,
-    read_queue_directory, read_variable,
+    Actions, Decision, Outcome, ParsedRequest, Queue, QueuedJob, Value, format_age, format_words,
+    get_now_ns, read_queue_directory, read_variable,
 };
+use indexmap::IndexMap;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
 const GREEN: &str = "\x1b[32m";
@@ -163,7 +164,7 @@ fn draw_jobs(
         let request_width = width.saturating_sub(count_shown_chars(&prefix));
         println!(
             "{prefix}{}",
-            cut(&queued_job.parsed_request.request.format(), request_width)
+            cut(&queued_job.parsed_request.format(), request_width)
         );
         // Blank until the job has an outcome, so no row moves when one appears
         match outcomes.get(&index) {
@@ -207,13 +208,12 @@ fn show_details(
     parsed_request: &ParsedRequest,
     decision: Option<Decision>,
 ) -> Result<Option<Decision>, String> {
-    let request = &parsed_request.request;
     let mut first_line = 0;
     loop {
         // Read on every key press, so the arguments fit the terminal after a
         // resize
         let (width, height) = get_terminal_size()?;
-        let lines = format_arguments(&parsed_request.argument_names, &request.arguments, width);
+        let lines = format_arguments(&parsed_request.arguments, width);
         // The header, the keys, and a blank line below the header and above the
         // keys take 4 lines
         let line_count = height.saturating_sub(4).max(1);
@@ -223,8 +223,8 @@ fn show_details(
         println!(
             "{}  {BOLD}{} {}{RESET}",
             format_mark(decision),
-            request.cli,
-            request.action
+            parsed_request.cli,
+            parsed_request.action
         );
         println!();
         println!("{}", shown.join("\n"));
@@ -246,12 +246,11 @@ fn show_details(
 
 /// Lay out the arguments as a table with a name column and a value column.
 ///
-/// A long value wraps to the width and continues down the value column.
-fn format_arguments(argument_names: &[String], arguments: &[String], width: usize) -> Vec<String> {
-    let names: Vec<String> = argument_names
-        .iter()
-        .map(|name| show_controls(name))
-        .collect();
+/// A long value wraps to the width and continues down the value column. The
+/// words of a name that repeats show on one line, each quoted, so where one
+/// word ends shows.
+fn format_arguments(arguments: &IndexMap<String, Value>, width: usize) -> Vec<String> {
+    let names: Vec<String> = arguments.keys().map(|name| show_controls(name)).collect();
     let name_width = names
         .iter()
         .map(|name| name.chars().count())
@@ -260,8 +259,11 @@ fn format_arguments(argument_names: &[String], arguments: &[String], width: usiz
     // Wrapped, not cut off, so no word of a value is hidden
     let value_width = width.saturating_sub(name_width + 2).max(1);
     let mut lines = Vec::new();
-    for (name, value) in names.iter().zip(arguments) {
-        let value = show_controls(value);
+    for (name, value) in names.iter().zip(arguments.values()) {
+        let value = match value {
+            Value::One(word) => show_controls(word),
+            Value::Many(words) => format_words(words),
+        };
         let value_lines: Vec<String> = value
             .split('\n')
             .flat_map(|line| wrap(&expand_tabs(line), value_width))
