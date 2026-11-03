@@ -23,7 +23,8 @@ A CLI that changes something asks `,approval` for the change instead of making i
 
 A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`:
 
-- `actions/<action>`: an executable, not on `PATH`, that `,approval` runs with `parse` or `run` and then the request's arguments.
+- `action`: an executable, not on `PATH`, that `,approval` runs with `parse` or `run`, then the action's name, then the request's arguments.
+  It can be the CLI itself under another name, so the CLI and its changes share their code while Claude is told only of the CLI.
   `parse` only parses the arguments, without reading or changing anything, and prints the name of each argument on a line of its own, or fails with the reason when the action cannot run with them.
   `,approval` queues nothing until `parse` succeeds, and stores the request's arguments as an object from each name to its word, or to its list of words when the name repeats.
   The words of a name that repeats come one after another, so `run` gets them back in the order they came in.

@@ -88,7 +88,8 @@ pub struct AnsweredJob {
 
 /// The actions CLIs install, and the environment they run in
 pub struct Actions {
-    // Where each CLI installs its actions and auto-approved file, under <cli>
+    // Where each CLI installs its action executable and auto-approved file,
+    // under <cli>
     clis_directory: PathBuf,
     search_path: String,
     home: String,
@@ -164,7 +165,12 @@ impl Actions {
     /// from its other words.
     pub fn parse(&self, request: Request) -> Result<ParsedRequest, String> {
         let action_path = self.locate(&request.cli, &request.action)?;
-        let output = match self.run_action(&action_path, Verb::Parse, &request.arguments) {
+        let output = match self.run_action(
+            &action_path,
+            Verb::Parse,
+            &request.action,
+            &request.arguments,
+        ) {
             Ok(output) => output,
             Err(ActionError::TimedOut) => {
                 return Err(format!(
@@ -232,7 +238,12 @@ impl Actions {
     /// Why the action failed, like the last line it printed to stderr.
     pub fn run(&self, request: &ParsedRequest) -> Result<String, String> {
         let action_path = self.locate(&request.cli, &request.action)?;
-        match self.run_action(&action_path, Verb::Run, &request.get_words()) {
+        match self.run_action(
+            &action_path,
+            Verb::Run,
+            &request.action,
+            &request.get_words(),
+        ) {
             Ok(output) if output.status.success() => Ok(output.stdout.trim().to_string()),
             Ok(output) => Err(get_error(&output)),
             Err(ActionError::TimedOut) => Err(format!("took over {} s", ACTION_TIMEOUT.as_secs())),
@@ -267,10 +278,13 @@ impl Actions {
         Ok(is_listed)
     }
 
+    /// Return the executable that makes the CLI's changes, which takes the
+    /// action's name after the verb.
     fn locate(&self, cli: &str, action: &str) -> Result<PathBuf, String> {
-        let path = self.clis_directory.join(cli).join("actions").join(action);
-        // A name becomes part of a path, so it may not climb out of its
-        // directory
+        let path = self.clis_directory.join(cli).join("action");
+        // The CLI's name becomes part of a path, so it may not climb out of its
+        // directory, and the action's comes before the arguments, so it may not
+        // pass for an option like --help
         let is_named_plainly = is_plain_name(cli) && is_plain_name(action);
         if !is_named_plainly || !path.is_file() {
             return Err(format!("No such request: {cli} {action}"));
@@ -282,6 +296,7 @@ impl Actions {
         &self,
         action_path: &Path,
         verb: Verb,
+        action: &str,
         arguments: &[String],
     ) -> Result<ActionOutput, ActionError> {
         let verb = match verb {
@@ -290,6 +305,7 @@ impl Actions {
         };
         let mut child = process::Command::new(action_path)
             .arg(verb)
+            .arg(action)
             .args(arguments)
             // Only PATH, to find programs, and HOME, to find the person's
             // logins, so an action gets the same environment whoever runs it,
@@ -684,4 +700,202 @@ fn decode<T: DeserializeOwned>(text: &str, path: &Path) -> Result<T, String> {
 
 fn encode<T: Serialize>(value: &T) -> String {
     serde_json::to_string(value).expect("the types written here have only string keys")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    const CLI: &str = "test";
+
+    /// A home folder whose test CLI installs the action script, and the actions
+    /// it holds
+    struct Home {
+        directory: tempfile::TempDir,
+        actions: Actions,
+    }
+
+    impl Home {
+        fn new(script: &str) -> Home {
+            let directory = tempfile::tempdir().unwrap();
+            let home = directory.path().to_str().unwrap().to_string();
+            let cli_directory = directory.path().join(".config/approval/clis").join(CLI);
+            fs::create_dir_all(&cli_directory).unwrap();
+            let action_path = cli_directory.join("action");
+            fs::write(&action_path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            fs::set_permissions(&action_path, fs::Permissions::from_mode(0o755)).unwrap();
+            let actions = Actions::new(&home, env::var("PATH").unwrap());
+            Home { directory, actions }
+        }
+
+        fn write_auto_approved(&self, rules: &str) {
+            let path = self
+                .directory
+                .path()
+                .join(".config/approval/clis")
+                .join(CLI)
+                .join("auto-approved.json");
+            fs::write(path, rules).unwrap();
+        }
+    }
+
+    fn request(action: &str, arguments: &[&str]) -> Request {
+        Request {
+            cli: CLI.to_string(),
+            action: action.to_string(),
+            arguments: arguments.iter().map(|word| (*word).to_string()).collect(),
+        }
+    }
+
+    fn one(word: &str) -> Value {
+        Value::One(word.to_string())
+    }
+
+    fn many(words: &[&str]) -> Value {
+        Value::Many(words.iter().map(|word| (*word).to_string()).collect())
+    }
+
+    // Names the first word file and every other word tags, and prints back
+    // what it runs with
+    const TAG_SCRIPT: &str = r#"case $1 in
+  parse) echo file; shift 3; for _ in "$@"; do echo tags; done ;;
+  run) printf '%s\n' "$@" ;;
+esac"#;
+
+    #[test]
+    fn parse_names_each_word_and_groups_a_name_that_repeats() {
+        let home = Home::new(TAG_SCRIPT);
+        let parsed = home
+            .actions
+            .parse(request("tag", &["notes.txt", "a", "b"]))
+            .unwrap();
+        assert_eq!(parsed.action, "tag");
+        let arguments: Vec<_> = parsed.arguments.into_iter().collect();
+        assert!(
+            arguments
+                == [
+                    ("file".to_string(), one("notes.txt")),
+                    ("tags".to_string(), many(&["a", "b"]))
+                ]
+        );
+    }
+
+    #[test]
+    fn run_gets_the_verb_the_action_and_the_words_in_order() {
+        let home = Home::new(TAG_SCRIPT);
+        let parsed = home
+            .actions
+            .parse(request("tag", &["notes.txt", "a", "b"]))
+            .unwrap();
+        let output = home.actions.run(&parsed).unwrap();
+        assert_eq!(output, "run\ntag\nnotes.txt\na\nb");
+    }
+
+    #[test]
+    fn parse_rejects_a_name_apart_from_its_other_words() {
+        let home = Home::new("printf 'from\\nto\\nfrom\\n'");
+        let error = home
+            .actions
+            .parse(request("move", &["a", "b", "c"]))
+            .err()
+            .unwrap();
+        assert_eq!(
+            error,
+            "Invalid request: parse printed from apart from its other words"
+        );
+    }
+
+    #[test]
+    fn parse_rejects_a_name_count_that_differs_from_the_word_count() {
+        let home = Home::new("echo only");
+        let error = home
+            .actions
+            .parse(request("move", &["a", "b"]))
+            .err()
+            .unwrap();
+        assert_eq!(
+            error,
+            "Invalid request: parse prints one name per argument, and printed 1 for the 2"
+        );
+    }
+
+    #[test]
+    fn parse_reports_the_last_line_the_action_printed_to_stderr() {
+        let home =
+            Home::new("echo 'usage: move <from> <to>' >&2; echo 'not a file: a' >&2; exit 1");
+        let error = home.actions.parse(request("move", &["a"])).err().unwrap();
+        assert_eq!(error, "Invalid request: not a file: a");
+    }
+
+    #[test]
+    fn locate_rejects_names_that_are_not_plain() {
+        let home = Home::new("echo name");
+        for (cli, action) in [
+            ("..", "move"),
+            ("test/..", "move"),
+            (CLI, "--help"),
+            (CLI, ""),
+            (CLI, "Move"),
+        ] {
+            let request = Request {
+                cli: cli.to_string(),
+                action: action.to_string(),
+                arguments: vec!["a".to_string()],
+            };
+            assert_eq!(
+                home.actions.parse(request).err().unwrap(),
+                format!("No such request: {cli} {action}")
+            );
+        }
+    }
+
+    #[test]
+    fn locate_rejects_a_cli_without_an_action_executable() {
+        let home = Home::new("echo name");
+        let request = Request {
+            cli: "other".to_string(),
+            action: "move".to_string(),
+            arguments: vec!["a".to_string()],
+        };
+        assert_eq!(
+            home.actions.parse(request).err().unwrap(),
+            "No such request: other move"
+        );
+    }
+
+    #[test]
+    fn auto_approved_rules_match_a_subset_of_the_arguments() {
+        let home = Home::new(TAG_SCRIPT);
+        home.write_auto_approved(
+            r#"[{"action": "tag", "arguments": {"file": "notes.txt"}},
+               {"action": "tag", "arguments": {"tags": ["x", "y"]}}]"#,
+        );
+        let is_auto_approved = |arguments: &[&str]| {
+            let parsed = home.actions.parse(request("tag", arguments)).unwrap();
+            home.actions.is_auto_approved(&parsed).unwrap()
+        };
+        assert!(is_auto_approved(&["notes.txt", "a", "b"]));
+        assert!(is_auto_approved(&["other.txt", "x", "y"]));
+        assert!(!is_auto_approved(&["other.txt", "x"]));
+        assert!(!is_auto_approved(&["other.txt", "y", "x"]));
+    }
+
+    #[test]
+    fn format_quotes_only_the_words_that_need_it() {
+        let parsed = ParsedRequest {
+            cli: CLI.to_string(),
+            action: "note".to_string(),
+            arguments: IndexMap::from([
+                ("title".to_string(), one("it's done")),
+                ("text".to_string(), one("line\nbreak")),
+                ("tags".to_string(), many(&["a", "=b"])),
+            ]),
+        };
+        assert_eq!(
+            parsed.format(),
+            r"test note 'it'\''s done' $'line\nbreak' a '=b'"
+        );
+    }
 }
