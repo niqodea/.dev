@@ -94,7 +94,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
     let mut answers: BTreeMap<usize, Decision> = BTreeMap::new();
     let mut cursor = 0;
     loop {
-        draw_jobs(jobs, &answers, &BTreeMap::new(), Some(cursor))?;
+        draw_jobs(jobs, &answers, &BTreeMap::new(), Some(cursor), None)?;
         println!(
             "{DIM}j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit{RESET}"
         );
@@ -120,14 +120,14 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
                 return Ok(());
             }
             Some(b'\n') => {
-                let outcomes = commit(queue, actions, jobs, &answers);
+                let outcomes = commit(queue, actions, jobs, &answers)?;
                 return show_outcomes(jobs, &answers, &outcomes);
             }
             Some(b'N') => {
                 let refusals = (0..jobs.len())
                     .map(|index| (index, Decision::Refuse))
                     .collect();
-                commit(queue, actions, jobs, &refusals);
+                commit(queue, actions, jobs, &refusals)?;
                 return Ok(());
             }
             Some(b'q') => return Ok(()),
@@ -171,7 +171,7 @@ fn show_outcomes(
     let mut position = 0;
     loop {
         let cursor = decided[position];
-        draw_jobs(jobs, answers, outcomes, Some(cursor))?;
+        draw_jobs(jobs, answers, outcomes, Some(cursor), None)?;
         println!("{DIM}j/k move   o open details   q close{RESET}");
         match read_key()? {
             Some(b'j') => position = (position + 1).min(decided.len() - 1),
@@ -200,6 +200,7 @@ fn draw_jobs(
     answers: &BTreeMap<usize, Decision>,
     outcomes: &BTreeMap<usize, Result<Outcome, String>>,
     cursor: Option<usize>,
+    running: Option<usize>,
 ) -> Result<(), String> {
     // Read on every draw, so the rows fit the terminal after a resize
     let (width, _) = get_terminal_size()?;
@@ -222,6 +223,7 @@ fn draw_jobs(
                 "       {}",
                 format_outcome(outcome, width.saturating_sub(7))
             ),
+            None if running == Some(index) => println!("       {DIM}running…{RESET}"),
             None => println!(),
         }
     }
@@ -497,13 +499,19 @@ fn commit(
     actions: &Actions,
     jobs: &[QueuedJob],
     answers: &BTreeMap<usize, Decision>,
-) -> BTreeMap<usize, Result<Outcome, String>> {
+) -> Result<BTreeMap<usize, Result<Outcome, String>>, String> {
     let mut outcomes = BTreeMap::new();
     for (&index, &decision) in answers {
+        // An action can take a while, so the jobs show which one runs, and the
+        // outcomes so far, instead of a screen that waits without a sign
+        if decision == Decision::Approve {
+            draw_jobs(jobs, answers, &outcomes, None, Some(index))?;
+            println!("{DIM}carrying out the decisions, one at a time{RESET}");
+        }
         let result = queue.decide(actions, jobs[index].queued_at_ns, decision);
         outcomes.insert(index, result.map(|answered_job| answered_job.outcome));
     }
-    outcomes
+    Ok(outcomes)
 }
 
 /// Read one key press, without waiting for Enter, or nothing when the terminal
