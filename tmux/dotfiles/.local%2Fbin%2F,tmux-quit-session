@@ -20,6 +20,10 @@ for pane_id in $(tmux list-panes -s -F '#{pane_id}'); do
             # A view holds nothing that closing it would lose
             continue
             ;;
+        approval)
+            # Closing loses only the decisions not carried out yet
+            continue
+            ;;
         *)
             tmux display-message -l "Pane $pane_id has unknown type: $pane_type"
             exit

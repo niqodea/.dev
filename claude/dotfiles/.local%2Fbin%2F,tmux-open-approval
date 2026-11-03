@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -eu
+
+session=$(tmux display-message -p '#{session_name}')
+
+# A session has at most one approval pane, even when two runs start at once
+tmux wait-for -L "approval-$session"
+trap 'tmux wait-for -U "approval-$session"' EXIT
+
+existing_pane=$(tmux list-panes -s -t "=$session" -F '#{pane_id} #{@pane_type}' | awk '$2 == "approval" {print $1}')
+
+if [ -n "$existing_pane" ]; then
+    tmux select-window -t "$existing_pane"
+    tmux select-pane -t "$existing_pane"
+    exit
+fi
+
+# A failing count stops the script, and run-shell shows its error
+if [ "$(,approval count)" = 0 ]; then
+    tmux display-message 'No request waits in this project'
+    exit
+fi
+
+# A tiled pane, unlike a popup or a floating pane, leaves the other panes in view, to go back and forth between them and the outcomes
+# The queue is the pane's process, so the pane goes away when it closes
+# On a failure it waits for Enter, so the error stays readable
+new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' ",approval-answer || { echo 'Press Enter to close'; read -r _; }")
+tmux set-option -p -t "$new_pane" @pane_type approval

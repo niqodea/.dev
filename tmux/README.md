@@ -22,13 +22,14 @@ Start tmux with `,tmux-launch`, which opens the home session.
 A special pane runs a program instead of a shell, and closes when that program exits.
 Its border has its own color, and it is named after its type instead of its running command.
 
-There are three types:
+There are four types:
 
 - `claude`, opened with <kbd>Meta</kbd> + <kbd>;</kbd>, runs [Claude Code](../claude/README.md).
 - `workstation`, opened with <kbd>Meta</kbd> + <kbd>w</kbd>, connects to the project's workstation.
+- `approval`, opened with <kbd>Meta</kbd> + <kbd>y</kbd>, decides on the changes waiting in the project's [approval](../claude/README.md#approval) queue.
 - `view` shows one thing, like a conversation, and holds nothing that closing it would lose.
 
-A session has at most one `claude` and one `workstation`: their keybind opens one in a split next to the current pane, or moves to it if it is already open.
+A session has at most one `claude`, one `workstation` and one `approval`: their keybind opens one in a split next to the current pane, or moves to it if it is already open.
 Every special pane splits the current pane side by side when it is at least 160 columns wide, room for two terminals of 80, and one above the other otherwise.
 A session can have any number of views.
 

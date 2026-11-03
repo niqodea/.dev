@@ -17,6 +17,10 @@ case "$pane_type" in
         # ssh is the pane's process, and the options above already show the workstation
         exit
         ;;
+    approval)
+        # The queue is the pane's process, and has no status to show
+        exit
+        ;;
     *)
         echo "Unknown pane type: $pane_type"
         exit 1

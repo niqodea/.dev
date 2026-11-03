@@ -21,6 +21,11 @@ case "$pane_type" in
         tmux kill-pane
         exit
         ;;
+    approval)
+        # Closing loses only the decisions not carried out yet
+        tmux kill-pane
+        exit
+        ;;
     *)
         tmux display-message -l "Unknown pane type: $pane_type"
         exit
