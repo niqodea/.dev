@@ -6,12 +6,11 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, TryLockError};
 use std::io::{self, Read, Write};
 use std::mem::MaybeUninit;
-use std::path::Path;
 use std::process::ExitCode;
 
 use approval::{
     Actions, Decision, Outcome, ParsedRequest, Queue, QueuedJob, format_age, get_now_ns,
-    read_queue_name, read_variable,
+    read_queue_directory, read_variable,
 };
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
@@ -51,11 +50,9 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), String> {
     let home = read_variable("HOME")?;
-    let queue = Queue::new(&home, read_queue_name()?);
+    let queue = Queue::new(read_queue_directory(&home)?);
     let actions = Actions::new(&home, read_variable("PATH")?);
-    let lock_path = Path::new(&home)
-        .join(".local/state/approval-answer")
-        .join(format!("{}.lock", queue.name()));
+    let lock_path = queue.get_lock_path();
     let lock_directory = lock_path.parent().expect("a lock path is in a directory");
     fs::create_dir_all(lock_directory)
         .map_err(|error| format!("Cannot create {}: {error}", lock_directory.display()))?;

@@ -80,7 +80,6 @@ pub struct Actions {
 
 /// The jobs waiting in one queue, and the log of the jobs answered
 pub struct Queue {
-    name: String,
     directory: PathBuf,
 }
 
@@ -280,18 +279,16 @@ impl Actions {
 }
 
 impl Queue {
-    /// The queue with the name, kept in the home folder.
+    /// The queue kept in the directory.
     #[must_use]
-    pub fn new(home: &str, name: String) -> Queue {
-        Queue {
-            directory: Path::new(home).join(".local/state/approval").join(&name),
-            name,
-        }
+    pub fn new(directory: PathBuf) -> Queue {
+        Queue { directory }
     }
 
+    /// Return the file that one answering screen at a time holds a lock on.
     #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn get_lock_path(&self) -> PathBuf {
+        self.directory.join("answer.lock")
     }
 
     /// Add the job to the jobs waiting for a decision.
@@ -443,28 +440,19 @@ impl Queue {
     }
 }
 
-/// Return the name of the queue to use, which `APPROVAL_QUEUE` holds.
+/// Return the directory of the queue to use: the approval folder in the atdir
+/// of the project the shell is in, so the queue moves with the project.
 ///
 /// # Errors
 ///
-/// When `APPROVAL_QUEUE` is not set, or holds more than a plain name.
-pub fn read_queue_name() -> Result<String, String> {
-    let queue_name = env::var("APPROVAL_QUEUE")
-        .map_err(|_| "APPROVAL_QUEUE is not set, so there is no queue to use".to_string())?;
-    // The name becomes a directory, so it may not climb out of its parent
-    let mut characters = queue_name.chars();
-    let is_plain = characters
-        .next()
-        .is_some_and(|first| first.is_ascii_alphanumeric())
-        && characters.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '.' | '-')
-        });
-    if !is_plain {
-        return Err(format!(
-            "APPROVAL_QUEUE is {queue_name}, which is not a plain name"
-        ));
-    }
-    Ok(queue_name)
+/// When the shell is not in a project, or the atdir has no name.
+pub fn read_queue_directory(home: &str) -> Result<PathBuf, String> {
+    let project = env::var("DOTDEV_PROJECT").map_err(|_| {
+        "DOTDEV_PROJECT is not set: requests wait in a project's atdir, so run this in a project"
+            .to_string()
+    })?;
+    let atdir = read_variable("DOTDEV_ATDIR")?;
+    Ok(Path::new(home).join(project).join(atdir).join("approval"))
 }
 
 /// Return the environment variable's value.

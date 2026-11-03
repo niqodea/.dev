@@ -4,7 +4,7 @@
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Outcome, Queue, Request, format_age, get_now_ns, read_queue_name, read_variable,
+    Actions, Outcome, Queue, Request, format_age, get_now_ns, read_queue_directory, read_variable,
 };
 use clap::{Parser, Subcommand};
 
@@ -56,7 +56,7 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<(), String> {
     let home = read_variable("HOME")?;
-    let queue = Queue::new(&home, read_queue_name()?);
+    let queue = Queue::new(read_queue_directory(&home)?);
     match command {
         Command::Submit {
             cli,

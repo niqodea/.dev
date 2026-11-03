@@ -32,9 +32,9 @@ A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`
   A line lists an action and its first arguments, and matches a request that starts with the same words.
   Lines have no patterns and no negation: a condition that needs more becomes an argument, or an action that checks it.
 
-Any other request waits in the queue that `APPROVAL_QUEUE` names, until we decide on it.
+Any other request waits until we decide on it, in the queue of the project the shell is in: `<atdir>/approval` at the project's root, so it moves with the project.
 Only `,approval-answer` decides, in any terminal: `,approval` itself can only submit a request and report what waits.
-In tmux, every session gets a queue of its own, and M-y opens `,approval-answer` in a popup when a request waits.
+In tmux, M-y opens `,approval-answer` on the session's project in a popup when a request waits.
 The `approval-status` skill, with the script it runs, shows Claude what waits and what was decided.
 `,approval` gives an action only `PATH` and `HOME`, and stops it, with every process it started, after a time limit.
 
