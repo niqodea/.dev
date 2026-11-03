@@ -114,9 +114,9 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
     let mut cursor = 0;
     loop {
         draw_jobs(&jobs, &answers, &BTreeMap::new(), Some(cursor), None)?;
-        println!(
-            "{DIM}j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit{RESET}"
-        );
+        print_keys(
+            "j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit",
+        )?;
         let decision = match read_key()? {
             Some(b'j') => {
                 cursor = (cursor + 1).min(jobs.len() - 1);
@@ -198,7 +198,7 @@ fn show_outcomes(
     loop {
         let cursor = decided[position];
         draw_jobs(jobs, answers, outcomes, Some(cursor), None)?;
-        println!("{DIM}j/k move   o open details   q close{RESET}");
+        print_keys("j/k move   o open details   q close")?;
         match read_key()? {
             Some(b'j') => position = (position + 1).min(decided.len() - 1),
             Some(b'k') => position = position.saturating_sub(1),
@@ -255,6 +255,19 @@ fn draw_jobs(
     }
     println!();
     Ok(())
+}
+
+/// Print the keys on the terminal's last row, so they stay put however many
+/// rows the screen above them has, like a pager's.
+///
+/// Cut at the terminal's edge, since a line that wraps past the last row
+/// scrolls the whole screen up.
+fn print_keys(keys: &str) -> Result<(), String> {
+    let (width, height) = get_terminal_size()?;
+    print!("\x1b[{height};1H{DIM}{}{RESET}", cut(keys, width));
+    io::stdout()
+        .flush()
+        .map_err(|error| format!("Cannot draw: {error}"))
 }
 
 /// Count the characters the terminal shows, leaving out color codes like
@@ -361,10 +374,7 @@ fn show_details(
         } else {
             String::new()
         };
-        print!("{DIM}{keys}{position}{RESET}");
-        io::stdout()
-            .flush()
-            .map_err(|error| format!("Cannot draw: {error}"))?;
+        print_keys(&format!("{keys}{position}"))?;
         match read_key()? {
             Some(b'j') => first_line += 1,
             Some(b'k') => first_line = first_line.saturating_sub(1),
@@ -532,7 +542,7 @@ fn commit(
         // outcomes so far, instead of a screen that waits without a sign
         if decision == Decision::Approve {
             draw_jobs(jobs, answers, &outcomes, None, Some(index))?;
-            println!("{DIM}carrying out the decisions, one at a time{RESET}");
+            print_keys("carrying out the decisions, one at a time")?;
         }
         let result = queue.decide(actions, jobs[index].queued_at_ns, decision);
         outcomes.insert(index, result.map(|answered_job| answered_job.outcome));
