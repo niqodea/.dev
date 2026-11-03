@@ -9,9 +9,10 @@ use std::mem::MaybeUninit;
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Decision, Outcome, ParsedRequest, Queue, QueuedJob, Value, format_age, format_words,
-    get_last_line, get_now_ns, read_queue_directory, read_variable, show_controls,
+    Actions, Decision, Outcome, Queue, QueuedJob, Request, format_age, get_last_line, get_now_ns,
+    read_queue_directory, read_variable, show_controls,
 };
+use serde_json::Value;
 
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
@@ -109,7 +110,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
             Some(b'y') => Some(Decision::Approve),
             Some(b'n') => Some(Decision::Refuse),
             Some(b'o') => show_details(
-                &jobs[cursor].parsed_request,
+                &jobs[cursor].request,
                 answers.get(&cursor).copied(),
                 &Stage::Deciding,
             )?,
@@ -177,7 +178,7 @@ fn show_outcomes(
             Some(b'k') => position = position.saturating_sub(1),
             Some(b'o') => {
                 show_details(
-                    &jobs[cursor].parsed_request,
+                    &jobs[cursor].request,
                     answers.get(&cursor).copied(),
                     &Stage::Answered(outcomes.get(&cursor)),
                 )?;
@@ -213,7 +214,7 @@ fn draw_jobs(
         let request_width = width.saturating_sub(count_shown_chars(&prefix));
         println!(
             "{prefix}{}",
-            cut(&queued_job.parsed_request.format(), request_width)
+            cut(&queued_job.request.format(), request_width)
         );
         // Blank until the job has an outcome, so no row moves when one appears
         match outcomes.get(&index) {
@@ -265,18 +266,18 @@ fn cut(text: &str, width: usize) -> String {
 /// escapes. So no argument, whatever its name or value, can pass for the
 /// outcome.
 fn show_details(
-    parsed_request: &ParsedRequest,
+    request: &Request,
     decision: Option<Decision>,
     stage: &Stage,
 ) -> Result<Option<Decision>, String> {
-    let rows: Vec<(String, String)> = parsed_request
+    let rows: Vec<(String, String)> = request
         .arguments
         .iter()
         .map(|(name, value)| {
             let value = match value {
-                Value::One(word) => word.clone(),
-                // Quoted, so where one word ends shows
-                Value::Many(words) => format_words(words),
+                // Without the quotes JSON puts around it, as text reads
+                Value::String(text) => text.clone(),
+                value => value.to_string(),
             };
             (name.clone(), value)
         })
@@ -314,8 +315,8 @@ fn show_details(
         println!(
             "{}  {BOLD}{} {}{RESET}",
             format_mark(decision),
-            parsed_request.cli,
-            parsed_request.action
+            request.cli,
+            request.action
         );
         println!();
         println!("{}", shown.join("\n"));

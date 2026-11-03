@@ -13,6 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
 // Long enough for a write over the network, short enough that a stuck action
@@ -27,29 +28,14 @@ pub enum Decision {
     Refuse,
 }
 
-/// What a CLI asks for: an action, and the words it runs the action with
+/// What a CLI asks for: one of its actions, and the arguments the action runs
+/// with, each under its name, in the order the CLI gave them
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Request {
     pub cli: String,
     pub action: String,
-    pub arguments: Vec<String>,
-}
-
-/// A request whose action parsed its words, with each word under the name the
-/// action gave it, in the order the words came in
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ParsedRequest {
-    pub cli: String,
-    pub action: String,
     pub arguments: IndexMap<String, Value>,
-}
-
-/// The words under one name: one word, or the words of a name that repeats
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Value {
-    One(String),
-    Many(Vec<String>),
 }
 
 /// A request that runs without asking: any request for the action whose
@@ -64,7 +50,7 @@ struct Rule {
 pub struct QueuedJob {
     // Also names the job's file
     pub queued_at_ns: u64,
-    pub parsed_request: ParsedRequest,
+    pub request: Request,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -81,7 +67,7 @@ pub enum Outcome {
 #[derive(Serialize, Deserialize)]
 pub struct AnsweredJob {
     pub answered_at_ns: u64,
-    pub request: ParsedRequest,
+    pub request: Request,
     #[serde(flatten)]
     pub outcome: Outcome,
 }
@@ -100,35 +86,18 @@ pub struct Queue {
     directory: PathBuf,
 }
 
-impl ParsedRequest {
-    /// Write the request on one line as the words that ask for it, each quoted
-    /// the way zsh and bash 4.2 or later read it back, so a value with a space
-    /// reads as one word.
+impl Request {
+    /// Write the request on one line: its CLI, its action, and its arguments as
+    /// a JSON object, with every control and format character escaped.
     #[must_use]
     pub fn format(&self) -> String {
-        let words: Vec<String> = [self.cli.clone(), self.action.clone()]
-            .into_iter()
-            .chain(self.get_words())
-            .collect();
-        format_words(&words)
+        show_controls(&format!(
+            "{} {} {}",
+            self.cli,
+            self.action,
+            encode(&self.arguments)
+        ))
     }
-
-    /// Return the words the action runs with, in the order they came in.
-    fn get_words(&self) -> Vec<String> {
-        self.arguments
-            .values()
-            .flat_map(|value| match value {
-                Value::One(word) => vec![word.clone()],
-                Value::Many(words) => words.clone(),
-            })
-            .collect()
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Verb {
-    Parse,
-    Run,
 }
 
 struct ActionOutput {
@@ -154,81 +123,23 @@ impl Actions {
         }
     }
 
-    /// Run the action's parse, which rejects words the action cannot run
-    /// with, without reading or changing anything, and return the request with
-    /// each word under the name parse printed for it.
+    /// Return the directory each CLI installs its folder in.
+    #[must_use]
+    pub fn get_clis_directory(&self) -> &Path {
+        &self.clis_directory
+    }
+
+    /// Check that the request names a CLI that installs an action executable.
+    ///
+    /// The action itself checks the request's arguments when it runs, since it
+    /// alone knows them.
     ///
     /// # Errors
     ///
-    /// When no such action is installed, its parse rejects the request, or it
-    /// prints an empty name, not exactly one name per word, or a name apart
-    /// from its other words.
-    pub fn parse(&self, request: Request) -> Result<ParsedRequest, String> {
-        let action_path = self.locate(&request.cli, &request.action)?;
-        let output = match self.run_action(
-            &action_path,
-            Verb::Parse,
-            &request.action,
-            &request.arguments,
-        ) {
-            Ok(output) => output,
-            Err(ActionError::TimedOut) => {
-                return Err(format!(
-                    "Invalid request: took over {} s to parse",
-                    ACTION_TIMEOUT.as_secs()
-                ));
-            }
-            Err(ActionError::Io(error)) => return Err(format!("Invalid request: {error}")),
-        };
-        if !output.status.success() {
-            return Err(format!(
-                "Invalid request: {}",
-                get_last_line(&get_error(&output))
-            ));
-        }
-        let argument_names: Vec<String> = output.stdout.lines().map(str::to_string).collect();
-        // A name off by one would label every value after it with the wrong
-        // name
-        if argument_names.len() != request.arguments.len() {
-            return Err(format!(
-                "Invalid request: parse prints one name per argument, and printed {} for the {}",
-                argument_names.len(),
-                request.arguments.len()
-            ));
-        }
-        if argument_names.iter().any(String::is_empty) {
-            return Err("Invalid request: parse printed an empty name".to_string());
-        }
-        let mut arguments: IndexMap<String, Value> = IndexMap::new();
-        let mut previous_name: Option<&str> = None;
-        for (name, word) in argument_names.iter().zip(request.arguments) {
-            match arguments.get_mut(name) {
-                None => {
-                    arguments.insert(name.clone(), Value::One(word));
-                }
-                // The words run in the order of their names, so a name whose
-                // words are apart would put its later words in the wrong place
-                Some(_) if previous_name != Some(name.as_str()) => {
-                    return Err(format!(
-                        "Invalid request: parse printed {name} apart from its other words"
-                    ));
-                }
-                Some(value) => {
-                    let mut words = match std::mem::replace(value, Value::Many(Vec::new())) {
-                        Value::One(first) => vec![first],
-                        Value::Many(words) => words,
-                    };
-                    words.push(word);
-                    *value = Value::Many(words);
-                }
-            }
-            previous_name = Some(name);
-        }
-        Ok(ParsedRequest {
-            cli: request.cli,
-            action: request.action,
-            arguments,
-        })
+    /// When the CLI or the action is not named plainly, or the CLI installs no
+    /// action executable.
+    pub fn check(&self, request: &Request) -> Result<(), String> {
+        self.locate(&request.cli, &request.action).map(|_| ())
     }
 
     /// Run the action, and return what it printed.
@@ -236,14 +147,9 @@ impl Actions {
     /// # Errors
     ///
     /// Why the action failed, like the last line it printed to stderr.
-    pub fn run(&self, request: &ParsedRequest) -> Result<String, String> {
+    pub fn run(&self, request: &Request) -> Result<String, String> {
         let action_path = self.locate(&request.cli, &request.action)?;
-        match self.run_action(
-            &action_path,
-            Verb::Run,
-            &request.action,
-            &request.get_words(),
-        ) {
+        match self.run_action(&action_path, &request.action, &request.arguments) {
             Ok(output) if output.status.success() => Ok(output.stdout.trim().to_string()),
             Ok(output) => Err(get_error(&output)),
             Err(ActionError::TimedOut) => Err(format!("took over {} s", ACTION_TIMEOUT.as_secs())),
@@ -259,7 +165,7 @@ impl Actions {
     ///
     /// When the auto-approved file cannot be read, or holds something other
     /// than a list of rules.
-    pub fn is_auto_approved(&self, request: &ParsedRequest) -> Result<bool, String> {
+    pub fn is_auto_approved(&self, request: &Request) -> Result<bool, String> {
         let path = self
             .clis_directory
             .join(&request.cli)
@@ -279,12 +185,12 @@ impl Actions {
     }
 
     /// Return the executable that makes the CLI's changes, which takes the
-    /// action's name after the verb.
+    /// action's name as its argument.
     fn locate(&self, cli: &str, action: &str) -> Result<PathBuf, String> {
         let path = self.clis_directory.join(cli).join("action");
         // The CLI's name becomes part of a path, so it may not climb out of its
-        // directory, and the action's comes before the arguments, so it may not
-        // pass for an option like --help
+        // directory, and the action's is the executable's argument, so it may
+        // not pass for an option like --help
         let is_named_plainly = is_plain_name(cli) && is_plain_name(action);
         if !is_named_plainly || !path.is_file() {
             return Err(format!("No such request: {cli} {action}"));
@@ -292,27 +198,23 @@ impl Actions {
         Ok(path)
     }
 
+    /// Run the action executable with the action's name, and the arguments as a
+    /// JSON object on its standard input.
     fn run_action(
         &self,
         action_path: &Path,
-        verb: Verb,
         action: &str,
-        arguments: &[String],
+        arguments: &IndexMap<String, Value>,
     ) -> Result<ActionOutput, ActionError> {
-        let verb = match verb {
-            Verb::Parse => "parse",
-            Verb::Run => "run",
-        };
         let mut child = process::Command::new(action_path)
-            .arg(verb)
             .arg(action)
-            .args(arguments)
             // Only PATH, to find programs, and HOME, to find the person's
             // logins, so an action gets the same environment whoever runs it,
             // and names everything else it acts on itself
             .env_clear()
             .env("PATH", &self.search_path)
             .env("HOME", &self.home)
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             // A group of its own, so a timeout stops every process the action
@@ -321,6 +223,13 @@ impl Actions {
             .process_group(0)
             .spawn()
             .map_err(ActionError::Io)?;
+        // Written while the action runs, since a write to a full pipe waits for
+        // the action to read it, and closed after it, so the action reads to
+        // the end
+        let stdin = write_in_background(
+            child.stdin.take().expect("stdin is piped"),
+            encode(arguments),
+        );
         // Read while the action runs, since an action that fills a pipe waits
         // for someone to read it
         let stdout = read_in_background(child.stdout.take().expect("stdout is piped"));
@@ -337,6 +246,9 @@ impl Actions {
             }
             thread::sleep(ACTION_POLL_INTERVAL);
         };
+        // An action that exits without reading its arguments closes the pipe,
+        // which fails the write, and says nothing about the action itself
+        let _ = stdin.join().expect("writing a pipe does not panic");
         Ok(ActionOutput {
             status,
             stdout: join_reader(stdout).map_err(ActionError::Io)?,
@@ -363,12 +275,12 @@ impl Queue {
     /// # Errors
     ///
     /// When the job's file cannot be written.
-    pub fn add(&self, parsed_request: &ParsedRequest) -> Result<(), String> {
+    pub fn add(&self, request: &Request) -> Result<(), String> {
         let directory = self.get_pending_directory();
         fs::create_dir_all(&directory)
             .map_err(|error| format!("Cannot create {}: {error}", directory.display()))?;
         let path = self.get_pending_path(get_now_ns());
-        fs::write(&path, encode(parsed_request))
+        fs::write(&path, encode(request))
             .map_err(|error| format!("Cannot write {}: {error}", path.display()))
     }
 
@@ -388,7 +300,7 @@ impl Queue {
         if !path.exists() {
             return Err("the request no longer waits in this queue".to_string());
         }
-        let request: ParsedRequest = decode(&read_file(&path)?, &path)?;
+        let request: Request = decode(&read_file(&path)?, &path)?;
         let outcome = match decision {
             Decision::Approve => match actions.run(&request) {
                 Ok(output) => Outcome::Succeeded { output },
@@ -407,7 +319,7 @@ impl Queue {
     /// # Errors
     ///
     /// When the log cannot be written.
-    pub fn record(&self, request: ParsedRequest, outcome: Outcome) -> Result<AnsweredJob, String> {
+    pub fn record(&self, request: Request, outcome: Outcome) -> Result<AnsweredJob, String> {
         let answered_job = AnsweredJob {
             answered_at_ns: get_now_ns(),
             request,
@@ -435,10 +347,10 @@ impl Queue {
         let mut queued_jobs = Vec::new();
         for queued_at_ns in self.list_queue_times_ns()? {
             let path = self.get_pending_path(queued_at_ns);
-            let parsed_request = decode(&read_file(&path)?, &path)?;
+            let request = decode(&read_file(&path)?, &path)?;
             queued_jobs.push(QueuedJob {
                 queued_at_ns,
-                parsed_request,
+                request,
             });
         }
         Ok(queued_jobs)
@@ -568,6 +480,13 @@ fn stop_process_group(child: &Child) -> io::Result<()> {
     Ok(())
 }
 
+fn write_in_background<W: Write + Send + 'static>(
+    mut pipe: W,
+    text: String,
+) -> JoinHandle<io::Result<()>> {
+    thread::spawn(move || pipe.write_all(text.as_bytes()))
+}
+
 fn read_in_background<R: Read + Send + 'static>(mut pipe: R) -> JoinHandle<io::Result<String>> {
     thread::spawn(move || {
         let mut bytes = Vec::new();
@@ -614,64 +533,6 @@ pub fn show_controls(text: &str) -> String {
         .collect()
 }
 
-/// Write the words on one line, each quoted the way zsh and bash 4.2 or later
-/// read it back, so a value with a space reads as one word.
-#[must_use]
-pub fn format_words(words: &[String]) -> String {
-    words
-        .iter()
-        .map(|word| quote(word))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-/// Quote the word unless every character in it reads the same to a shell
-/// without quotes.
-///
-/// A word with a control or format character goes in $'', with each such
-/// character written as an escape, and any other word in single quotes.
-fn quote(word: &str) -> String {
-    // zsh expands a word that starts with =, like =ls, to the command's path
-    let is_plain = !word.is_empty()
-        && !word.starts_with('=')
-        && word
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || "-_./:=@%+,".contains(character));
-    if is_plain {
-        return word.to_string();
-    }
-    // A control character can move the cursor or clear the screen, a format
-    // character can be invisible or reverse the text after it, and a line
-    // break would split the request over several lines
-    if word.chars().any(is_control_or_format) {
-        let escaped: String = word
-            .chars()
-            .map(|character| match character {
-                '\\' => r"\\".to_string(),
-                '\'' => r"\'".to_string(),
-                '\n' => r"\n".to_string(),
-                '\t' => r"\t".to_string(),
-                // \x writes one byte, which is the character itself only for
-                // ASCII
-                character if character.is_ascii_control() => {
-                    format!(r"\x{:02x}", u32::from(character))
-                }
-                character if u32::from(character) <= 0xffff && is_control_or_format(character) => {
-                    format!(r"\u{:04x}", u32::from(character))
-                }
-                character if is_control_or_format(character) => {
-                    format!(r"\U{:08x}", u32::from(character))
-                }
-                character => character.to_string(),
-            })
-            .collect();
-        return format!("$'{escaped}'");
-    }
-    // A single quote cannot be escaped inside single quotes, so it closes them,
-    // follows escaped, and opens them again
-    format!("'{}'", word.replace('\'', r"'\''"))
-}
-
 fn is_control_or_format(character: char) -> bool {
     matches!(
         character.general_category(),
@@ -705,6 +566,8 @@ fn encode<T: Serialize>(value: &T) -> String {
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
+
+    use serde_json::json;
 
     use super::*;
 
@@ -741,97 +604,46 @@ mod tests {
         }
     }
 
-    fn request(action: &str, arguments: &[&str]) -> Request {
+    fn request(cli: &str, action: &str, arguments: &Value) -> Request {
+        let Value::Object(arguments) = arguments else {
+            panic!("the arguments are an object");
+        };
         Request {
-            cli: CLI.to_string(),
+            cli: cli.to_string(),
             action: action.to_string(),
-            arguments: arguments.iter().map(|word| (*word).to_string()).collect(),
+            arguments: arguments.clone().into_iter().collect(),
         }
     }
 
-    fn one(word: &str) -> Value {
-        Value::One(word.to_string())
-    }
-
-    fn many(words: &[&str]) -> Value {
-        Value::Many(words.iter().map(|word| (*word).to_string()).collect())
-    }
-
-    // Names the first word file and every other word tags, and prints back
-    // what it runs with
-    const TAG_SCRIPT: &str = r#"case $1 in
-  parse) echo file; shift 3; for _ in "$@"; do echo tags; done ;;
-  run) printf '%s\n' "$@" ;;
-esac"#;
+    // Prints back what it runs with: the action's name, then the arguments
+    const ECHO_SCRIPT: &str = r#"echo "$1"; cat"#;
 
     #[test]
-    fn parse_names_each_word_and_groups_a_name_that_repeats() {
-        let home = Home::new(TAG_SCRIPT);
-        let parsed = home
-            .actions
-            .parse(request("tag", &["notes.txt", "a", "b"]))
-            .unwrap();
-        assert_eq!(parsed.action, "tag");
-        let arguments: Vec<_> = parsed.arguments.into_iter().collect();
-        assert!(
-            arguments
-                == [
-                    ("file".to_string(), one("notes.txt")),
-                    ("tags".to_string(), many(&["a", "b"]))
-                ]
+    fn run_gets_the_action_s_name_and_the_arguments_on_its_input() {
+        let home = Home::new(ECHO_SCRIPT);
+        let arguments = json!({"file": "notes.txt", "tags": ["a", "b"]});
+        let output = home.actions.run(&request(CLI, "tag", &arguments)).unwrap();
+        assert_eq!(
+            output,
+            r#"tag
+{"file":"notes.txt","tags":["a","b"]}"#
         );
     }
 
     #[test]
-    fn run_gets_the_verb_the_action_and_the_words_in_order() {
-        let home = Home::new(TAG_SCRIPT);
-        let parsed = home
-            .actions
-            .parse(request("tag", &["notes.txt", "a", "b"]))
-            .unwrap();
-        let output = home.actions.run(&parsed).unwrap();
-        assert_eq!(output, "run\ntag\nnotes.txt\na\nb");
-    }
-
-    #[test]
-    fn parse_rejects_a_name_apart_from_its_other_words() {
-        let home = Home::new("printf 'from\\nto\\nfrom\\n'");
+    fn run_reports_what_the_action_printed_to_stderr() {
+        let home = Home::new("echo 'usage: move' >&2; echo 'unknown key: from' >&2; exit 1");
         let error = home
             .actions
-            .parse(request("move", &["a", "b", "c"]))
+            .run(&request(CLI, "move", &json!({"from": "a"})))
             .err()
             .unwrap();
-        assert_eq!(
-            error,
-            "Invalid request: parse printed from apart from its other words"
-        );
+        assert_eq!(error, "usage: move\nunknown key: from");
     }
 
     #[test]
-    fn parse_rejects_a_name_count_that_differs_from_the_word_count() {
-        let home = Home::new("echo only");
-        let error = home
-            .actions
-            .parse(request("move", &["a", "b"]))
-            .err()
-            .unwrap();
-        assert_eq!(
-            error,
-            "Invalid request: parse prints one name per argument, and printed 1 for the 2"
-        );
-    }
-
-    #[test]
-    fn parse_reports_the_last_line_the_action_printed_to_stderr() {
-        let home =
-            Home::new("echo 'usage: move <from> <to>' >&2; echo 'not a file: a' >&2; exit 1");
-        let error = home.actions.parse(request("move", &["a"])).err().unwrap();
-        assert_eq!(error, "Invalid request: not a file: a");
-    }
-
-    #[test]
-    fn locate_rejects_names_that_are_not_plain() {
-        let home = Home::new("echo name");
+    fn check_rejects_names_that_are_not_plain() {
+        let home = Home::new(ECHO_SCRIPT);
         for (cli, action) in [
             ("..", "move"),
             ("test/..", "move"),
@@ -839,47 +651,60 @@ esac"#;
             (CLI, ""),
             (CLI, "Move"),
         ] {
-            let request = Request {
-                cli: cli.to_string(),
-                action: action.to_string(),
-                arguments: vec!["a".to_string()],
-            };
             assert_eq!(
-                home.actions.parse(request).err().unwrap(),
+                home.actions
+                    .check(&request(cli, action, &json!({})))
+                    .err()
+                    .unwrap(),
                 format!("No such request: {cli} {action}")
             );
         }
     }
 
     #[test]
-    fn locate_rejects_a_cli_without_an_action_executable() {
-        let home = Home::new("echo name");
-        let request = Request {
-            cli: "other".to_string(),
-            action: "move".to_string(),
-            arguments: vec!["a".to_string()],
-        };
+    fn check_rejects_a_cli_without_an_action_executable() {
+        let home = Home::new(ECHO_SCRIPT);
         assert_eq!(
-            home.actions.parse(request).err().unwrap(),
+            home.actions
+                .check(&request("other", "move", &json!({})))
+                .err()
+                .unwrap(),
             "No such request: other move"
         );
     }
 
     #[test]
-    fn auto_approved_rules_match_a_subset_of_the_arguments() {
-        let home = Home::new(TAG_SCRIPT);
+    fn auto_approved_rules_match_a_subset_of_the_arguments_with_equal_values() {
+        let home = Home::new(ECHO_SCRIPT);
         home.write_auto_approved(
             r#"[{"action": "tag", "arguments": {"file": "notes.txt"}},
-               {"action": "tag", "arguments": {"tags": ["x", "y"]}}]"#,
+               {"action": "tag", "arguments": {"tags": ["x"]}}]"#,
         );
-        let is_auto_approved = |arguments: &[&str]| {
-            let parsed = home.actions.parse(request("tag", arguments)).unwrap();
-            home.actions.is_auto_approved(&parsed).unwrap()
+        let is_auto_approved = |arguments: Value| {
+            home.actions
+                .is_auto_approved(&request(CLI, "tag", &arguments))
+                .unwrap()
         };
-        assert!(is_auto_approved(&["notes.txt", "a", "b"]));
-        assert!(is_auto_approved(&["other.txt", "x", "y"]));
-        assert!(!is_auto_approved(&["other.txt", "x"]));
-        assert!(!is_auto_approved(&["other.txt", "y", "x"]));
+        assert!(is_auto_approved(
+            json!({"file": "notes.txt", "tags": ["a"]})
+        ));
+        // A list of one is a list, as the rule writes it
+        assert!(is_auto_approved(
+            json!({"file": "other.txt", "tags": ["x"]})
+        ));
+        assert!(!is_auto_approved(json!({"file": "other.txt", "tags": "x"})));
+        assert!(!is_auto_approved(
+            json!({"file": "other.txt", "tags": ["x", "y"]})
+        ));
+    }
+
+    #[test]
+    fn requests_logged_before_arguments_were_json_still_read() {
+        let request: Request = serde_json::from_str(
+            r#"{"cli":"test","action":"run","arguments":{"pod":"p","command":["ls","-la"]}}"#,
+        )
+        .unwrap();
+        assert_eq!(request.arguments["command"], json!(["ls", "-la"]));
     }
 
     #[test]
@@ -891,19 +716,11 @@ esac"#;
     }
 
     #[test]
-    fn format_quotes_only_the_words_that_need_it() {
-        let parsed = ParsedRequest {
-            cli: CLI.to_string(),
-            action: "note".to_string(),
-            arguments: IndexMap::from([
-                ("title".to_string(), one("it's done")),
-                ("text".to_string(), one("line\nbreak")),
-                ("tags".to_string(), many(&["a", "=b"])),
-            ]),
-        };
+    fn format_writes_the_arguments_as_json_with_controls_escaped() {
+        let arguments = json!({"title": "it's done", "text": "a\u{202e}b", "count": 2});
         assert_eq!(
-            parsed.format(),
-            r"test note 'it'\''s done' $'line\nbreak' a '=b'"
+            request(CLI, "note", &arguments).format(),
+            r#"test note {"title":"it's done","text":"a\u{202e}b","count":2}"#
         );
     }
 }
