@@ -59,6 +59,6 @@ done
 
 # ssh is the pane's process, so the pane goes away when the connection ends
 # A failed connection waits for Enter, so its error stays on screen
-new_pane=$(tmux split-window -h -P -F '#{pane_id}' -c '#{session_path}' "$ssh_command || { echo 'Press Enter to close'; read -r _; }")
+new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' "$ssh_command || { echo 'Press Enter to close'; read -r _; }")
 tmux set-option -p -t "$new_pane" @pane_type workstation
 tmux set-option -p -t "$new_pane" @ssh_workstation "$workstation"

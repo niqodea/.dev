@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+# Splits the current pane side by side when it has room for two terminals of 80 columns, and one above the other otherwise
+# Takes the arguments of split-window other than its direction, and prints what split-window prints
+# The same rule as Emacs's split-window-sensibly, with its default split-width-threshold of 160
+# A zoomed pane's width is the window's, while split-window unzooms it and splits it at its own width
+is_wide=$(tmux display-message -p '#{e|>=:#{pane_unzoomed_width},160}')
+if [ "$is_wide" = 1 ]; then
+    exec tmux split-window -h "$@"
+fi
+exec tmux split-window -v "$@"

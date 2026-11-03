@@ -29,6 +29,7 @@ There are three types:
 - `view` shows one thing, like a conversation, and holds nothing that closing it would lose.
 
 A session has at most one `claude` and one `workstation`: their keybind opens one in a split next to the current pane, or moves to it if it is already open.
+Every special pane splits the current pane side by side when it is at least 160 columns wide, room for two terminals of 80, and one above the other otherwise.
 A session can have any number of views.
 
 ### Workstation

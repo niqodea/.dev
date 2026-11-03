@@ -2,7 +2,7 @@
 
 set -eu
 
-# Shows the text read from stdin in a view pane next to the current pane, in nvim read-only
+# Shows the text read from stdin in a view pane next to the current pane, split along its longer side, in nvim read-only
 # The argument is the text's file extension, like md, which gives it nvim's highlighting
 # Runs this script again with show in the view pane, which opens the text and removes it when the pane closes
 
@@ -20,5 +20,5 @@ fi
 
 dir=$(mktemp -d)
 cat > "$dir/view.$1"
-pane=$(tmux split-window -h -P -F '#{pane_id}' "'$0' show '$dir' '$1'")
+pane=$(,tmux-split -P -F '#{pane_id}' "'$0' show '$dir' '$1'")
 tmux set-option -p -t "$pane" @pane_type view
