@@ -883,6 +883,14 @@ esac"#;
     }
 
     #[test]
+    fn show_controls_escapes_all_but_line_breaks_and_tabs() {
+        assert_eq!(
+            show_controls("a\tb\nc\x1b[2J\r\u{202e}d"),
+            "a\tb\nc\\u{1b}[2J\\r\\u{202e}d"
+        );
+    }
+
+    #[test]
     fn format_quotes_only_the_words_that_need_it() {
         let parsed = ParsedRequest {
             cli: CLI.to_string(),

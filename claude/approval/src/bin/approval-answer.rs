@@ -604,3 +604,114 @@ impl Drop for CbreakMode {
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_shown_chars_leaves_out_color_codes() {
+        assert_eq!(count_shown_chars(&format!("{DIM}5m{RESET} > y")), 6);
+    }
+
+    #[test]
+    fn cut_keeps_text_that_fits_and_ends_longer_text_with_an_ellipsis() {
+        assert_eq!(cut("abcd", 4), "abcd");
+        assert_eq!(cut("abcde", 4), "abc…");
+        assert_eq!(cut("äöüß", 3), "äö…");
+        assert_eq!(cut("abc", 0), "…");
+    }
+
+    #[test]
+    fn wrap_breaks_after_the_last_word_that_fits() {
+        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
+        assert_eq!(wrap("one two three", 8), ["one two", "three"]);
+        assert_eq!(wrap("short", 7), ["short"]);
+        assert_eq!(wrap("", 7), [""]);
+    }
+
+    #[test]
+    fn wrap_breaks_inside_a_word_wider_than_a_line() {
+        assert_eq!(wrap("abcdefgh ij", 3), ["abc", "def", "gh", "ij"]);
+    }
+
+    #[test]
+    fn wrap_keeps_the_spaces_that_start_the_line_and_sit_between_words() {
+        assert_eq!(wrap("    quoted  text", 20), ["    quoted  text"]);
+        assert_eq!(wrap("    quoted text", 10), ["    quoted", "text"]);
+    }
+
+    #[test]
+    fn expand_tabs_fills_up_to_the_next_tab_stop() {
+        assert_eq!(expand_tabs("a\tb"), format!("a{}b", " ".repeat(7)));
+        assert_eq!(
+            expand_tabs("abcdefgh\tb"),
+            format!("abcdefgh{}b", " ".repeat(8))
+        );
+    }
+
+    #[test]
+    fn format_rows_aligns_values_and_wraps_them_down_their_column() {
+        let rows = [
+            ("to".to_string(), "a@b".to_string()),
+            ("subject".to_string(), "one two three".to_string()),
+        ];
+        let (lines, starts) = format_rows(&rows, 16);
+        assert_eq!(
+            lines,
+            [
+                format!("{DIM}to     {RESET}  a@b"),
+                format!("{DIM}subject{RESET}  one two"),
+                "         three".to_string(),
+            ]
+        );
+        assert_eq!(starts, [0, 1]);
+    }
+
+    #[test]
+    fn format_rows_shows_a_name_or_value_s_control_characters_as_escapes() {
+        let rows = [("na\x1bme".to_string(), "va\u{202e}lue".to_string())];
+        let (lines, _) = format_rows(&rows, 80);
+        assert_eq!(
+            lines,
+            [format!("{DIM}na\\u{{1b}}me{RESET}  va\\u{{202e}}lue")]
+        );
+    }
+
+    #[test]
+    fn format_outcome_shows_the_first_line_of_an_output_and_the_last_of_an_error() {
+        let succeeded = Ok(Outcome::Succeeded {
+            output: "first\nsecond".to_string(),
+        });
+        assert_eq!(
+            format_outcome(&succeeded, 80),
+            format!("{GREEN}succeeded: first{RESET}")
+        );
+        let failed = Ok(Outcome::Failed {
+            error: "Traceback\n  raise\nQuotaError: no quota\n".to_string(),
+        });
+        assert_eq!(
+            format_outcome(&failed, 80),
+            format!("{RED}failed: QuotaError: no quota{RESET}")
+        );
+        assert_eq!(
+            format_outcome(&Ok(Outcome::Refused), 80),
+            format!("{YELLOW}refused{RESET}")
+        );
+        assert_eq!(
+            format_outcome(&Err("gone".to_string()), 80),
+            format!("{RED}not carried out: gone{RESET}")
+        );
+    }
+
+    #[test]
+    fn format_outcome_escapes_and_cuts_what_the_action_printed() {
+        let succeeded = Ok(Outcome::Succeeded {
+            output: "\x1b[2Jhidden".to_string(),
+        });
+        assert_eq!(
+            format_outcome(&succeeded, 20),
+            format!("{GREEN}succeeded: \\u{{1b}}[2…{RESET}")
+        );
+    }
+}

@@ -154,3 +154,57 @@ fn format_outcome(request: &ParsedRequest, outcome: &Outcome) -> String {
     // around it
     show_controls(&text)
 }
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+
+    use super::*;
+
+    fn note() -> ParsedRequest {
+        ParsedRequest {
+            cli: "demo".to_string(),
+            action: "note".to_string(),
+            arguments: IndexMap::from([(
+                "title".to_string(),
+                approval::Value::One("it's done".to_string()),
+            )]),
+        }
+    }
+
+    #[test]
+    fn format_outcome_keeps_all_of_an_output_and_the_last_line_of_an_error() {
+        let succeeded = Outcome::Succeeded {
+            output: "saved\n3 lines".to_string(),
+        };
+        assert_eq!(
+            format_outcome(&note(), &succeeded),
+            "succeeded: demo note 'it'\\''s done': saved\n3 lines"
+        );
+        let failed = Outcome::Failed {
+            error: "Traceback\nOSError: disk full".to_string(),
+        };
+        assert_eq!(
+            format_outcome(&note(), &failed),
+            "failed: demo note 'it'\\''s done': OSError: disk full"
+        );
+        let empty = Outcome::Succeeded {
+            output: String::new(),
+        };
+        assert_eq!(
+            format_outcome(&note(), &empty),
+            "succeeded: demo note 'it'\\''s done'"
+        );
+    }
+
+    #[test]
+    fn format_outcome_escapes_what_the_action_printed() {
+        let succeeded = Outcome::Succeeded {
+            output: "\x1b[2Jcleared\rover\u{202e}".to_string(),
+        };
+        assert_eq!(
+            format_outcome(&note(), &succeeded),
+            "succeeded: demo note 'it'\\''s done': \\u{1b}[2Jcleared\\rover\\u{202e}"
+        );
+    }
+}
