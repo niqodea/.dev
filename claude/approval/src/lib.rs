@@ -73,8 +73,8 @@ pub enum Outcome {
     // What the action printed
     Succeeded { output: String },
     Refused,
-    // The last line the action printed to stderr, like why the change was
-    // rejected
+    // What the action printed to stderr, like why the change was rejected, or
+    // how it exited when it printed nothing there
     Failed { error: String },
 }
 
@@ -175,7 +175,10 @@ impl Actions {
             Err(ActionError::Io(error)) => return Err(format!("Invalid request: {error}")),
         };
         if !output.status.success() {
-            return Err(format!("Invalid request: {}", get_error(&output)));
+            return Err(format!(
+                "Invalid request: {}",
+                get_last_line(&get_error(&output))
+            ));
         }
         let argument_names: Vec<String> = output.stdout.lines().map(str::to_string).collect();
         // A name off by one would label every value after it with the wrong
@@ -562,11 +565,37 @@ fn join_reader(reader: JoinHandle<io::Result<String>>) -> io::Result<String> {
 }
 
 fn get_error(output: &ActionOutput) -> String {
-    match (output.stderr.trim().lines().last(), output.status.code()) {
-        (Some(line), _) => line.to_string(),
-        (None, Some(code)) => format!("exited with {code}"),
-        (None, None) => "stopped by a signal".to_string(),
+    match (output.stderr.trim(), output.status.code()) {
+        ("", Some(code)) => format!("exited with {code}"),
+        ("", None) => "stopped by a signal".to_string(),
+        (stderr, _) => stderr.to_string(),
     }
+}
+
+/// Return the last line of what a program printed, which says what went wrong,
+/// like the end of a traceback.
+#[must_use]
+pub fn get_last_line(text: &str) -> &str {
+    text.trim_end().lines().last().unwrap_or_default()
+}
+
+/// Write control characters and Unicode format characters as escapes, like
+/// \u{1b}, except line breaks and tabs.
+///
+/// A control character can move the cursor, clear the screen or change colors.
+/// A format character can be invisible or reverse the order text is shown in.
+/// Either can make the screen show something other than the text.
+#[must_use]
+pub fn show_controls(text: &str) -> String {
+    text.chars()
+        .map(|character| {
+            if is_control_or_format(character) && !matches!(character, '\n' | '\t') {
+                character.escape_default().to_string()
+            } else {
+                character.to_string()
+            }
+        })
+        .collect()
 }
 
 /// Write the words on one line, each quoted the way zsh and bash 4.2 or later

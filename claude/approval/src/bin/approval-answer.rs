@@ -10,10 +10,8 @@ use std::process::ExitCode;
 
 use approval::{
     Actions, Decision, Outcome, ParsedRequest, Queue, QueuedJob, Value, format_age, format_words,
-    get_now_ns, read_queue_directory, read_variable,
+    get_last_line, get_now_ns, read_queue_directory, read_variable, show_controls,
 };
-use indexmap::IndexMap;
-use unicode_properties::{GeneralCategory, UnicodeGeneralCategory};
 
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
@@ -104,7 +102,11 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
             }
             b'y' => Some(Decision::Approve),
             b'n' => Some(Decision::Refuse),
-            b'o' => show_details(&jobs[cursor].parsed_request, answers.get(&cursor).copied())?,
+            b'o' => show_details(
+                &jobs[cursor].parsed_request,
+                answers.get(&cursor).copied(),
+                &Stage::Deciding,
+            )?,
             // cbreak mode turns the Enter key's carriage return into a newline
             b'\n' if answers.is_empty() => {
                 // With nothing staged, there is no outcome to show
@@ -112,10 +114,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
             }
             b'\n' => {
                 let outcomes = commit(queue, actions, jobs, &answers);
-                draw_jobs(jobs, &answers, &outcomes, None)?;
-                println!("Any key closes");
-                read_key()?;
-                return Ok(());
+                return show_outcomes(jobs, &answers, &outcomes);
             }
             b'N' => {
                 let refusals = (0..jobs.len())
@@ -129,13 +128,55 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
         };
         if let Some(decision) = decision {
             // Pressing y or n again on a job that already has that decision
-            // clears it
+            // clears it, and leaves the cursor on the job, since clearing
+            // corrects it instead of finishing it
             if answers.get(&cursor) == Some(&decision) {
                 answers.remove(&cursor);
             } else {
                 answers.insert(cursor, decision);
+                cursor = (cursor + 1).min(jobs.len() - 1);
             }
-            cursor = (cursor + 1).min(jobs.len() - 1);
+        }
+    }
+}
+
+/// Whether the decisions were carried out yet, and so whether the details
+/// screen decides on its job or shows how it went
+enum Stage<'a> {
+    Deciding,
+    // The job's outcome, when it was answered
+    Answered(Option<&'a Result<Outcome, String>>),
+}
+
+/// Show the outcome of each answered job below it, and the details of the job
+/// under the cursor on o, until the person presses q.
+///
+/// At least one job was decided on, since Enter with none closes the screen.
+fn show_outcomes(
+    jobs: &[QueuedJob],
+    answers: &BTreeMap<usize, Decision>,
+    outcomes: &BTreeMap<usize, Result<Outcome, String>>,
+) -> Result<(), String> {
+    // The cursor moves only through the jobs decided on, the others staying in
+    // view as they were
+    let decided: Vec<usize> = answers.keys().copied().collect();
+    let mut position = 0;
+    loop {
+        let cursor = decided[position];
+        draw_jobs(jobs, answers, outcomes, Some(cursor))?;
+        println!("{DIM}j/k move   o open details   q close{RESET}");
+        match read_key()? {
+            b'j' => position = (position + 1).min(decided.len() - 1),
+            b'k' => position = position.saturating_sub(1),
+            b'o' => {
+                show_details(
+                    &jobs[cursor].parsed_request,
+                    answers.get(&cursor).copied(),
+                    &Stage::Answered(outcomes.get(&cursor)),
+                )?;
+            }
+            b'q' => return Ok(()),
+            _ => {}
         }
     }
 }
@@ -168,7 +209,10 @@ fn draw_jobs(
         );
         // Blank until the job has an outcome, so no row moves when one appears
         match outcomes.get(&index) {
-            Some(outcome) => println!("       {}", format_outcome(outcome)),
+            Some(outcome) => println!(
+                "       {}",
+                format_outcome(outcome, width.saturating_sub(7))
+            ),
             None => println!(),
         }
     }
@@ -204,16 +248,55 @@ fn cut(text: &str, width: usize) -> String {
 /// Show the job's CLI and action with each argument below, next to its name,
 /// which j and k scroll, until the person presses y or n to decide on the job,
 /// or q to go back without deciding.
+///
+/// Once the decisions were carried out, the job's outcome, if it has one, shows
+/// below the arguments, and y and n do nothing.
+///
+/// The outcome has no name column, and its first line is colored, which no
+/// argument can be, since every argument shows its control characters as
+/// escapes. So no argument, whatever its name or value, can pass for the
+/// outcome.
 fn show_details(
     parsed_request: &ParsedRequest,
     decision: Option<Decision>,
+    stage: &Stage,
 ) -> Result<Option<Decision>, String> {
-    let mut first_line = 0;
+    let rows: Vec<(String, String)> = parsed_request
+        .arguments
+        .iter()
+        .map(|(name, value)| {
+            let value = match value {
+                Value::One(word) => word.clone(),
+                // Quoted, so where one word ends shows
+                Value::Many(words) => format_words(words),
+            };
+            (name.clone(), value)
+        })
+        .collect();
+    let outcome = match stage {
+        Stage::Answered(outcome) => *outcome,
+        Stage::Deciding => None,
+    };
+    let is_deciding = matches!(stage, Stage::Deciding);
+    let keys = if is_deciding {
+        "j/k scroll   y approve   n refuse   q back"
+    } else {
+        "j/k scroll   q back"
+    };
+    // The outcome is what the person opened an answered job for, and its
+    // arguments stay a { away
+    let mut first_line = match outcome {
+        Some(_) => {
+            let (width, _) = get_terminal_size()?;
+            let (_, field_starts) = format_details(&rows, outcome, width);
+            field_starts[rows.len()]
+        }
+        None => 0,
+    };
     loop {
-        // Read on every key press, so the arguments fit the terminal after a
-        // resize
+        // Read on every key press, so the rows fit the terminal after a resize
         let (width, height) = get_terminal_size()?;
-        let lines = format_arguments(&parsed_request.arguments, width);
+        let (lines, field_starts) = format_details(&rows, outcome, width);
         // The header, the keys, and a blank line below the header and above the
         // keys take 4 lines
         let line_count = height.saturating_sub(4).max(1);
@@ -229,28 +312,98 @@ fn show_details(
         println!();
         println!("{}", shown.join("\n"));
         println!();
-        print!("{DIM}j/k scroll   y approve   n refuse   q back{RESET}");
+        // Only when the rows overflow, since then nothing else shows there is
+        // more to scroll to
+        let position = if lines.len() > line_count {
+            format!(
+                "   lines {}–{} of {}",
+                first_line + 1,
+                first_line + shown.len(),
+                lines.len()
+            )
+        } else {
+            String::new()
+        };
+        print!("{DIM}{keys}{position}{RESET}");
         io::stdout()
             .flush()
             .map_err(|error| format!("Cannot draw: {error}"))?;
         match read_key()? {
             b'j' => first_line += 1,
             b'k' => first_line = first_line.saturating_sub(1),
-            b'y' => return Ok(Some(Decision::Approve)),
-            b'n' => return Ok(Some(Decision::Refuse)),
+            b'd' => first_line += (line_count / 2).max(1),
+            b'u' => first_line = first_line.saturating_sub((line_count / 2).max(1)),
+            b'g' => first_line = 0,
+            // Past the last line, which the next draw brings back to the last
+            // screenful
+            b'G' => first_line = lines.len(),
+            b'}' => {
+                first_line = field_starts
+                    .iter()
+                    .copied()
+                    .find(|&start| start > first_line)
+                    .unwrap_or(lines.len());
+            }
+            b'{' => {
+                first_line = field_starts
+                    .iter()
+                    .copied()
+                    .rfind(|&start| start < first_line)
+                    .unwrap_or(0);
+            }
+            b'y' if is_deciding => return Ok(Some(Decision::Approve)),
+            b'n' if is_deciding => return Ok(Some(Decision::Refuse)),
             b'q' => return Ok(None),
             _ => {}
         }
     }
 }
 
-/// Lay out the arguments as a table with a name column and a value column.
+/// Lay out the arguments as a table, and the outcome, if any, below them: its
+/// word in its color, then what the action printed, in full and as wide as the
+/// terminal. Return the lines with the line each argument and the outcome
+/// starts on.
+fn format_details(
+    rows: &[(String, String)],
+    outcome: Option<&Result<Outcome, String>>,
+    width: usize,
+) -> (Vec<String>, Vec<usize>) {
+    let (mut lines, mut starts) = format_rows(rows, width);
+    if let Some(outcome) = outcome {
+        let (color, word, text) = describe_outcome(outcome);
+        lines.push(String::new());
+        starts.push(lines.len());
+        lines.push(format!("{color}{word}{RESET}"));
+        if !text.is_empty() {
+            // What an action prints could move the cursor or hide text, like
+            // its arguments
+            lines.extend(
+                show_controls(text)
+                    .split('\n')
+                    .flat_map(|line| wrap(&expand_tabs(line), width.max(1))),
+            );
+        }
+    }
+    (lines, starts)
+}
+
+/// Return the outcome's color, its word, and what the action printed, which is
+/// empty for a refusal.
+fn describe_outcome(outcome: &Result<Outcome, String>) -> (&'static str, &'static str, &str) {
+    match outcome {
+        Ok(Outcome::Succeeded { output }) => (GREEN, "succeeded", output),
+        Ok(Outcome::Refused) => (YELLOW, "refused", ""),
+        Ok(Outcome::Failed { error }) => (RED, "failed", error),
+        Err(error) => (RED, "not carried out", error),
+    }
+}
+
+/// Lay out the rows as a table with a name column and a value column, and
+/// return its lines with the line each row starts on.
 ///
-/// A long value wraps to the width and continues down the value column. The
-/// words of a name that repeats show on one line, each quoted, so where one
-/// word ends shows.
-fn format_arguments(arguments: &IndexMap<String, Value>, width: usize) -> Vec<String> {
-    let names: Vec<String> = arguments.keys().map(|name| show_controls(name)).collect();
+/// A long value wraps to the width and continues down the value column.
+fn format_rows(rows: &[(String, String)], width: usize) -> (Vec<String>, Vec<usize>) {
+    let names: Vec<String> = rows.iter().map(|(name, _)| show_controls(name)).collect();
     let name_width = names
         .iter()
         .map(|name| name.chars().count())
@@ -259,11 +412,10 @@ fn format_arguments(arguments: &IndexMap<String, Value>, width: usize) -> Vec<St
     // Wrapped, not cut off, so no word of a value is hidden
     let value_width = width.saturating_sub(name_width + 2).max(1);
     let mut lines = Vec::new();
-    for (name, value) in names.iter().zip(arguments.values()) {
-        let value = match value {
-            Value::One(word) => show_controls(word),
-            Value::Many(words) => format_words(words),
-        };
+    let mut row_starts = Vec::new();
+    for (name, (_, value)) in names.iter().zip(rows) {
+        row_starts.push(lines.len());
+        let value = show_controls(value);
         let value_lines: Vec<String> = value
             .split('\n')
             .flat_map(|line| wrap(&expand_tabs(line), value_width))
@@ -276,26 +428,7 @@ fn format_arguments(arguments: &IndexMap<String, Value>, width: usize) -> Vec<St
             lines.push(format!("{label}  {value_line}").trim_end().to_string());
         }
     }
-    lines
-}
-
-/// Write control characters and Unicode format characters as escapes, like
-/// \u{1b}, except line breaks and tabs.
-///
-/// A control character can move the cursor, clear the screen or change colors.
-/// A format character can be invisible or reverse the order text is shown in.
-/// Either can make the screen show something other than the text.
-fn show_controls(text: &str) -> String {
-    text.chars()
-        .map(|character| match character.general_category() {
-            GeneralCategory::Control | GeneralCategory::Format
-                if !matches!(character, '\n' | '\t') =>
-            {
-                character.escape_default().to_string()
-            }
-            _ => character.to_string(),
-        })
-        .collect()
+    (lines, row_starts)
 }
 
 /// Break the line into lines no wider than the width: after the last word that
@@ -397,13 +530,23 @@ fn format_mark(decision: Option<Decision>) -> String {
     }
 }
 
-fn format_outcome(outcome: &Result<Outcome, String>) -> String {
-    match outcome {
-        Ok(Outcome::Succeeded { .. }) => format!("{GREEN}succeeded{RESET}"),
-        Ok(Outcome::Refused) => format!("{YELLOW}refused{RESET}"),
-        Ok(Outcome::Failed { error }) => format!("{RED}failed: {error}{RESET}"),
-        Err(error) => format!("{RED}not carried out: {error}{RESET}"),
-    }
+/// Write the outcome on one line no wider than the width, with the line of
+/// what the action printed that says most: the first of an output, or the last
+/// of an error, which says what went wrong.
+fn format_outcome(outcome: &Result<Outcome, String>, width: usize) -> String {
+    let (color, word, text) = describe_outcome(outcome);
+    let line = match outcome {
+        Ok(Outcome::Succeeded { .. }) => text.lines().next().unwrap_or_default(),
+        _ => get_last_line(text),
+    };
+    let text = if line.is_empty() {
+        word.to_string()
+    } else {
+        format!("{word}: {line}")
+    };
+    // What an action prints could move the cursor or hide text, like its
+    // arguments
+    format!("{color}{}{RESET}", cut(&show_controls(&text), width))
 }
 
 impl HiddenCursor {

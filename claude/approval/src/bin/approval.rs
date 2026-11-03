@@ -4,8 +4,8 @@
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Outcome, ParsedRequest, Queue, Request, format_age, get_now_ns, read_queue_directory,
-    read_variable,
+    Actions, Outcome, ParsedRequest, Queue, Request, format_age, get_last_line, get_now_ns,
+    read_queue_directory, read_variable, show_controls,
 };
 use clap::{Parser, Subcommand};
 
@@ -131,18 +131,26 @@ fn print_status(queue: &Queue) -> Result<(), String> {
     );
     for answered_job in shown {
         let age = format_age(now_ns.saturating_sub(answered_job.answered_at_ns));
-        let outcome = format_outcome(&answered_job.request, &answered_job.outcome);
+        // Indented past the age, so an output's later lines stay under their
+        // row instead of reading as rows of their own
+        let outcome =
+            format_outcome(&answered_job.request, &answered_job.outcome).replace('\n', "\n       ");
         println!("  {age}  {outcome}");
     }
     Ok(())
 }
 
+/// Write the outcome after the request, with all an action printed when it
+/// succeeded, and the last line, which says what went wrong, when it failed.
 fn format_outcome(request: &ParsedRequest, outcome: &Outcome) -> String {
     let row = request.format();
-    match outcome {
+    let text = match outcome {
         Outcome::Succeeded { output } if output.is_empty() => format!("succeeded: {row}"),
         Outcome::Succeeded { output } => format!("succeeded: {row}: {output}"),
         Outcome::Refused => format!("refused: {row}"),
-        Outcome::Failed { error } => format!("failed: {row}: {error}"),
-    }
+        Outcome::Failed { error } => format!("failed: {row}: {}", get_last_line(error)),
+    };
+    // What an action prints could move the cursor or hide text, like the rows
+    // around it
+    show_controls(&text)
 }
