@@ -24,12 +24,17 @@ const RESET: &str = "\x1b[0m";
 const CLEAR_SCREEN: &str = "\x1b[H\x1b[2J";
 const HIDE_CURSOR: &str = "\x1b[?25l";
 const SHOW_CURSOR: &str = "\x1b[?25h";
+// The alternate screen keeps no history, so the frames drawn on it never pile
+// up in the terminal's scrollback, and leaving it brings back what was there
+const ENTER_ALTERNATE_SCREEN: &str = "\x1b[?1049h";
+const LEAVE_ALTERNATE_SCREEN: &str = "\x1b[?1049l";
 // The width the terminal gives a tab
 const TAB_WIDTH: usize = 8;
 
-/// Hides the terminal's cursor until it is dropped, since the > mark shows the
-/// selected job, and the cursor would only point somewhere else.
-struct HiddenCursor;
+/// Draws on the terminal's alternate screen, with the cursor hidden, until it is
+/// dropped. The > mark shows the selected job, and the cursor would only point
+/// somewhere else.
+struct FullScreen;
 
 /// Keeps the terminal handing over each key as it is pressed, without echoing
 /// it, until it is dropped.
@@ -57,7 +62,8 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("Cannot create {}: {error}", lock_directory.display()))?;
     let lock = File::create(&lock_path)
         .map_err(|error| format!("Cannot open {}: {error}", lock_path.display()))?;
-    let _hidden_cursor = HiddenCursor::new()?;
+    redraw_on_resize()?;
+    let _full_screen = FullScreen::new()?;
     // One screen per queue, so no job is answered twice. The system drops the
     // lock when the process ends, however it ends
     match lock.try_lock() {
@@ -67,7 +73,7 @@ fn run() -> Result<(), String> {
         }
         Err(TryLockError::WouldBlock) => {
             println!("This queue is already open somewhere else. Any key closes");
-            read_key()?;
+            while read_key()?.is_none() {}
             Ok(())
         }
         Err(TryLockError::Error(error)) => {
@@ -81,7 +87,7 @@ fn run() -> Result<(), String> {
 fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), String> {
     if jobs.is_empty() {
         println!("No request waits in this queue. Any key closes");
-        read_key()?;
+        while read_key()?.is_none() {}
         return Ok(());
     }
     let mut answers: BTreeMap<usize, Decision> = BTreeMap::new();
@@ -92,38 +98,39 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
             "{DIM}j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit{RESET}"
         );
         let decision = match read_key()? {
-            b'j' => {
+            Some(b'j') => {
                 cursor = (cursor + 1).min(jobs.len() - 1);
                 None
             }
-            b'k' => {
+            Some(b'k') => {
                 cursor = cursor.saturating_sub(1);
                 None
             }
-            b'y' => Some(Decision::Approve),
-            b'n' => Some(Decision::Refuse),
-            b'o' => show_details(
+            Some(b'y') => Some(Decision::Approve),
+            Some(b'n') => Some(Decision::Refuse),
+            Some(b'o') => show_details(
                 &jobs[cursor].parsed_request,
                 answers.get(&cursor).copied(),
                 &Stage::Deciding,
             )?,
             // cbreak mode turns the Enter key's carriage return into a newline
-            b'\n' if answers.is_empty() => {
+            Some(b'\n') if answers.is_empty() => {
                 // With nothing staged, there is no outcome to show
                 return Ok(());
             }
-            b'\n' => {
+            Some(b'\n') => {
                 let outcomes = commit(queue, actions, jobs, &answers);
                 return show_outcomes(jobs, &answers, &outcomes);
             }
-            b'N' => {
+            Some(b'N') => {
                 let refusals = (0..jobs.len())
                     .map(|index| (index, Decision::Refuse))
                     .collect();
                 commit(queue, actions, jobs, &refusals);
                 return Ok(());
             }
-            b'q' => return Ok(()),
+            Some(b'q') => return Ok(()),
+            // A resize, like a zoom, draws the jobs again at the new size
             _ => None,
         };
         if let Some(decision) = decision {
@@ -166,16 +173,17 @@ fn show_outcomes(
         draw_jobs(jobs, answers, outcomes, Some(cursor))?;
         println!("{DIM}j/k move   o open details   q close{RESET}");
         match read_key()? {
-            b'j' => position = (position + 1).min(decided.len() - 1),
-            b'k' => position = position.saturating_sub(1),
-            b'o' => {
+            Some(b'j') => position = (position + 1).min(decided.len() - 1),
+            Some(b'k') => position = position.saturating_sub(1),
+            Some(b'o') => {
                 show_details(
                     &jobs[cursor].parsed_request,
                     answers.get(&cursor).copied(),
                     &Stage::Answered(outcomes.get(&cursor)),
                 )?;
             }
-            b'q' => return Ok(()),
+            Some(b'q') => return Ok(()),
+            // A resize, like a zoom, draws the outcomes again at the new size
             _ => {}
         }
     }
@@ -329,31 +337,32 @@ fn show_details(
             .flush()
             .map_err(|error| format!("Cannot draw: {error}"))?;
         match read_key()? {
-            b'j' => first_line += 1,
-            b'k' => first_line = first_line.saturating_sub(1),
-            b'd' => first_line += (line_count / 2).max(1),
-            b'u' => first_line = first_line.saturating_sub((line_count / 2).max(1)),
-            b'g' => first_line = 0,
+            Some(b'j') => first_line += 1,
+            Some(b'k') => first_line = first_line.saturating_sub(1),
+            Some(b'd') => first_line += (line_count / 2).max(1),
+            Some(b'u') => first_line = first_line.saturating_sub((line_count / 2).max(1)),
+            Some(b'g') => first_line = 0,
             // Past the last line, which the next draw brings back to the last
             // screenful
-            b'G' => first_line = lines.len(),
-            b'}' => {
+            Some(b'G') => first_line = lines.len(),
+            Some(b'}') => {
                 first_line = field_starts
                     .iter()
                     .copied()
                     .find(|&start| start > first_line)
                     .unwrap_or(lines.len());
             }
-            b'{' => {
+            Some(b'{') => {
                 first_line = field_starts
                     .iter()
                     .copied()
                     .rfind(|&start| start < first_line)
                     .unwrap_or(0);
             }
-            b'y' if is_deciding => return Ok(Some(Decision::Approve)),
-            b'n' if is_deciding => return Ok(Some(Decision::Refuse)),
-            b'q' => return Ok(None),
+            Some(b'y') if is_deciding => return Ok(Some(Decision::Approve)),
+            Some(b'n') if is_deciding => return Ok(Some(Decision::Refuse)),
+            Some(b'q') => return Ok(None),
+            // A resize, like a zoom, lays the rows out again at the new size
             _ => {}
         }
     }
@@ -496,14 +505,39 @@ fn commit(
     outcomes
 }
 
-/// Read one key press, without waiting for Enter.
-fn read_key() -> Result<u8, String> {
+/// Read one key press, without waiting for Enter, or nothing when the terminal
+/// was resized first, so the screen is drawn again at its new size.
+fn read_key() -> Result<Option<u8>, String> {
     let _cbreak_mode = CbreakMode::new()?;
     let mut key = [0];
-    io::stdin()
-        .read_exact(&mut key)
-        .map_err(|error| format!("Cannot read a key: {error}"))?;
-    Ok(key[0])
+    match io::stdin().read(&mut key) {
+        Ok(0) => Err("Cannot read a key: the terminal closed".to_string()),
+        Ok(_) => Ok(Some(key[0])),
+        Err(error) if error.kind() == io::ErrorKind::Interrupted => Ok(None),
+        Err(error) => Err(format!("Cannot read a key: {error}")),
+    }
+}
+
+/// Make a resize interrupt the wait for a key, which `read_key` reports, so a
+/// zoom redraws the screen at once instead of on the next key press.
+///
+/// A resize that comes while the screen is drawn, before the wait starts, is
+/// only seen on the next key, which a draw takes too little time to matter.
+fn redraw_on_resize() -> Result<(), String> {
+    // The system ignores a resize by default, which never interrupts a read, so
+    // it gets a handler that does nothing but that
+    extern "C" fn interrupt(_: libc::c_int) {}
+    // SAFETY: an all-zero sigaction is a valid one, with no flags and an empty
+    // mask, and the handler touches nothing, so it is safe to run at any point
+    let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+    action.sa_sigaction = interrupt as *const () as libc::sighandler_t;
+    // Without SA_RESTART among the flags, the read stops instead of resuming
+    // SAFETY: the action is fully set, and the old one is not asked for
+    if unsafe { libc::sigaction(libc::SIGWINCH, &raw const action, std::ptr::null_mut()) } == -1 {
+        let error = io::Error::last_os_error();
+        return Err(format!("Cannot follow the terminal's size: {error}"));
+    }
+    Ok(())
 }
 
 fn get_terminal_size() -> Result<(usize, usize), String> {
@@ -549,19 +583,19 @@ fn format_outcome(outcome: &Result<Outcome, String>, width: usize) -> String {
     format!("{color}{}{RESET}", cut(&show_controls(&text), width))
 }
 
-impl HiddenCursor {
+impl FullScreen {
     fn new() -> Result<Self, String> {
-        print!("{HIDE_CURSOR}");
+        print!("{ENTER_ALTERNATE_SCREEN}{HIDE_CURSOR}");
         io::stdout()
             .flush()
-            .map_err(|error| format!("Cannot hide the cursor: {error}"))?;
-        Ok(HiddenCursor)
+            .map_err(|error| format!("Cannot take over the screen: {error}"))?;
+        Ok(FullScreen)
     }
 }
 
-impl Drop for HiddenCursor {
+impl Drop for FullScreen {
     fn drop(&mut self) {
-        print!("{SHOW_CURSOR}");
+        print!("{SHOW_CURSOR}{LEAVE_ALTERNATE_SCREEN}");
         // Nothing is left to report to once the screen closes
         let _ = io::stdout().flush();
     }
