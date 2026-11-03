@@ -284,6 +284,30 @@ impl Queue {
             .map_err(|error| format!("Cannot write {}: {error}", path.display()))
     }
 
+    /// Tell the screen that answers this queue, if one is open, that a job was
+    /// added, so it shows the job at once.
+    ///
+    /// Only while a screen holds the lock, since the process ID in the lock
+    /// file is then that screen's, and not one a closed screen left behind.
+    pub fn signal_answering_screen(&self) {
+        let path = self.get_lock_path();
+        // The screen showing the job at once is a convenience: without the
+        // signal, the job still waits, and shows when the screen opens again
+        let Ok(lock) = fs::File::open(&path) else {
+            return;
+        };
+        if lock.try_lock().is_ok() {
+            return;
+        }
+        let Ok(process_id) = read_file(&path).map(|text| text.trim().parse::<libc::pid_t>()) else {
+            return;
+        };
+        if let Ok(process_id) = process_id {
+            // SAFETY: kill only sends a signal, here one the screen listens for
+            unsafe { libc::kill(process_id, libc::SIGUSR1) };
+        }
+    }
+
     /// Carry out the person's decision on a waiting job: run it or refuse it,
     /// log the outcome, and take the job out of the queue.
     ///

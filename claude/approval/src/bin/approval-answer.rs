@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, TryLockError};
 use std::io::{self, Read, Write};
 use std::mem::MaybeUninit;
-use std::process::ExitCode;
+use std::path::Path;
+use std::process::{self, ExitCode};
 
 use approval::{
     Actions, Decision, Outcome, Queue, QueuedJob, Request, format_age, get_last_line, get_now_ns,
@@ -61,16 +62,24 @@ fn run() -> Result<(), String> {
     let lock_directory = lock_path.parent().expect("a lock path is in a directory");
     fs::create_dir_all(lock_directory)
         .map_err(|error| format!("Cannot create {}: {error}", lock_directory.display()))?;
-    let lock = File::create(&lock_path)
+    // Not emptied on opening, since it holds the process ID of the screen
+    // that has the lock, which a screen that finds it taken must leave alone
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
         .map_err(|error| format!("Cannot open {}: {error}", lock_path.display()))?;
-    redraw_on_resize()?;
+    interrupt_on_signals()?;
     let _full_screen = FullScreen::new()?;
     // One screen per queue, so no job is answered twice. The system drops the
     // lock when the process ends, however it ends
     match lock.try_lock() {
         Ok(()) => {
-            let jobs = queue.read_queued_jobs()?;
-            answer(&queue, &actions, &jobs)
+            // Before the jobs are read, so a job queued before ,approval can
+            // read the ID is among them
+            write_process_id(&lock, &lock_path)?;
+            answer(&queue, &actions)
         }
         Err(TryLockError::WouldBlock) => {
             println!("This queue is already open somewhere else. Any key closes");
@@ -83,9 +92,19 @@ fn run() -> Result<(), String> {
     }
 }
 
+/// Write this process's ID in the lock file, so ,approval can tell the screen
+/// when it queues a job.
+fn write_process_id(lock: &File, lock_path: &Path) -> Result<(), String> {
+    let mut file = lock;
+    file.set_len(0)
+        .and_then(|()| write!(file, "{}", process::id()))
+        .map_err(|error| format!("Cannot write {}: {error}", lock_path.display()))
+}
+
 /// Show every waiting job, stage decisions on them, and carry those out on
 /// Enter.
-fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), String> {
+fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
+    let mut jobs = queue.read_queued_jobs()?;
     if jobs.is_empty() {
         println!("No request waits in this queue. Any key closes");
         while read_key()?.is_none() {}
@@ -94,7 +113,7 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
     let mut answers: BTreeMap<usize, Decision> = BTreeMap::new();
     let mut cursor = 0;
     loop {
-        draw_jobs(jobs, &answers, &BTreeMap::new(), Some(cursor), None)?;
+        draw_jobs(&jobs, &answers, &BTreeMap::new(), Some(cursor), None)?;
         println!(
             "{DIM}j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit{RESET}"
         );
@@ -120,19 +139,26 @@ fn answer(queue: &Queue, actions: &Actions, jobs: &[QueuedJob]) -> Result<(), St
                 return Ok(());
             }
             Some(b'\n') => {
-                let outcomes = commit(queue, actions, jobs, &answers)?;
-                return show_outcomes(jobs, &answers, &outcomes);
+                let outcomes = commit(queue, actions, &jobs, &answers)?;
+                return show_outcomes(&jobs, &answers, &outcomes);
             }
             Some(b'N') => {
                 let refusals = (0..jobs.len())
                     .map(|index| (index, Decision::Refuse))
                     .collect();
-                commit(queue, actions, jobs, &refusals)?;
+                commit(queue, actions, &jobs, &refusals)?;
                 return Ok(());
             }
             Some(b'q') => return Ok(()),
-            // A resize, like a zoom, draws the jobs again at the new size
-            _ => None,
+            // A resize redraws the jobs at the new size, and a job queued
+            // while the screen is open, which ,approval signals, adds one
+            // below. Only this screen takes jobs out, so the list only grows,
+            // and every row keeps its place and its decision
+            None => {
+                jobs = queue.read_queued_jobs()?;
+                None
+            }
+            Some(_) => None,
         };
         if let Some(decision) = decision {
             // Pressing y or n again on a job that already has that decision
@@ -527,24 +553,28 @@ fn read_key() -> Result<Option<u8>, String> {
     }
 }
 
-/// Make a resize interrupt the wait for a key, which `read_key` reports, so a
-/// zoom redraws the screen at once instead of on the next key press.
+/// Make a resize, or a job ,approval queues, interrupt the wait for a key,
+/// which `read_key` reports, so the screen is drawn again at once instead of on
+/// the next key press.
 ///
-/// A resize that comes while the screen is drawn, before the wait starts, is
+/// A signal that comes while the screen is drawn, before the wait starts, is
 /// only seen on the next key, which a draw takes too little time to matter.
-fn redraw_on_resize() -> Result<(), String> {
-    // The system ignores a resize by default, which never interrupts a read, so
-    // it gets a handler that does nothing but that
+fn interrupt_on_signals() -> Result<(), String> {
+    // The system ignores a resize by default, which never interrupts a read,
+    // and ends the process on SIGUSR1, so both get a handler that does nothing
+    // but interrupt
     extern "C" fn interrupt(_: libc::c_int) {}
     // SAFETY: an all-zero sigaction is a valid one, with no flags and an empty
     // mask, and the handler touches nothing, so it is safe to run at any point
     let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
     action.sa_sigaction = interrupt as *const () as libc::sighandler_t;
     // Without SA_RESTART among the flags, the read stops instead of resuming
-    // SAFETY: the action is fully set, and the old one is not asked for
-    if unsafe { libc::sigaction(libc::SIGWINCH, &raw const action, std::ptr::null_mut()) } == -1 {
-        let error = io::Error::last_os_error();
-        return Err(format!("Cannot follow the terminal's size: {error}"));
+    for signal in [libc::SIGWINCH, libc::SIGUSR1] {
+        // SAFETY: the action is fully set, and the old one is not asked for
+        if unsafe { libc::sigaction(signal, &raw const action, std::ptr::null_mut()) } == -1 {
+            let error = io::Error::last_os_error();
+            return Err(format!("Cannot listen for signals: {error}"));
+        }
     }
     Ok(())
 }

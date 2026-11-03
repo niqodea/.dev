@@ -148,6 +148,7 @@ fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), Stri
         ));
     }
     queue.add(&request)?;
+    queue.signal_answering_screen();
     println!(
         "waiting: {}. Someone with write access will decide whether to do it",
         request.format()
