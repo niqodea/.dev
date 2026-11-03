@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -eu
+
+# Keeps how many requests wait in the queue of the project named by the argument in an option of the project's session, so its status line shows them as they change
+# ,approval runs this whenever a queue changes, and tmux whenever a session is made, for what waited already
+count=$(DOTDEV_PROJECT="$1" ,approval count)
+# set-option takes a pane as its target, so the exact session needs the colon after it to be found
+tmux set-option -t "=$1:" @approval_waiting "$count" \; refresh-client -S

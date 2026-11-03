@@ -129,6 +129,29 @@ impl Actions {
         &self.clis_directory
     }
 
+    /// Run the hook at `~/.config/approval/on-change`, if one is installed, with
+    /// the project whose queue changed, so a status line can show what waits
+    /// as soon as it changes.
+    pub fn run_change_hook(&self) {
+        // Showing the change is a convenience, so a hook that is missing or
+        // fails changes nothing about the queue, and is not reported
+        let Ok(project) = env::var("DOTDEV_PROJECT") else {
+            return;
+        };
+        let path = Path::new(&self.home).join(".config/approval/on-change");
+        if !path.is_file() {
+            return;
+        }
+        // Its output is dropped, since the screen that answers the queue may be
+        // what runs it
+        let _ = process::Command::new(path)
+            .arg(project)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+
     /// Check that the request names a CLI that installs an action executable.
     ///
     /// The action itself checks the request's arguments when it runs, since it

@@ -545,6 +545,7 @@ fn commit(
             print_keys("carrying out the decisions, one at a time")?;
         }
         let result = queue.decide(actions, jobs[index].queued_at_ns, decision);
+        actions.run_change_hook();
         outcomes.insert(index, result.map(|answered_job| answered_job.outcome));
     }
     Ok(outcomes)

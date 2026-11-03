@@ -37,6 +37,7 @@ A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`
 Any other request waits until we decide on it, in the queue of the project the shell is in: `<atdir>/approval` at the project's root, so it moves with the project.
 Only `,approval-answer` decides, in any terminal: `,approval` itself only reports what waits.
 An open `,approval-answer` shows a request as soon as it is queued, since `,approval` signals it with `SIGUSR1`.
+After a queue changes, `,approval` runs `~/.config/approval/on-change <project>` if it is installed, which keeps the count in the project's tmux session, so the status line shows `y` as soon as a request waits.
 In tmux, M-y opens `,approval-answer` on the session's project in an `approval` [special pane](../tmux/README.md#special-panes) when a request waits, or moves to it if it is already open.
 The `approval-status` skill, with the script it runs, shows Claude what waits and what was decided.
 `,approval` gives an action only `PATH` and `HOME`, and stops it, with every process it started, after a time limit.
