@@ -44,8 +44,11 @@ A project's ports are a range picked from its name, which `,get-project-port-ran
 If one of them is already taken here, the connection fails.
 The home session belongs to no project, so it forwards no ports.
 
-From the workstation pane, <kbd>Meta</kbd> + <kbd>Ctrl</kbd> + <kbd>y</kbd> copies the workstation's clipboard to this machine's.
-<kbd>Meta</kbd> + <kbd>Ctrl</kbd> + <kbd>p</kbd> copies this machine's clipboard to the workstation's.
+<kbd>Meta</kbd> + <kbd>Shift</kbd> + <kbd>w</kbd> opens the workstation's dashboard while its pane is open.
+It shows the workstation's address, how long the connection has been up, the workstation's load, and the servers listening on the project's ports there.
+From it, <kbd>y</kbd> copies the workstation's clipboard to this machine's, as it was when the dashboard opened, and <kbd>p</kbd> copies this machine's clipboard to the workstation's, as it was when <kbd>p</kbd> was pressed.
+Each first says how much text would cross, and copies it once <kbd>Return</kbd> confirms.
+There, <kbd>v</kbd> shows the text with its control characters made visible, so a hidden command shows as text.
 
 ### Pane naming
 

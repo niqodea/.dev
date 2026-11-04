@@ -1,0 +1,273 @@
+#!/bin/sh
+
+set -eu
+
+# Shows the session's workstation, and moves text between its clipboard and this machine's on a key
+# Runs in a popup that ,tmux-open-workstation-dashboard opens: each action key opens a screen of its own, Esc steps back to the screen before, and a finished action closes the popup
+# Only the keys a screen lists do anything on it
+
+# Wraps a word in single quotes, so a shell reads it back as it is
+quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# Prints how much text a file holds, and warns of characters that a terminal could act on, without showing the text
+describe() {
+    if [ ! -s "$1" ]; then
+        echo 'empty'
+        return
+    fi
+    lines=$(grep -c '' < "$1" || true)
+    characters=$(wc -m < "$1" | tr -d ' ')
+    if [ "$lines" = 1 ]; then
+        description="1 line, $characters characters"
+    else
+        description="$lines lines, $characters characters"
+    fi
+    # Tabs and newlines are the only control characters that plain text holds
+    if LC_ALL=C tr -d '\t\n' < "$1" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+        description="$description, with control characters"
+    fi
+    echo "$description"
+}
+
+escape=$(printf '\033')
+
+# Reads one key without waiting for Return
+# A key like an arrow sends Esc and then the rest of its sequence at once, so it reads as a key that does nothing, not as Esc
+read_key() {
+    terminal_settings=$(stty -g)
+    stty -icanon -echo min 1 time 0
+    key=$(dd bs=1 count=1 2> /dev/null)
+    if [ "$key" = "$escape" ]; then
+        # Waits a tenth of a second for the rest of a sequence, which Esc alone never sends
+        stty min 0 time 1
+        if [ -n "$(dd bs=16 count=1 2> /dev/null)" ]; then
+            key='sequence'
+        fi
+    fi
+    stty "$terminal_settings"
+}
+
+# The popup's rows and columns, read from the terminal itself, since a pipe may stand in for the input
+rows() {
+    stty size < /dev/tty | cut -d ' ' -f 1
+}
+columns() {
+    stty size < /dev/tty | cut -d ' ' -f 2
+}
+
+# Cuts lines to the popup's width, so a long one never wraps into the lines below it
+fit() {
+    cut -c "1-$(columns)"
+}
+
+# Prints a file with its control characters as caret notation, like ^[ for Esc, so a hidden command shows as text
+# Tabs and newlines stay as they are, and so does every other character, accents and emoji included
+mark_controls() {
+    perl -pe 's/([\x00-\x08\x0b-\x1f\x7f])/"^" . chr(ord($1) ^ 64)/ge' "$1"
+}
+
+# Shows a clipboard's text, numbered in a gutter so it stands apart from the screen around it, and goes back on Esc
+view_text() {
+    title="$1"
+    path="$2"
+    # The title, its note, two blank lines, a line for what is left out, and the key leave the rest to the text
+    room=$(($(rows) - 6))
+    total=$(mark_controls "$path" | grep -c '' || true)
+    clear
+    echo "$title"
+    case "$(describe "$path")" in
+        *'control characters') echo 'Control characters show as ^ and a letter, like ^[ for Esc' ;;
+        *) ;; # Plain text needs no note
+    esac
+    echo
+    mark_controls "$path" | head -n "$room" | awk -v width="${#total}" '{ printf "%*d | %s\n", width, NR, $0 }' | fit
+    if [ "$total" -gt "$room" ]; then
+        printf "%${#total}s | %s more lines\n" '' "$((total - room))"
+    fi
+    echo
+    # No newline after the last line, so a full screen does not scroll its first line away
+    printf 'Esc  back'
+    while :; do
+        read_key
+        case "$key" in
+            "$escape") return ;;
+            *) ;; # Any other key does nothing
+        esac
+    done
+}
+
+# Shows an error until Esc closes the popup, since closing at once would take the error with it
+show_error() {
+    clear
+    echo "$1"
+    sed 's/^/  /' "$snapshot_dir/error"
+    echo
+    printf 'Esc  close'
+    while :; do
+        read_key
+        case "$key" in
+            "$escape") exit ;;
+            *) ;; # Any other key does nothing
+        esac
+    done
+}
+
+# Takes the workstation, the socket of its pane's connection, and that connection's process, which ,tmux-open-workstation-dashboard checked
+workstation="$1"
+socket="$2"
+master_pid="$3"
+session=$(tmux display-message -p '#{session_name}')
+
+snapshot_dir=$(mktemp -d)
+# The cursor would only blink after the last line, since nothing here is typed
+tput civis
+trap 'tput cnorm; rm -rf "$snapshot_dir"' EXIT
+
+echo "Reading $workstation..."
+# One call reads everything, since each call waits for a round trip
+# It prints the address, the load, and how many server lines come before the clipboard, so the clipboard after them is taken byte for byte
+remote_script=$(
+    cat << 'EOF'
+# ssh runs the command in a shell that has not read ~/.profile, so PATH lacks ~/.local/bin
+source ~/.profile
+# The address that the connection reached, which ssh hands every session
+printf '%s\n' "${SSH_CONNECTION-}" | cut -d ' ' -f 3
+,get-system-load 2> /dev/null || echo
+servers=''
+if [ "$project" != '~' ]; then
+    servers=$(DOTDEV_PROJECT="$project" ,list-project-listeners | sed -n 's/^[0-9]*: port \([0-9]*\), .* (process \([0-9]*\))$/\1 \2/p' | while read -r port pid; do
+        # A process that ended since lsof saw it has nothing to show
+        if details=$(ps -o etime= -o args= -p "$pid"); then
+            echo "$port $pid $details" | sed 's/  */ /'
+        fi
+    done)
+fi
+# One awk both counts and prints the lines, so the count always matches them
+printf '%s' "$servers" | awk '{ lines[NR] = $0 } END { print NR; for (i = 1; i <= NR; i++) print lines[i] }'
+,clipboard read 2> /dev/null || true
+EOF
+)
+if ! ssh -S "$socket" "$workstation" "project=$(quote "$session")
+$remote_script" > "$snapshot_dir/remote" 2> "$snapshot_dir/error"; then
+    show_error "Could not read $workstation:"
+fi
+address=$(sed -n 1p "$snapshot_dir/remote")
+load=$(sed -n 2p "$snapshot_dir/remote")
+server_count=$(sed -n 3p "$snapshot_dir/remote")
+# A server that is the pane's own connection is its port forward, which only a workstation on this same machine sees
+servers=$(sed -n "4,$((server_count + 3))p" "$snapshot_dir/remote" | awk -v master_pid="$master_pid" '$2 != master_pid')
+tail -n "+$((server_count + 4))" "$snapshot_dir/remote" > "$snapshot_dir/workstation-clipboard"
+
+draw() {
+    clear
+    echo "$workstation at $address, connected for $(ps -o etime= -p "$master_pid" | tr -d ' ')"
+    if [ -n "$load" ]; then
+        echo "$load" | awk '{printf "Load %s per core, memory %s%% used, disk %s%% used\n", $1, $2, $3}'
+    fi
+    if [ "$session" != '~' ]; then
+        echo
+        echo "Servers on the project's ports"
+        if [ -n "$servers" ]; then
+            # Each line holds the port, the process ID, how long it has run, and its command
+            printf '%s\n' "$servers" | while read -r port _ elapsed command; do
+                echo "  $port  up $elapsed  $command" | fit
+            done
+        else
+            echo '  None'
+        fi
+    fi
+    echo
+    echo "y    yank the workstation's clipboard"
+    echo "p    put this machine's clipboard"
+    # No newline after the last line, so a full screen does not scroll its first line away
+    printf 'Esc  close'
+}
+
+# Shows what a clipboard holds before it crosses to the other machine, and runs the crossing on Return
+# Return rather than the action's own key, so pressing that key twice by mistake crosses nothing
+# An empty clipboard has nothing to cross, so its screen offers only to go back
+# A crossing that fails shows its error here and keeps the keys, so it can be tried again
+cross() {
+    title="$1"
+    verb="$2"
+    path="$3"
+    crossing="$4"
+    done_message="$5"
+    failure=''
+    while :; do
+        clear
+        echo "$title"
+        echo
+        if [ -s "$path" ]; then
+            echo "It holds $(describe "$path")"
+        else
+            echo 'It is empty'
+        fi
+        if [ -n "$failure" ]; then
+            echo
+            echo "$failure"
+            sed 's/^/  /' "$snapshot_dir/error"
+        fi
+        echo
+        if [ -s "$path" ]; then
+            echo "Return  $verb"
+            echo 'v       view the text'
+        fi
+        printf 'Esc     back'
+        read_key
+        case "$key" in
+            # Command substitution drops the newline that Return types, so Return reads as nothing
+            '')
+                if [ -s "$path" ]; then
+                    status=0
+                    "$crossing" < "$path" 2> "$snapshot_dir/error" || status=$?
+                    if [ "$status" = 0 ]; then
+                        tmux display-message "$done_message"
+                        exit
+                    fi
+                    # A failure that printed nothing still says how it ended
+                    if [ ! -s "$snapshot_dir/error" ]; then
+                        echo "It exited with status $status" > "$snapshot_dir/error"
+                    fi
+                    failure="Could not $verb it:"
+                fi
+                ;;
+            v)
+                if [ -s "$path" ]; then
+                    view_text "$title" "$path"
+                fi
+                ;;
+            "$escape") return ;;
+            *) ;; # Any other key does nothing
+        esac
+    done
+}
+
+write_here() {
+    ,clipboard write
+}
+
+write_there() {
+    ssh -S "$socket" "$workstation" 'source ~/.profile && ,clipboard write'
+}
+
+while :; do
+    draw
+    read_key
+    case "$key" in
+        y)
+            cross "Yank the workstation's clipboard" yank "$snapshot_dir/workstation-clipboard" write_here \
+                "Yanked $(describe "$snapshot_dir/workstation-clipboard") from the workstation"
+            ;;
+        p)
+            # Read once, so what is put is what was described, even if the clipboard changes meanwhile
+            ,clipboard read > "$snapshot_dir/clipboard"
+            cross "Put this machine's clipboard" put "$snapshot_dir/clipboard" write_there \
+                "Put $(describe "$snapshot_dir/clipboard") on the workstation"
+            ;;
+        "$escape") exit ;;
+        *) ;; # Any other key does nothing
+    esac
+done
