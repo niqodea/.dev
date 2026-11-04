@@ -128,7 +128,7 @@ trap 'tput cnorm; rm -rf "$snapshot_dir"' EXIT
 echo "Reading $workstation..."
 # One call reads everything, since each call waits for a round trip
 # It prints the address, the load, and how many server lines come before the clipboard, so the clipboard after them is taken byte for byte
-remote_script=$(
+workstation_script=$(
     cat << 'EOF'
 # ssh runs the command in a shell that has not read ~/.profile, so PATH lacks ~/.local/bin
 source ~/.profile
@@ -150,15 +150,15 @@ printf '%s' "$servers" | awk '{ lines[NR] = $0 } END { print NR; for (i = 1; i <
 EOF
 )
 if ! ssh -S "$socket" "$workstation" "project=$(quote "$session")
-$remote_script" > "$snapshot_dir/remote" 2> "$snapshot_dir/error"; then
+$workstation_script" > "$snapshot_dir/workstation" 2> "$snapshot_dir/error"; then
     show_error "Could not read $workstation:"
 fi
-address=$(sed -n 1p "$snapshot_dir/remote")
-load=$(sed -n 2p "$snapshot_dir/remote")
-server_count=$(sed -n 3p "$snapshot_dir/remote")
+address=$(sed -n 1p "$snapshot_dir/workstation")
+load=$(sed -n 2p "$snapshot_dir/workstation")
+server_count=$(sed -n 3p "$snapshot_dir/workstation")
 # A server that is the pane's own connection is its port forward, which only a workstation on this same machine sees
-servers=$(sed -n "4,$((server_count + 3))p" "$snapshot_dir/remote" | awk -v master_pid="$master_pid" '$2 != master_pid')
-tail -n "+$((server_count + 4))" "$snapshot_dir/remote" > "$snapshot_dir/workstation-clipboard"
+servers=$(sed -n "4,$((server_count + 3))p" "$snapshot_dir/workstation" | awk -v master_pid="$master_pid" '$2 != master_pid')
+tail -n "+$((server_count + 4))" "$snapshot_dir/workstation" > "$snapshot_dir/workstation-clipboard"
 
 draw() {
     clear
