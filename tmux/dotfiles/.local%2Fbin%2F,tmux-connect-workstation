@@ -2,12 +2,17 @@
 
 set -eu
 
-# Runs as the workstation pane's process: opens the pane's own connection to the workstation, then the remote command over it
-# Takes the workstation, the connection's socket, the remote command, and then the connection's own ssh options, like its port forwards
+# Runs as the workstation pane's process: opens the pane's own connection to the workstation, then the session of the same name there over it
+# Takes the workstation, the connection's socket, the session, and then the connection's own ssh options, like its port forwards
 workstation="$1"
 socket="$2"
-remote_command="$3"
+session="$3"
 shift 3
+
+# Wraps a word in single quotes, so a shell reads it back as it is
+quote() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
 
 wait_for_enter() {
     echo 'Press Enter to close'
@@ -41,12 +46,55 @@ if ! ssh -f -N -M -S "$socket" -o ServerAliveInterval=60 -o ServerAliveCountMax=
     exit 1
 fi
 
-# The remote command is interactive, so it needs a terminal
+# ssh runs commands in a shell that has not read ~/.profile, so PATH lacks ~/.local/bin
+profile='source ~/.profile && '
+
+# Create the session there, at the pane's size, if it is missing, since the mirror below and the attach both need it
+# A missing project is created first: a folder in the home folder whose atdir holds project and tmux-session-visit
+setup=",tmux-open-session -d $(tmux display-message -p -t "$TMUX_PANE" '#{pane_width} #{pane_height}') $(quote "$session")"
+if [ "$session" != '~' ]; then
+    project_path="\"\$HOME\"/$(quote "$session")/\"\$DOTDEV_ATDIR\""
+    setup="if [ ! -d $project_path/project ]; then mkdir -p $project_path/project && touch $project_path/tmux-session-visit; fi && $setup"
+fi
+if ! ssh -S "$socket" "$workstation" "$profile$setup"; then
+    wait_for_enter
+    exit 1
+fi
+
+# Mirror values from the session there onto this pane: each global @workstation_mirror_<name> option holds a format, and its value there is stored here as @workstation_<name>
+# The values are read again each time the workstation's tmux runs wait-for -S state-changed, so whatever changes a value there must run it
+# tmux runs the commands of one call back to back, so a change cannot happen between reading the values and starting to wait
+names=$(tmux show-options -g | sed -n 's/^@workstation_mirror_\([^ ]*\) .*/\1/p')
+if [ -n "$names" ]; then
+    read_and_wait='tmux'
+    for name in $names; do
+        format=$(tmux show-options -gv "@workstation_mirror_$name")
+        read_and_wait="$read_and_wait display-message -p -t $(quote "=$session:") $(quote "$format") ';'"
+    done
+    read_and_wait="$read_and_wait wait-for state-changed"
+    # When the connection closes, the values are removed
+    {
+        ssh -S "$socket" "$workstation" "${profile}while $read_and_wait; do :; done" 2> /dev/null | while :; do
+            for name in $names; do
+                IFS= read -r value || break 2
+                tmux set-option -p -t "$TMUX_PANE" "@workstation_$name" "$value"
+            done
+            # tmux redraws the status line only when asked, and refresh-client fails when no client is attached
+            tmux refresh-client -S 2> /dev/null || true
+        done
+        for name in $names; do
+            tmux set-option -p -u -t "$TMUX_PANE" "@workstation_$name"
+        done
+        tmux refresh-client -S 2> /dev/null || true
+    } &
+fi
+
+# The session is interactive, so it needs a terminal
 # The pane closing hangs up only this shell, and the session hands its terminal to the connection, so it never notices the hang-up
 # The session runs in the background, since the shell runs a trap only once its foreground command ends but at once while it waits
 # A command in the background reads nothing unless handed its input, so it gets the pane's input through another descriptor
 exec 3<&0
-ssh -S "$socket" -t "$workstation" "$remote_command" <&3 3<&- &
+ssh -S "$socket" -t "$workstation" "$profile,tmux-open-session $(quote "$session")" <&3 3<&- &
 # A failed session waits for Enter, so its error stays on screen
 if ! wait "$!"; then
     wait_for_enter

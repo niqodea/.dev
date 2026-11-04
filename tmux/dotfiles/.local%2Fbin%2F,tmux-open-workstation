@@ -29,26 +29,19 @@ if [ -z "$workstation" ]; then
     exit
 fi
 
-# The connection's own ssh options, which the pane's command takes after the workstation and the remote command
+# The connection's own ssh options, which the pane's command takes after the workstation, its socket and the session
 set --
 
-# ssh runs the command in a shell that has not read ~/.profile, so PATH lacks ~/.local/bin
-if [ "$session" = '~' ]; then
-    # The home session belongs to no project, so it has no ports to forward
-    remote_command="source ~/.profile && ,tmux-open-session '~'"
-else
+# The home session belongs to no project, so it has no ports to forward
+if [ "$session" != '~' ]; then
     port_range=$(DOTDEV_PROJECT="$session" ,get-project-port-range)
     for port in $(seq "${port_range% *}" "${port_range#* }"); do
         set -- "$@" -L "0.0.0.0:$port:localhost:$port"
     done
-
-    # The project is created on the workstation the way ,tmux-new-project creates it here
-    project_path="\"\$HOME\"/$(quote "$session")/\"\$DOTDEV_ATDIR\""
-    remote_command="source ~/.profile && if [ ! -d $project_path/project ]; then mkdir -p $project_path/project && touch $project_path/tmux-session-visit; fi && ,tmux-open-session $(quote "$session")"
 fi
 
 pane_command=',tmux-connect-workstation'
-for arg in "$workstation" "$workstation_dir/ssh" "$remote_command" "$@"; do
+for arg in "$workstation" "$workstation_dir/ssh" "$session" "$@"; do
     pane_command="$pane_command $(quote "$arg")"
 done
 

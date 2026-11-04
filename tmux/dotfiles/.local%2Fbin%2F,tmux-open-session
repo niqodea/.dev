@@ -4,6 +4,13 @@
 
 set -eu
 
+# With -d, a width and a height, it only creates the session if it is missing, detached at that size
+# Pass the size of the terminal that will open the session, since a shell started at another size draws its first prompt for that width
+if [ "$1" = -d ]; then
+    width="$2"
+    height="$3"
+    shift 3
+fi
 session="$1"
 
 if [ "$session" = '~' ]; then
@@ -17,7 +24,11 @@ else
     exit 1
 fi
 
-if [ -n "${TMUX-}" ]; then
+if [ -n "${width-}" ]; then
+    if ! tmux has-session -t "=$session" 2> /dev/null; then
+        tmux new-session -d -n "" -x "$width" -y "$height" "$@"
+    fi
+elif [ -n "${TMUX-}" ]; then
     # "=" for the exact name, since tmux otherwise matches a prefix of another one, and reads a bare "~" as the marked pane
     if ! tmux has-session -t "=$session" 2> /dev/null; then
         tmux new-session -d -n "" "$@"

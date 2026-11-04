@@ -13,8 +13,13 @@ Claude runs in a tmux [special pane](../tmux/README.md#special-panes) of type `c
 Claude reports through hooks whether it is working or waiting for us, and stores the answer in the pane's `@status` option, just as zsh does for its own panes.
 Only the Claude we open in tmux gets these hooks, through the settings file passed with `--settings`, so a Claude started anywhere else leaves tmux alone.
 
-The status bar shows the key that reaches a waiting Claude: ; for the Claude in this session, ' for a Claude in another session.
-M-' lists the waiting Claudes in a popup and moves to the one we pick.
+The status bar shows the key that reaches a waiting Claude: ; for the Claude in this session, w for the one on its [workstation](../tmux/README.md#workstation), ' for a Claude in another session.
+When both Claudes of this session wait, it shows ;.
+M-' lists the waiting Claudes in a popup and moves to the one we pick, a Claude on a workstation shown as its session followed by `[w]`.
+Picking it moves to the workstation pane, as we left it.
+
+The workstation pane mirrors since when the Claude of its session on the workstation waits, and the hooks signal the mirror whenever they change `@status`.
+A Claude pane killed from outside Claude signals nothing, so the workstation pane shows it waiting until another Claude there signals.
 
 ### Approval
 

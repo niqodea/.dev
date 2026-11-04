@@ -54,6 +54,11 @@ From it, <kbd>y</kbd> copies the workstation's clipboard to this machine's, as i
 Each first says how much text would cross, and copies it once <kbd>Return</kbd> confirms.
 There, <kbd>v</kbd> shows the text with its control characters made visible, so a hidden command shows as text.
 
+A module can mirror a value from the session on the workstation onto the workstation pane here.
+It sets a global `@workstation_mirror_<name>` option to a tmux format, and the pane holds that format's value there as `@workstation_<name>`.
+The value is read again each time something on the workstation signals the `state-changed` channel with `tmux wait-for -S`, so whatever changes it has to signal.
+It arrives as soon as the signal does, with no polling, and goes away when the pane closes.
+
 ### Pane naming
 
 We leverage shell hooks to display currently running commands as pane names.
