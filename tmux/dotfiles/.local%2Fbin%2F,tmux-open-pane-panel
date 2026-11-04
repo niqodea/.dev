@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+# Opens the panel of the current pane's type, the command its @panel_<type> option holds, which runs in a shell like run-shell's
+# A type with no such option has no panel
+pane_type=$(tmux display-message -p '#{@pane_type}')
+panel=$(tmux show-options -gqv "@panel_$pane_type")
+if [ -z "$panel" ]; then
+    tmux display-message 'This pane has no panel'
+    exit
+fi
+exec sh -c "$panel"

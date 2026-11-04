@@ -33,6 +33,10 @@ A session has at most one `claude`, one `workstation` and one `approval`: their 
 Every special pane splits the current pane side by side when it is at least 160 columns wide, room for two terminals of 80, and one above the other otherwise.
 A session can have any number of views.
 
+<kbd>Meta</kbd> + <kbd>o</kbd> opens the current pane's panel: a popup about the pane, which <kbd>Esc</kbd> closes.
+A panel shows the pane's state and may act on it, while anything meant to stay open as we work gets a pane or a command of its own.
+A module gives a pane type its panel by setting `@panel_<type>` to a shell command that opens it.
+
 ### Workstation
 
 A workstation is a remote machine we work on over ssh.
@@ -44,7 +48,7 @@ A project's ports are a range picked from its name, which `,get-project-port-ran
 If one of them is already taken here, the connection fails.
 The home session belongs to no project, so it forwards no ports.
 
-<kbd>Meta</kbd> + <kbd>Shift</kbd> + <kbd>w</kbd> opens the workstation's dashboard while its pane is open.
+The workstation pane's panel is the workstation's dashboard.
 It shows the workstation's address, how long the connection has been up, the workstation's load, and the servers listening on the project's ports there.
 From it, <kbd>y</kbd> copies the workstation's clipboard to this machine's, as it was when the dashboard opened, and <kbd>p</kbd> copies this machine's clipboard to the workstation's, as it was when <kbd>p</kbd> was pressed.
 Each first says how much text would cross, and copies it once <kbd>Return</kbd> confirms.

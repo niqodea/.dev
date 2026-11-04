@@ -9,20 +9,15 @@ quote() {
     printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
-session_path=$(tmux display-message -p '#{session_path}')
-workstation_dir="$session_path/$DOTDEV_ATDIR/workstation"
-workstation=$(head -n 1 "$workstation_dir/host" 2> /dev/null || true)
-if [ -z "$workstation" ]; then
-    tmux display-message -l "No workstation in $workstation_dir/host"
-    exit
-fi
-socket="$workstation_dir/ssh"
+# The current pane is a workstation pane, and its option holds the workstation it connected to, which the host file may no longer name
+workstation=$(tmux display-message -p '#{@ssh_workstation}')
+socket="$(tmux display-message -p '#{session_path}')/$DOTDEV_ATDIR/workstation/ssh"
 
 # The workstation pane's connection, which the dashboard's actions ride, so they need no login
 # ssh ends the line it prints with a carriage return
 master_pid=$(ssh -S "$socket" -O check "$workstation" 2>&1 | sed -n 's/^Master running (pid=\([0-9]*\)).*/\1/p')
 if [ -z "$master_pid" ]; then
-    tmux display-message "$workstation is not connected, and M-w opens its pane"
+    tmux display-message "$workstation is not connected"
     exit
 fi
 

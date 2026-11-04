@@ -39,6 +39,7 @@ Only `,approval-answer` decides, in any terminal: `,approval` itself only report
 An open `,approval-answer` shows a request as soon as it is queued, since `,approval` signals it with `SIGUSR1`.
 After a queue changes, `,approval` runs `~/.config/approval/on-change <project>` if it is installed, which keeps the count in the project's tmux session, so the status line shows `y` as soon as a request waits.
 In tmux, M-y opens `,approval-answer` on the session's project in an `approval` [special pane](../tmux/README.md#special-panes) when a request waits, or moves to it if it is already open.
+Its [panel](../tmux/README.md#special-panes) shows what `,approval status` prints: what waits and what was last decided.
 The `approval-status` skill, with the script it runs, shows Claude what waits and what was decided.
 `,approval` gives an action only `PATH` and `HOME`, and stops it, with every process it started, after a time limit.
 

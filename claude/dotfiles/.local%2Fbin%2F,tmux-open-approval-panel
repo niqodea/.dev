@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -eu
+
+# Shows what waits in the session's project and what was last decided there, in a popup that Esc closes
+# The newest decision is the last line, where nvim starts
+# An error from ,approval shows in the popup, in place of what it would have printed
+tmux display-popup -E -d '#{session_path}' ",approval status 2>&1 | nvim -R -c 'nnoremap <Esc> <Cmd>quitall!<CR>' + -"
