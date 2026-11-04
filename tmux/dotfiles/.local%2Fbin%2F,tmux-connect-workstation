@@ -1,0 +1,53 @@
+#!/bin/sh
+
+set -eu
+
+# Runs as the workstation pane's process: opens the pane's own connection to the workstation, then the remote command over it
+# Takes the workstation, the connection's socket, the remote command, and then the connection's own ssh options, like its port forwards
+workstation="$1"
+socket="$2"
+remote_command="$3"
+shift 3
+
+wait_for_enter() {
+    echo 'Press Enter to close'
+    read -r _
+}
+
+# A connection still answering on the socket belongs to someone else, and closing it on exit would cut them off
+if ssh -S "$socket" -O check "$workstation" 2> /dev/null; then
+    echo "Already connected to $workstation through $socket"
+    wait_for_enter
+    exit 1
+fi
+# A connection killed before it could close leaves its socket behind, which would keep the new one from taking that path
+rm -f "$socket"
+
+close_connection() {
+    # Closes the connection and every session on it, and fails when the connection never came up
+    ssh -S "$socket" -O exit "$workstation" 2> /dev/null || true
+}
+trap close_connection EXIT
+# The connection runs detached from the pane, so the pane closing reaches it only through these traps
+trap 'exit 129' HUP
+trap 'exit 143' TERM
+
+# The connection opens no session of its own, so it holds only the forwards and lives exactly as long as the pane
+# -f returns once the connection and its forwards are up, so its exit code says whether they came up
+# A keepalive every minute stops an idle connection from being dropped
+# A port that cannot be forwarded fails the connection, since that port would otherwise reach whatever already listens on it here
+if ! ssh -f -N -M -S "$socket" -o ServerAliveInterval=60 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes "$@" "$workstation"; then
+    wait_for_enter
+    exit 1
+fi
+
+# The remote command is interactive, so it needs a terminal
+# The pane closing hangs up only this shell, and the session hands its terminal to the connection, so it never notices the hang-up
+# The session runs in the background, since the shell runs a trap only once its foreground command ends but at once while it waits
+# A command in the background reads nothing unless handed its input, so it gets the pane's input through another descriptor
+exec 3<&0
+ssh -S "$socket" -t "$workstation" "$remote_command" <&3 3<&- &
+# A failed session waits for Enter, so its error stays on screen
+if ! wait "$!"; then
+    wait_for_enter
+fi

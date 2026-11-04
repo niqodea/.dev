@@ -3,10 +3,12 @@
 set -eu
 
 ssh_workstation="$(tmux show-options -pqv @ssh_workstation)"
+# The workstation pane's connection, which a session has at most one of
+ssh_socket="$(tmux display-message -p '#{session_path}')/$DOTDEV_ATDIR/workstation/ssh"
 
-if [ -z "$ssh_workstation" ]; then
+if [ -z "$ssh_workstation" ] || [ ! -S "$ssh_socket" ]; then
     tmux display-message "Not connected to a workstation"
     exit
 fi
 
-ssh "$ssh_workstation" 'source .profile; ,clipboard read' | ,clipboard write
+ssh -S "$ssh_socket" "$ssh_workstation" 'source .profile; ,clipboard read' | ,clipboard write

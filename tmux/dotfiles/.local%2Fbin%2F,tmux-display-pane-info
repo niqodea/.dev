@@ -14,7 +14,7 @@ case "$pane_type" in
         exit
         ;;
     workstation)
-        # ssh is the pane's process, and the options above already show the workstation
+        # The connection is the pane's process, and the options above already show the workstation
         exit
         ;;
     approval)

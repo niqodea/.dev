@@ -36,7 +36,7 @@ A session can have any number of views.
 ### Workstation
 
 A workstation is a remote machine we work on over ssh.
-A project names its workstation's ssh host on the first line of `workstation` in its atdir.
+A project names its workstation's ssh host on the first line of `workstation/host` in its atdir.
 
 The workstation pane opens the session of the same name on the workstation, and creates the project there if it is missing.
 It forwards the project's ports, so a server listening on one of them on the workstation answers on the same port here.
