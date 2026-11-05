@@ -79,13 +79,10 @@ if [ -n "$names" ]; then
                 IFS= read -r value || break 2
                 tmux set-option -p -t "$TMUX_PANE" "@workstation_$name" "$value"
             done
-            # tmux redraws the status line only when asked, and refresh-client fails when no client is attached
-            tmux refresh-client -S 2> /dev/null || true
         done
         for name in $names; do
             tmux set-option -p -u -t "$TMUX_PANE" "@workstation_$name"
         done
-        tmux refresh-client -S 2> /dev/null || true
     } &
 fi
 

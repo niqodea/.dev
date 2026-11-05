@@ -6,4 +6,4 @@ set -eu
 # ,approval runs this whenever a queue changes, and tmux whenever a session is made, for what waited already
 count=$(DOTDEV_PROJECT="$1" ,approval count)
 # set-option takes a pane as its target, so the exact session needs the colon after it to be found
-tmux set-option -t "=$1:" @approval_waiting "$count" \; refresh-client -S
+tmux set-option -t "=$1:" @approval_waiting "$count"
