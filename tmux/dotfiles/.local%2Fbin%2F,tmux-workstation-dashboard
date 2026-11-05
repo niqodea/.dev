@@ -164,7 +164,12 @@ draw() {
     clear
     echo "$workstation at $address, connected for $(ps -o etime= -p "$master_pid" | tr -d ' ')"
     if [ -n "$load" ]; then
-        echo "$load" | awk '{printf "Load %s per core, memory %s%% used, disk %s%% used\n", $1, $2, $3}'
+        echo "$load" | awk '{
+            printf "Load %s per core, memory %s%% used, disk %s%% used", $1, $2, $3
+            if ($4 == "-") print ", no GPU"
+            else if ($4 == "?") print ", GPU unreadable"
+            else printf ", GPU %s%% busy, GPU memory %s%% used, GPU processes %s\n", $4, $5, $6
+        }'
     fi
     if [ "$session" != '~' ]; then
         echo

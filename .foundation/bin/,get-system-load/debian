@@ -2,6 +2,16 @@
 
 set -eu
 
+has_nvidia_gpu() {
+    for device in /sys/bus/pci/devices/*; do
+        case "$(cat "$device/vendor") $(cat "$device/class")" in
+            # An NVIDIA display device
+            "0x10de 0x03"*) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 load=$(cut -d ' ' -f 2 /proc/loadavg)
 cores=$(nproc)
 # Unlike MemFree, MemAvailable counts the file cache, which Linux hands back as soon as a program needs it
@@ -9,4 +19,24 @@ available_kilobytes=$(awk '$1 == "MemAvailable:" {print $2}' /proc/meminfo)
 total_kilobytes=$(awk '$1 == "MemTotal:" {print $2}' /proc/meminfo)
 disk_used_percent=$(df -P "$HOME" | awk 'NR == 2 {print $5}' | tr -d %)
 
-awk -v load="$load" -v cores="$cores" -v available="$available_kilobytes" -v total="$total_kilobytes" -v disk_used_percent="$disk_used_percent" 'BEGIN {printf "%.2f %d %d\n", load / cores, 100 - 100 * available / total, disk_used_percent}'
+if ! has_nvidia_gpu; then
+    gpu='- - -'
+elif ! gpu_readings=$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2> /dev/null); then
+    gpu='? ? ?'
+elif ! gpu_process_ids=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2> /dev/null); then
+    gpu='? ? ?'
+else
+    gpu_process_count=$(echo "$gpu_process_ids" | awk 'NF > 0 {count++} END {print count + 0}')
+    # A job on one GPU slows down when that GPU is busy and fails when its memory is full, so the busiest GPU and the fullest GPU memory count
+    gpu=$(echo "$gpu_readings" | awk -F ', ' -v process_count="$gpu_process_count" '
+        # nvidia-smi prints [N/A] for a reading the GPU does not report
+        $1 !~ /^[0-9]+$/ || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ {unreadable = 1; next}
+        $1 > busiest_percent {busiest_percent = $1}
+        100 * $2 / $3 > fullest_memory_percent {fullest_memory_percent = 100 * $2 / $3}
+        END {
+            if (unreadable) print "? ? ?"
+            else printf "%d %d %d\n", busiest_percent, fullest_memory_percent, process_count
+        }')
+fi
+
+awk -v load="$load" -v cores="$cores" -v available="$available_kilobytes" -v total="$total_kilobytes" -v disk_used_percent="$disk_used_percent" -v gpu="$gpu" 'BEGIN {printf "%.2f %d %d %s\n", load / cores, 100 - 100 * available / total, disk_used_percent, gpu}'

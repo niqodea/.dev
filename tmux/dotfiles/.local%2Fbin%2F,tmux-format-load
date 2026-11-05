@@ -24,4 +24,16 @@ set -eu
     else if ($3 < 90) printf "D2"
     else if ($3 < 95) printf "D3"
     else printf "#[reverse]D4#[noreverse]"
+
+    printf " "
+
+    if ($4 == "-") printf "G-"
+    else if ($4 == "?") printf "G?"
+    # A busy GPU slows programs like a busy CPU, and full GPU memory makes them fail like full memory, so each takes those thresholds
+    else if ($5 >= 90) printf "#[reverse]G4#[noreverse]"
+    else if ($4 >= 90 || $5 >= 80) printf "G3"
+    else if ($4 >= 60 || $5 >= 70) printf "G2"
+    # A process that waits with a model loaded holds GPU memory, so G0 needs no process on the GPU
+    else if ($4 > 0 || $6 > 0) printf "G1"
+    else printf "G0"
 }'

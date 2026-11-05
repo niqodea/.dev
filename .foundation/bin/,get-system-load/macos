@@ -7,5 +7,14 @@ cores=$(sysctl -n hw.ncpu)
 # Free memory, counting the file cache, which macOS hands back as soon as a program needs it
 free_percent=$(sysctl -n kern.memorystatus_level)
 disk_used_percent=$(df -P "$HOME" | awk 'NR == 2 {print $5}' | tr -d %)
+# Each connection an app opens to the GPU reports the nanoseconds of GPU time it has used, so their growth over one second is the share of that second the GPU worked
+# ioreg prints bytes that are not text, which awk rejects outside the C locale
+gpu_nanoseconds_before=$(ioreg -r -d 1 -c AGXDeviceUserClient | LC_ALL=C awk -F '"accumulatedGPUTime"=' '{for (i = 2; i <= NF; i++) total += $i} END {printf "%.0f\n", total}')
+sleep 1
+gpu_connections=$(ioreg -r -d 1 -c AGXDeviceUserClient)
+gpu_nanoseconds_after=$(printf '%s\n' "$gpu_connections" | LC_ALL=C awk -F '"accumulatedGPUTime"=' '{for (i = 2; i <= NF; i++) total += $i} END {printf "%.0f\n", total}')
+# macOS lists the connections apps open to the GPU, which stand in for the processes on it
+gpu_connection_count=$(printf '%s\n' "$gpu_connections" | LC_ALL=C awk '/^\+-o AGXDeviceUserClient/ {count++} END {print count + 0}')
 
-awk -v load="$load" -v cores="$cores" -v free_percent="$free_percent" -v disk_used_percent="$disk_used_percent" 'BEGIN {printf "%.2f %d %d\n", load / cores, 100 - free_percent, disk_used_percent}'
+# A Mac's GPU uses main memory, so its memory reading is the main memory's
+awk -v load="$load" -v cores="$cores" -v free_percent="$free_percent" -v disk_used_percent="$disk_used_percent" -v gpu_nanoseconds_before="$gpu_nanoseconds_before" -v gpu_nanoseconds_after="$gpu_nanoseconds_after" -v gpu_connection_count="$gpu_connection_count" 'BEGIN {printf "%.2f %d %d %d %d %d\n", load / cores, 100 - free_percent, disk_used_percent, 100 * (gpu_nanoseconds_after - gpu_nanoseconds_before) / 1e9, 100 - free_percent, gpu_connection_count}'
