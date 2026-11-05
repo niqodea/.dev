@@ -17,6 +17,6 @@ if [ -n "$existing_pane" ]; then
 fi
 
 # Claude is the pane's process, so the pane and its options go away when Claude exits
-# Only this Claude gets the hooks that report its status to the pane
-new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' "claude --settings $HOME/.tmux-claude-settings.json")
+# Only this Claude gets the hooks and the mod that report its status to the pane
+new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' "claude --settings $HOME/.tmux-claude-settings.json --plugin-dir $HOME/.tmux-claude-mod")
 tmux set-option -p -t "$new_pane" @pane_type claude

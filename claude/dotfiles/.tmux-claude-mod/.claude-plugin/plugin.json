@@ -1,0 +1,1 @@
+{ "name": "tmux-claude", "version": "0.1.0", "description": "Reports to tmux when a permission prompt is answered" }
