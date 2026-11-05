@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-option -p -q -o -t \"$TMUX_PANE\" @claude_idle_since \"$(date +%s)\" \\; set-option -p -t \"$TMUX_PANE\" @status idle \\; wait-for -S state-changed"
+            "command": "if jq -e '.background_tasks | length > 0' >/dev/null; then tmux set-option -p -u -t \"$TMUX_PANE\" @claude_idle_since \\; set-option -p -t \"$TMUX_PANE\" @status running \\; wait-for -S state-changed; else tmux set-option -p -q -o -t \"$TMUX_PANE\" @claude_idle_since \"$(date +%s)\" \\; set-option -p -t \"$TMUX_PANE\" @status idle \\; wait-for -S state-changed; fi"
           }
         ]
       }
@@ -61,6 +61,7 @@
     ],
     "Notification": [
       {
+        "matcher": "permission_prompt|elicitation_dialog",
         "hooks": [
           {
             "type": "command",

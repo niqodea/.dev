@@ -13,6 +13,12 @@ Claude runs in a tmux [special pane](../tmux/README.md#special-panes) of type `c
 Claude reports through hooks whether it is working or waiting for us, and stores the answer in the pane's `@status` option, just as zsh does for its own panes.
 Only the Claude we open in tmux gets these hooks, through the settings file passed with `--settings`, so a Claude started anywhere else leaves tmux alone.
 
+Claude Code fires no hook when we answer a permission prompt, so a mod passed with `--plugin-dir` reports Claude as working again when the call it asked about starts, which it learns from the call's row in the transcript redrawing as running.
+
+A Claude that ends its turn while work it started still runs in the background, like a shell or a subagent, counts as working, since Claude Code wakes it when that work ends.
+This assumes Claude starts no daemon in the background, since nothing tells a shell Claude waits on from one that runs forever: services run through `,dev-services`, outside Claude.
+A Claude that starts one anyway shows as working until the daemon exits.
+
 The status bar shows the key that reaches a waiting Claude: ; for the Claude in this session, w for the one on its [workstation](../tmux/README.md#workstation), ' for a Claude in another session.
 When both Claudes of this session wait, it shows ;.
 M-' lists the waiting Claudes in a popup and moves to the one we pick, a Claude on a workstation shown as its session followed by `[w]`.
