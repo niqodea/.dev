@@ -10,6 +10,9 @@ cargo build --manifest-path="$root/approval/Cargo.toml" --release
 ,copy-in-home "$backup_path" "$root/approval/target/release/approval" .local/bin/,approval
 ,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,approval-answer
 
+cargo build --manifest-path="$root/plain/Cargo.toml" --release
+,copy-in-home "$backup_path" "$root/plain/target/release/plain" .local/bin/,claude-plain
+
 version='2.1.303'
 
 # Each sha256 changes with the version above, and comes from the release's own manifest.json next to the binaries

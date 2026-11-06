@@ -1,0 +1,546 @@
+//! The conversation as the terminal shows it: plain lines, appended and never redrawn, so the
+//! terminal wraps them to its width and copies them whole.
+//!
+//! The input line stays open below the conversation, so the user can type at any time, and the
+//! conversation reaches the terminal above it a whole line at a time. A line shown before it
+//! ended would have to be rewritten in place as the rest of it arrives, and nothing above the
+//! input line is ever rewritten. Claude writes each paragraph as one line, so its prose appears
+//! a paragraph at a time, and the input line's label says what Claude does meanwhile.
+
+use std::collections::{HashMap, HashSet};
+
+use nu_ansi_term::{Color, Style};
+use serde_json::{Map, Value};
+
+use crate::markdown::Highlighter;
+use crate::protocol::{Ask, AskKind, SettingsError, State, ToolResult, ToolUse};
+
+const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
+// Only for failures, since red reads as an error
+const RED: &str = "\x1b[31m";
+// For what Claude did, which supports what Claude wrote
+const DIM: &str = "\x1b[2m";
+const BOLD: &str = "\x1b[1m";
+const RESET: &str = "\x1b[0m";
+/// The background of the user's lines, which sets them apart from Claude's.
+pub const BAR_COLOR: u8 = 236;
+// Erases to the end of the row in the background color that is set, which fills the row's
+// rest with the bar without writing spaces into the text
+const FILL_ROW: &str = "\x1b[K";
+
+// Past this, a tool's input in JSON is noise to read through
+const INPUT_SUMMARY_CHARACTERS: usize = 200;
+
+/// The field that sums up a call of each tool that has one.
+const SUMMARY_FIELDS: [(&str, &str); 10] = [
+    ("Agent", "description"),
+    ("Bash", "command"),
+    ("Edit", "file_path"),
+    // Its ask shows the plan
+    ("ExitPlanMode", "planFilePath"),
+    ("Glob", "pattern"),
+    ("Grep", "pattern"),
+    ("Read", "file_path"),
+    ("WebFetch", "url"),
+    ("WebSearch", "query"),
+    ("Write", "file_path"),
+];
+
+/// The conversation's lines that wait for reedline to print them above the input line, and
+/// what Claude does meanwhile.
+pub struct Output {
+    lines: Vec<String>,
+    /// The start of a line of Claude's reply, which waits for its end.
+    partial: String,
+    position: Position,
+    /// What sets the next line apart from the last one. It is written with that line, so
+    /// nothing the user sends in between can land between the two.
+    pending_break: Option<Break>,
+    status: Status,
+    /// The tool uses whose result repeats what the screen already shows.
+    hidden_results: HashSet<String>,
+    /// The name of each tool use that waits for its result, which names the tool on the
+    /// result's line. Claude can run several tools at once, so a result can come after a line
+    /// of another tool.
+    tool_names: HashMap<String, String>,
+    /// How the user stopped the turn that runs, if they did.
+    interruption: Option<Interruption>,
+    highlighter: Highlighter,
+    /// Reads the terminal's width, none when it cannot tell.
+    read_columns: fn() -> Option<usize>,
+}
+
+/// What Claude does, which the marker in front of the input line shows.
+#[derive(Clone, PartialEq)]
+pub enum Status {
+    /// Claude waits for the user's next message.
+    Idle,
+    Working,
+    Writing,
+    /// Claude runs the tool with this name.
+    Running(String),
+}
+
+/// How the user stopped a turn.
+#[derive(Clone, Copy)]
+pub enum Interruption {
+    /// With Ctrl-C, or by refusing a tool, which the turn's end then says.
+    Stop,
+    /// With a message, which says it already. The turn may instead move its work to the
+    /// background and end without being stopped.
+    Message,
+}
+
+/// Where the conversation stands, which decides what sets the next line apart.
+#[derive(Clone, Copy, PartialEq)]
+enum Position {
+    /// Before the first line, which nothing comes before.
+    Start,
+    /// In a section, which the next line continues when it belongs to the same section.
+    In(Section),
+    /// After the end of a turn, which nothing continues.
+    TurnEnd,
+}
+
+/// What sets a section apart from the one before.
+#[derive(Clone, Copy)]
+enum Break {
+    /// The mark that starts Claude's reply to the user's messages.
+    Reply,
+    Blank,
+}
+
+/// A part of the conversation, set apart from the next part.
+#[derive(Clone, Copy, PartialEq)]
+enum Section {
+    Message,
+    Text,
+    Tools,
+    Notice,
+}
+
+impl Output {
+    pub fn new(read_columns: fn() -> Option<usize>) -> Self {
+        Output {
+            lines: Vec::new(),
+            partial: String::new(),
+            position: Position::Start,
+            pending_break: None,
+            status: Status::Idle,
+            hidden_results: HashSet::new(),
+            tool_names: HashMap::new(),
+            interruption: None,
+            highlighter: Highlighter::new(),
+            read_columns,
+        }
+    }
+
+    pub fn status(&self) -> Status {
+        self.status.clone()
+    }
+
+    /// Takes the lines that wait to be printed above the input line.
+    pub fn take_lines(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.lines)
+    }
+
+    /// Shows the message the user sends, after all that Claude wrote before it, so the
+    /// conversation reads in the order Claude sees it.
+    pub fn show_message(&mut self, text: &str) {
+        // Claude stops mid-line when the message interrupts it, and keeps the line as far as it
+        // got
+        if !self.partial.is_empty() {
+            let line = std::mem::take(&mut self.partial);
+            let colored = self.highlighter.color_line(&line, (self.read_columns)());
+            self.push_all(colored);
+        }
+        // A message follows the line before it, and starts what the reply mark then introduces
+        self.pending_break = None;
+        self.lines
+            .push(format!("{}{}{RESET}", start_bar_row(), marks()));
+        for line in text.split('\n') {
+            self.lines.push(format!("{}{line}{RESET}", start_bar_row()));
+        }
+        self.position = Position::In(Section::Message);
+        self.status = Status::Working;
+        // An interrupt sent as its turn ended had no turn left to stop
+        self.interruption = None;
+    }
+
+    /// Shows the user's answer to what a tool asks, after the question.
+    pub fn show_answer(&mut self, question: &str, text: &str) {
+        self.push(format!("{}{text}{RESET}", answer_label(question)));
+    }
+
+    /// Notes that the user stopped the turn, whose end then says so in the user's terms.
+    pub fn note_interrupt(&mut self, interruption: Interruption) {
+        self.interruption = Some(interruption);
+    }
+
+    /// Hides the result of a tool the user refused, which repeats the refusal.
+    pub fn hide_result(&mut self, tool_use_id: &str) {
+        self.hidden_results.insert(tool_use_id.to_string());
+    }
+
+    pub fn note_state(&mut self, state: State) {
+        match state {
+            State::Idle => self.status = Status::Idle,
+            // What Claude does in its turn says more, once it is known
+            State::Running if self.status == Status::Idle => self.status = Status::Working,
+            // The input line asks the user, which says more than any label
+            State::Running | State::RequiresAction => {}
+        }
+    }
+
+    pub fn show_text(&mut self, text: &str) {
+        self.begin(Section::Text);
+        self.status = Status::Writing;
+        self.partial.push_str(text);
+        while let Some(end) = self.partial.find('\n') {
+            let line: String = self.partial.drain(..=end).collect();
+            let colored = self
+                .highlighter
+                .color_line(line.trim_end_matches('\n'), (self.read_columns)());
+            self.push_all(colored);
+        }
+    }
+
+    pub fn show_text_end(&mut self) {
+        let columns = (self.read_columns)();
+        if !self.partial.is_empty() {
+            let line = std::mem::take(&mut self.partial);
+            let colored = self.highlighter.color_line(&line, columns);
+            self.push_all(colored);
+        }
+        let held = self.highlighter.finish(columns);
+        self.push_all(held);
+        self.status = Status::Working;
+    }
+
+    pub fn show_tool_use(&mut self, tool_use: &ToolUse) {
+        if !tool_use.is_subagent {
+            self.status = Status::Running(tool_use.name.clone());
+        }
+        // Its ask shows the questions, and the input line the answers
+        if tool_use.name == "AskUserQuestion" {
+            self.hidden_results.insert(tool_use.id.clone());
+            return;
+        }
+        if !tool_use.is_subagent {
+            self.tool_names
+                .insert(tool_use.id.clone(), tool_use.name.clone());
+        }
+        self.begin(Section::Tools);
+        let indent = if tool_use.is_subagent { "  " } else { "" };
+        let summary = summarize(&tool_use.name, &tool_use.input);
+        let mut summary_lines = summary.lines();
+        let first = summary_lines.next().unwrap_or_default();
+        self.push(format!("{indent}{BOLD}● {}{RESET} {first}", tool_use.name));
+        for line in summary_lines {
+            self.push(format!("{indent}  {line}"));
+        }
+        if tool_use.name == "Edit" {
+            let removed = read_field(&tool_use.input, "old_string");
+            let added = read_field(&tool_use.input, "new_string");
+            for line in removed.lines() {
+                self.push(format!("{indent}  {RED}- {line}{RESET}"));
+            }
+            for line in added.lines() {
+                self.push(format!("{indent}  {GREEN}+ {line}{RESET}"));
+            }
+        }
+    }
+
+    pub fn show_tool_result(&mut self, result: &ToolResult) {
+        if !result.is_subagent {
+            self.status = Status::Working;
+        }
+        let name = self.tool_names.remove(&result.tool_use_id);
+        // What a subagent did shows in what it reports back to Claude. A tool the interrupt
+        // stopped fails with Claude Code's message to Claude.
+        if result.is_subagent
+            || self.hidden_results.remove(&result.tool_use_id)
+            || (self.interruption.is_some() && result.is_error)
+        {
+            return;
+        }
+        self.begin(Section::Tools);
+        let color = if result.is_error { RED } else { DIM };
+        let text = result.text.as_deref().map_or("(no text)", str::trim);
+        let mut lines = text.lines();
+        let first = lines.next().unwrap_or("(no output)");
+        let more = match lines.count() {
+            0 => String::new(),
+            count => format!(" (+{count} lines)"),
+        };
+        let label = name.map_or_else(String::new, |name| format!("{name}: "));
+        self.push(format!("  {color}⎿ {label}{first}{more}{RESET}"));
+    }
+
+    pub fn show_ask(&mut self, ask: &Ask) {
+        self.begin(Section::Tools);
+        match &ask.kind {
+            AskKind::Permission { reason, .. } => {
+                if let Some(reason) = reason {
+                    self.push(format!("{YELLOW}{}{RESET}", reason.trim()));
+                }
+                // The tool's line shows only the start of an input it has no summary for
+                if !SUMMARY_FIELDS
+                    .iter()
+                    .any(|(tool, _)| *tool == ask.tool_name)
+                {
+                    let input = serde_json::to_string_pretty(&ask.input)
+                        .expect("a JSON object turns back into JSON");
+                    for line in input.lines() {
+                        self.push(format!("{DIM}{line}{RESET}"));
+                    }
+                }
+            }
+            AskKind::Plan(plan) => {
+                let columns = (self.read_columns)();
+                let mut highlighter = Highlighter::new();
+                for line in plan.trim().lines() {
+                    let colored = highlighter.color_line(line, columns);
+                    self.push_all(colored);
+                }
+                let held = highlighter.finish(columns);
+                self.push_all(held);
+            }
+            AskKind::Questions(questions) => {
+                for question in questions {
+                    self.push(format!(
+                        "{BOLD}{}{RESET} {}",
+                        question.header, question.text
+                    ));
+                    for (number, choice) in (1..).zip(&question.options) {
+                        self.push(format!(
+                            "  {number}. {} {DIM}{}{RESET}",
+                            choice.label, choice.description
+                        ));
+                        if let Some(preview) = &choice.preview {
+                            for line in preview.lines() {
+                                self.push(format!("     {DIM}{line}{RESET}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Shows how a turn ended, when it ended before its work was done. Claude Code ends a turn
+    /// the user stopped as one that failed, like any other, so the line says it in the user's
+    /// terms.
+    pub fn show_turn_end(&mut self, failure: Option<&str>) {
+        // A message makes the turn either stop or move its work to the background and end well
+        let line = match (failure, self.interruption.take()) {
+            (None, _) | (Some(_), Some(Interruption::Message)) => None,
+            (Some(_), Some(Interruption::Stop)) => Some("Interrupted".to_string()),
+            (Some(reason), None) => Some(format!("Turn ended: {reason}")),
+        };
+        if let Some(line) = line {
+            self.begin(Section::Notice);
+            self.push(format!("{DIM}{line}{RESET}"));
+        }
+        // A message that waits for its reply still waits when an older turn ends
+        if self.position != Position::In(Section::Message) {
+            self.position = Position::TurnEnd;
+        }
+    }
+
+    pub fn show_settings_errors(&mut self, errors: &[SettingsError]) {
+        self.begin(Section::Notice);
+        for error in errors {
+            let file = error.file.as_deref().unwrap_or("A settings file");
+            self.push(format!(
+                "{RED}Skipped {file}, so none of its settings apply: {} {}{RESET}",
+                error.path, error.message
+            ));
+        }
+    }
+
+    pub fn show_error(&mut self, error: &str) {
+        self.begin(Section::Notice);
+        self.push(format!("{RED}{error}{RESET}"));
+    }
+
+    /// Starts a section, set apart by the next line written: Claude's reply from the user's
+    /// messages with a mark, which tells them apart in copied text too, where colors are gone,
+    /// and another section, or what follows the end of a turn, with a blank line.
+    fn begin(&mut self, section: Section) {
+        let pending_break = match (self.pending_break, self.position) {
+            // A reply that printed nothing yet still starts with its mark
+            (Some(Break::Reply), _) | (_, Position::In(Section::Message)) => Some(Break::Reply),
+            (_, Position::TurnEnd) => Some(Break::Blank),
+            (_, Position::In(current)) if current != section => Some(Break::Blank),
+            (pending_break, Position::Start | Position::In(_)) => pending_break,
+        };
+        self.pending_break = pending_break;
+        self.position = Position::In(section);
+    }
+
+    /// Adds a line, after the break that sets it apart, if one waits.
+    fn push(&mut self, line: String) {
+        match self.pending_break.take() {
+            Some(Break::Reply) => self.lines.push(format!("{DIM}‹‹{RESET}")),
+            Some(Break::Blank) => self.lines.push(String::new()),
+            None => {}
+        }
+        self.lines.push(line);
+    }
+
+    fn push_all(&mut self, lines: Vec<String>) {
+        for line in lines {
+            self.push(line);
+        }
+    }
+}
+
+/// The start of a row on the bar, which fills the whole row.
+pub fn start_bar_row() -> String {
+    let bar = Style::new().on(Color::Fixed(BAR_COLOR)).prefix();
+    format!("{bar}{FILL_ROW}")
+}
+
+/// The marks in front of a message, on a row of their own.
+pub fn marks() -> String {
+    format!("{}››", Color::LightCyan.prefix())
+}
+
+/// The question in front of an answer, on the bar.
+pub fn answer_label(question: &str) -> String {
+    let bar = start_bar_row();
+    let mark = Color::LightCyan.prefix();
+    let question = Color::Yellow.paint(question);
+    format!("{bar}{question}{bar} {mark}›{RESET}{bar} ")
+}
+
+/// The input's summary field for a tool that has one, and its start in JSON otherwise.
+fn summarize(tool: &str, input: &Map<String, Value>) -> String {
+    if let Some((_, field)) = SUMMARY_FIELDS.iter().find(|(name, _)| *name == tool) {
+        return read_field(input, field).to_string();
+    }
+    let json = serde_json::to_string(input).expect("a JSON object turns back into JSON");
+    match json.char_indices().nth(INPUT_SUMMARY_CHARACTERS) {
+        Some((end, _)) => format!("{DIM}{}…{RESET}", &json[..end]),
+        None => format!("{DIM}{json}{RESET}"),
+    }
+}
+
+fn read_field<'a>(input: &'a Map<String, Value>, field: &str) -> &'a str {
+    input.get(field).and_then(Value::as_str).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reply_mark() -> String {
+        format!("{DIM}‹‹{RESET}")
+    }
+
+    fn output_after_message() -> Output {
+        let mut output = Output::new(|| Some(80));
+        output.show_message("Hi");
+        output.take_lines();
+        output
+    }
+
+    #[test]
+    fn a_reply_starts_with_its_mark() {
+        let mut output = output_after_message();
+        output.show_text("Hello.\n");
+        assert_eq!(output.take_lines(), [reply_mark(), "Hello.".to_string()]);
+    }
+
+    #[test]
+    fn a_message_sent_mid_line_follows_what_claude_wrote_of_the_line() {
+        let mut output = output_after_message();
+        output.show_text("Hel");
+        output.show_message("Stop");
+        let lines = output.take_lines();
+        assert_eq!(lines[..2], [reply_mark(), "Hel".to_string()]);
+        assert!(lines[3].ends_with(&format!("Stop{RESET}")));
+    }
+
+    #[test]
+    fn a_reply_that_starts_with_a_tool_starts_with_its_mark() {
+        let mut output = output_after_message();
+        let mut input = Map::new();
+        input.insert("command".to_string(), Value::String("ls".to_string()));
+        output.show_tool_use(&ToolUse {
+            id: "1".to_string(),
+            name: "Bash".to_string(),
+            input,
+            is_subagent: false,
+        });
+        assert_eq!(output.take_lines()[0], reply_mark());
+    }
+
+    #[test]
+    fn a_turn_a_message_stopped_ends_without_a_word() {
+        let mut output = output_after_message();
+        output.show_message("Stop");
+        output.note_interrupt(Interruption::Message);
+        output.take_lines();
+        output.show_turn_end(Some("error_during_execution"));
+        assert_eq!(output.take_lines(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_turn_claude_starts_by_itself_is_set_apart_from_the_turn_before() {
+        let mut output = output_after_message();
+        output.show_text("Hi.\n");
+        output.show_turn_end(None);
+        output.show_text("Done.\n");
+        assert_eq!(
+            output.take_lines(),
+            [
+                reply_mark(),
+                "Hi.".to_string(),
+                String::new(),
+                "Done.".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reply_keeps_its_mark_when_the_turn_its_message_stopped_ends_first() {
+        let mut output = output_after_message();
+        output.show_message("Stop");
+        output.note_interrupt(Interruption::Message);
+        output.take_lines();
+        output.show_turn_end(Some("error_during_execution"));
+        output.show_text("Stopped.\n");
+        assert_eq!(output.take_lines(), [reply_mark(), "Stopped.".to_string()]);
+    }
+
+    fn read_call(id: &str, path: &str) -> ToolUse {
+        let mut input = Map::new();
+        input.insert("file_path".to_string(), Value::String(path.to_string()));
+        ToolUse {
+            id: id.to_string(),
+            name: "Read".to_string(),
+            input,
+            is_subagent: false,
+        }
+    }
+
+    fn result(id: &str, text: &str) -> ToolResult {
+        ToolResult {
+            tool_use_id: id.to_string(),
+            text: Some(text.to_string()),
+            is_error: false,
+            is_subagent: false,
+        }
+    }
+
+    #[test]
+    fn a_result_names_its_tool() {
+        let mut output = output_after_message();
+        output.show_tool_use(&read_call("1", "a.txt"));
+        output.show_tool_result(&result("1", "a"));
+        assert_eq!(output.take_lines()[2], format!("  {DIM}⎿ Read: a{RESET}"));
+    }
+}
