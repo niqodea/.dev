@@ -6,8 +6,24 @@ set -eu
 # Takes the arguments of split-window other than its direction, and prints what split-window prints
 # The same rule as Emacs's split-window-sensibly, with its default split-width-threshold of 160
 # A zoomed pane's width is the window's, while split-window unzooms it and splits it at its own width
-is_wide=$(tmux display-message -p '#{e|>=:#{pane_unzoomed_width},160}')
-if [ "$is_wide" = 1 ]; then
+# TODO: keep only the branch for 3.8 and later once tmux offers prebuilt binaries of 3.8
+case "$(tmux display-message -p '#{version}')" in
+    3.[4-7]*)
+        # window_layout holds the unzoomed layout even while the window is zoomed, and in it each pane is <width>x<height>,<x>,<y>,<id>
+        pane_and_layout=$(tmux display-message -p '#{pane_id} #{window_layout}')
+        pane=${pane_and_layout%% *}
+        layout=${pane_and_layout#* }
+        width=$(echo "$layout" | grep -o -E "[0-9]+x[0-9]+,[0-9]+,[0-9]+,${pane#%}([],}]|$)" | cut -d x -f 1)
+        ;;
+    *)
+        width=$(tmux display-message -p '#{pane_unzoomed_width}')
+        ;;
+esac
+if [ -z "$width" ]; then
+    >&2 echo "No unzoomed width found for the current pane"
+    exit 1
+fi
+if [ "$width" -ge 160 ]; then
     exec tmux split-window -h "$@"
 fi
 exec tmux split-window -v "$@"
