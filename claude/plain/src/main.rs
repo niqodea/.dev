@@ -5,6 +5,7 @@
 //! Arguments are passed on to `claude`, like `--resume <session>`.
 
 mod code;
+mod context;
 mod markdown;
 mod protocol;
 mod render;
@@ -17,9 +18,10 @@ use std::mem::MaybeUninit;
 use std::os::unix::process::CommandExt;
 use std::process::{self, ChildStdin, ChildStdout, ExitCode, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
+use std::time::Instant;
 
 use nu_ansi_term::{Color, Style};
 use reedline::{
@@ -30,6 +32,7 @@ use reedline::{
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
+use context::Context;
 use protocol::{Answer, Ask, AskKind, Command, Event, Question, read_events};
 use render::{BAR_COLOR, Interruption, Output, Status, answer_label, marks, start_bar_row};
 
@@ -61,6 +64,7 @@ struct Session {
     /// What the input line is for, which the prompt reads.
     line: Arc<Mutex<Line>>,
     output: Arc<Mutex<Output>>,
+    context: Arc<Mutex<Context>>,
     inputs: Receiver<Input>,
     break_signal: Arc<AtomicBool>,
     to_claude: ChildStdin,
@@ -75,11 +79,13 @@ enum Line {
     Answer(String),
 }
 
-/// The prompt in front of the input line: for a message, `››` on a row above it, with what
-/// Claude does after them; for an answer, the question.
+/// The prompt in front of the input line: for a message, `››` on a row above it, with the
+/// context's level, red on a cold cache, and what Claude does after them; for an answer, the
+/// question.
 struct Marker {
     line: Arc<Mutex<Line>>,
     output: Arc<Mutex<Output>>,
+    context: Arc<Mutex<Context>>,
 }
 
 /// Draws what the user types on the input line's bar.
@@ -134,9 +140,11 @@ fn run() -> Result<ExitCode, String> {
     let from_claude = claude.stdout.take().expect("stdout is piped");
 
     let output = Arc::new(Mutex::new(Output::new()));
+    let context = Arc::new(Mutex::new(Context::new()));
     let line = Arc::new(Mutex::new(Line::Message));
     let break_signal = Arc::new(AtomicBool::new(false));
     let (input_sender, inputs) = mpsc::channel();
+    let (cold_at_sender, cold_ats) = mpsc::channel();
     let mut editor = create_editor(
         editor_command,
         Arc::clone(&break_signal),
@@ -144,16 +152,23 @@ fn run() -> Result<ExitCode, String> {
     );
 
     let reader_output = Arc::clone(&output);
+    let reader_context = Arc::clone(&context);
     let reader_break_signal = Arc::clone(&break_signal);
     let repaint_signal = editor.repaint_signal();
+    let watcher_repaint_signal = repaint_signal.clone();
     thread::spawn(move || {
         read_claude(
             from_claude,
             &reader_output,
+            &reader_context,
+            &cold_at_sender,
             &input_sender,
             &reader_break_signal,
             &|| repaint_signal.request_repaint(),
         );
+    });
+    thread::spawn(move || {
+        watch_cache(&cold_ats, &|| watcher_repaint_signal.request_repaint());
     });
 
     let _quiet_terminal = QuietTerminal::new()?;
@@ -162,15 +177,18 @@ fn run() -> Result<ExitCode, String> {
         prompt: Marker {
             line: Arc::clone(&line),
             output: Arc::clone(&output),
+            context: Arc::clone(&context),
         },
         line,
         output: Arc::clone(&output),
+        context,
         inputs,
         break_signal,
         to_claude,
         request_count: 0,
     };
     session.send(&Command::GetSettings)?;
+    session.send(&Command::GetContext)?;
     session.run()?;
     // Claude Code ends once its input closes
     drop(session);
@@ -235,10 +253,13 @@ fn create_editor(
         .with_external_printer(Pending(output))
 }
 
-/// Shows what Claude Code reports, and hands the main thread what it has to act on.
+/// Shows what Claude Code reports, notes what its calls hold in the cache, with when the cache
+/// turns cold for the cache's watcher, and hands the main thread what it has to act on.
 fn read_claude(
     from_claude: ChildStdout,
     output: &Mutex<Output>,
+    context: &Mutex<Context>,
+    cold_ats: &Sender<Instant>,
     inputs: &Sender<Input>,
     break_signal: &AtomicBool,
     request_repaint: &dyn Fn(),
@@ -274,6 +295,16 @@ fn read_claude(
                 Event::TurnEnd { failure } => output.show_turn_end(failure.as_deref()),
                 Event::SettingsErrors(errors) => output.show_settings_errors(&errors),
                 Event::State(state) => output.note_state(state),
+                Event::Call(usage) => {
+                    let cold_at = lock(context).note_call(&usage, Instant::now());
+                    // The watcher stops only on the program's way out
+                    let _ = cold_ats.send(cold_at);
+                    request_repaint();
+                }
+                Event::LastCall(usage) => {
+                    lock(context).note_last_call(usage.as_ref());
+                    request_repaint();
+                }
                 Event::Ask(ask) => forward(Input::Ask(ask)),
                 Event::Unsupported {
                     request_id,
@@ -289,6 +320,28 @@ fn read_claude(
         }
     }
     forward(Input::Closed);
+}
+
+/// Repaints the prompt as the cache turns cold, at the latest of the instants `cold_ats` sends,
+/// so the context's level turns red while the user waits.
+fn watch_cache(cold_ats: &Receiver<Instant>, request_repaint: &dyn Fn()) {
+    let mut next_cold_at: Option<Instant> = None;
+    loop {
+        let received = match next_cold_at {
+            Some(cold_at) => {
+                cold_ats.recv_timeout(cold_at.saturating_duration_since(Instant::now()))
+            }
+            None => cold_ats.recv().map_err(RecvTimeoutError::from),
+        };
+        match received {
+            Ok(cold_at) => next_cold_at = Some(cold_at),
+            Err(RecvTimeoutError::Timeout) => {
+                next_cold_at = None;
+                request_repaint();
+            }
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+    }
 }
 
 impl Session {
@@ -314,12 +367,18 @@ impl Session {
                 Err(TryRecvError::Empty) => {}
             }
             draft = match self.read_line(Line::Message, &draft)? {
+                // A message on a cold cache stays on the input line the first time, and the
+                // label says the next Enter sends it
                 Signal::HostCommand(command) if command == SEND => {
                     let text = self.editor.current_buffer_contents().to_string();
-                    if !text.trim().is_empty() {
+                    if text.trim().is_empty() {
+                        String::new()
+                    } else if lock(&self.context).holds_message(Instant::now()) {
+                        text
+                    } else {
                         self.send_message(&text)?;
+                        String::new()
                     }
-                    String::new()
                 }
                 // Ctrl-C on an empty line stops Claude, and on a line with text clears it
                 Signal::HostCommand(command) if command == CTRL_C => {
@@ -550,13 +609,37 @@ impl Prompt for Marker {
     fn render_prompt_left(&self) -> Cow<'_, str> {
         let label = match &*lock(&self.line) {
             Line::Message => {
-                let status = match lock(&self.output).status() {
-                    Status::Idle => String::new(),
-                    Status::Working => format!(" {STATUS_COLOR}working"),
-                    Status::Writing => format!(" {STATUS_COLOR}writing"),
-                    Status::Running(tool) => format!(" {STATUS_COLOR}running {tool}"),
+                let now = Instant::now();
+                // Released before the output is locked, since the output's lock comes first
+                let (level, is_cold, is_cold_confirmed) = {
+                    let context = lock(&self.context);
+                    (
+                        context.level(),
+                        context.is_cold(now),
+                        context.is_cold_confirmed(now),
+                    )
                 };
-                format!("{}{}{status}", start_bar_row(), marks())
+                let level_color = if is_cold {
+                    Color::Red.prefix().to_string()
+                } else {
+                    STATUS_COLOR.to_string()
+                };
+                // ? is a level not known yet
+                let level = level.map_or_else(|| "?".to_string(), |level| level.to_string());
+                let indicators = format!("{} {level_color}T{level}", marks());
+                let state = if is_cold_confirmed {
+                    Some("cold, enter sends".to_string())
+                } else {
+                    match lock(&self.output).status() {
+                        Status::Idle => None,
+                        Status::Working => Some("working".to_string()),
+                        Status::Writing => Some("writing".to_string()),
+                        Status::Running(tool) => Some(format!("running {tool}")),
+                    }
+                };
+                let state =
+                    state.map_or_else(String::new, |state| format!(" {STATUS_COLOR}│ {state}"));
+                format!("{}{indicators}{state}", start_bar_row())
             }
             Line::Answer(question) => answer_label(question),
         };

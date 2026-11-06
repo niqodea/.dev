@@ -2,12 +2,15 @@
 //! the events read from what it writes, and the commands written back.
 //! Ref: sdk.d.ts in the npm package @anthropic-ai/claude-agent-sdk, which types every message
 
+use std::time::Duration;
+
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::{Map, Value, json};
 
-/// The id of the settings request, the one request sent before the first message
+/// The ids of the requests sent before the first message
 const SETTINGS_REQUEST_ID: &str = "settings";
+const CONTEXT_REQUEST_ID: &str = "context";
 
 /// Something Claude Code reported.
 pub enum Event {
@@ -27,6 +30,10 @@ pub enum Event {
     },
     /// Settings files Claude Code skipped, so none of their rules or hooks apply.
     SettingsErrors(Vec<SettingsError>),
+    /// A call of Claude's to the API, whose reply starts.
+    Call(Usage),
+    /// The last call of the session as Claude Code starts it, none in a new session.
+    LastCall(Option<Usage>),
     /// A request this client has no answer for. Claude Code waits on it until it is refused.
     Unsupported {
         request_id: String,
@@ -41,6 +48,14 @@ pub enum State {
     Idle,
     Running,
     RequiresAction,
+}
+
+/// What a call of Claude's read and wrote.
+pub struct Usage {
+    /// The tokens of the context the call read.
+    pub tokens: u64,
+    /// The TTL of what the call wrote to the cache, none when it wrote nothing or did not say.
+    pub cache_ttl: Option<Duration>,
 }
 
 pub struct ToolUse {
@@ -144,6 +159,10 @@ pub enum Command<'a> {
         message_id: &'a str,
     },
     GetSettings,
+    /// Asks for the context's usage, which tells the last call of a resumed session. The
+    /// summary comes from that call's usage, where the full answer would count each part of
+    /// the context with the API.
+    GetContext,
     Refuse {
         request_id: &'a str,
         subtype: &'a str,
@@ -208,6 +227,11 @@ impl Command<'_> {
                 "request_id": SETTINGS_REQUEST_ID,
                 "request": {"subtype": "get_settings"},
             }),
+            Command::GetContext => json!({
+                "type": "control_request",
+                "request_id": CONTEXT_REQUEST_ID,
+                "request": {"subtype": "get_context_usage", "detail": "summary"},
+            }),
             Command::Refuse {
                 request_id,
                 subtype,
@@ -237,6 +261,11 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
                 },
             parent_tool_use_id: None,
         } => vec![Event::Text(text)],
+        // A subagent calls the API with a context and cache of its own
+        Message::StreamEvent {
+            event: StreamEvent::MessageStart { message },
+            parent_tool_use_id: None,
+        } => vec![Event::Call(message.usage.into())],
         // Claude Code sends each block whole once it has streamed it, so the text of a block
         // already arrived piece by piece
         Message::Assistant {
@@ -298,6 +327,13 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
             }
         }
         Message::ControlResponse {
+            response:
+                Reply::Success {
+                    request_id,
+                    response,
+                },
+        } if request_id == CONTEXT_REQUEST_ID => read_context_usage(response)?,
+        Message::ControlResponse {
             response: Reply::Error { request_id, error },
         } => return Err(format!("Claude Code refused request {request_id}: {error}")),
         Message::Result { subtype } if subtype == "success" => {
@@ -316,6 +352,14 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
         | Message::Other => vec![],
     };
     Ok(events)
+}
+
+/// The last call of the session, which the context's usage tells. A session without a call has
+/// no usage yet.
+fn read_context_usage(response: Option<Value>) -> Result<Vec<Event>, String> {
+    let context: ContextUsage = serde_json::from_value(response.unwrap_or_default())
+        .map_err(|error| format!("Unreadable context usage from Claude Code: {error}"))?;
+    Ok(vec![Event::LastCall(context.api_usage.map(Usage::from))])
 }
 
 fn read_request(request_id: String, request: Value) -> Result<Event, String> {
@@ -401,6 +445,9 @@ enum System {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum StreamEvent {
+    MessageStart {
+        message: StartedMessage,
+    },
     ContentBlockDelta {
         delta: Delta,
     },
@@ -416,6 +463,57 @@ enum Delta {
     },
     #[serde(other)]
     Other,
+}
+
+#[derive(Deserialize)]
+struct StartedMessage {
+    usage: ApiUsage,
+}
+
+/// The usage the API reports for a call. Each count is absent or null where the API leaves it
+/// out, which counts as none.
+#[derive(Deserialize)]
+struct ApiUsage {
+    #[serde(default)]
+    input_tokens: Option<u64>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<u64>,
+    #[serde(default)]
+    cache_read_input_tokens: Option<u64>,
+    /// What the call wrote to the cache, split by TTL.
+    #[serde(default)]
+    cache_creation: Option<CacheCreation>,
+}
+
+#[derive(Deserialize)]
+struct CacheCreation {
+    #[serde(default)]
+    ephemeral_5m_input_tokens: Option<u64>,
+    #[serde(default)]
+    ephemeral_1h_input_tokens: Option<u64>,
+}
+
+impl From<ApiUsage> for Usage {
+    fn from(usage: ApiUsage) -> Self {
+        let tokens = [
+            usage.input_tokens,
+            usage.cache_creation_input_tokens,
+            usage.cache_read_input_tokens,
+        ]
+        .into_iter()
+        .flatten()
+        .sum();
+        let cache_ttl = usage.cache_creation.and_then(|creation| {
+            if creation.ephemeral_1h_input_tokens.unwrap_or_default() > 0 {
+                Some(Duration::from_hours(1))
+            } else if creation.ephemeral_5m_input_tokens.unwrap_or_default() > 0 {
+                Some(Duration::from_mins(5))
+            } else {
+                None
+            }
+        });
+        Usage { tokens, cache_ttl }
+    }
 }
 
 #[derive(Deserialize)]
@@ -522,6 +620,12 @@ struct Settings {
 }
 
 #[derive(Deserialize)]
+struct ContextUsage {
+    #[serde(rename = "apiUsage")]
+    api_usage: Option<ApiUsage>,
+}
+
+#[derive(Deserialize)]
 struct CanUseTool {
     tool_name: String,
     input: Map<String, Value>,
@@ -548,6 +652,68 @@ struct PlanInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn message_start(parent_tool_use_id: &Value) -> String {
+        json!({
+            "type": "stream_event",
+            "parent_tool_use_id": parent_tool_use_id,
+            "event": {"type": "message_start", "message": {"usage": {
+                "input_tokens": 2,
+                "cache_creation_input_tokens": 12_141,
+                "cache_read_input_tokens": 9_896,
+                "cache_creation": {"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 12_141},
+            }}},
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn a_reply_of_claude_tells_the_context_and_the_cache_ttl() {
+        let events = read_events(&message_start(&Value::Null)).expect("a readable line");
+        let [Event::Call(usage)] = events.as_slice() else {
+            panic!("a call");
+        };
+        assert_eq!(usage.tokens, 22_039);
+        assert_eq!(usage.cache_ttl, Some(Duration::from_hours(1)));
+    }
+
+    #[test]
+    fn a_reply_of_a_subagent_tells_nothing_of_the_context() {
+        let events = read_events(&message_start(&json!("toolu_1"))).expect("a readable line");
+        assert!(events.is_empty());
+    }
+
+    fn context_response(api_usage: &Value) -> String {
+        json!({
+            "type": "control_response",
+            "response": {"subtype": "success", "request_id": CONTEXT_REQUEST_ID, "response": {
+                "totalTokens": 13_351,
+                "apiUsage": api_usage,
+            }},
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn a_new_session_has_no_call_to_tell() {
+        let events = read_events(&context_response(&Value::Null)).expect("a readable line");
+        assert!(matches!(events.as_slice(), [Event::LastCall(None)]));
+    }
+
+    #[test]
+    fn a_resumed_session_tells_its_last_call() {
+        let api_usage = json!({
+            "input_tokens": 2,
+            "output_tokens": 5,
+            "cache_creation_input_tokens": 12_141,
+            "cache_read_input_tokens": 9_896,
+        });
+        let events = read_events(&context_response(&api_usage)).expect("a readable line");
+        let [Event::LastCall(Some(usage))] = events.as_slice() else {
+            panic!("a resumed call");
+        };
+        assert_eq!(usage.tokens, 22_039);
+    }
 
     #[test]
     fn an_exit_plan_mode_request_asks_about_its_plan() {
