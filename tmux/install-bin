@@ -3,7 +3,32 @@
 set -eu
 
 backup_path="$1"
+os="$2"
 
-,install-package tmux
-tmux_path="$(,get-package-path tmux)"
-,link-in-local-bin "$backup_path" "$tmux_path" tmux
+if [ "$os" = 'macos' ]; then
+    ,install-package tmux
+    ,link-in-local-bin "$backup_path" "$(,get-package-path tmux)" tmux
+    exit
+fi
+
+tmux_version='v3.7c'
+
+# Each download's sha256 changes with the version above, and comes from the release's own digest on GitHub
+case "$(uname -m)" in
+    'aarch64')
+        tmux_platform='linux-arm64'
+        tmux_sha256='29dcb978da2a4b0cf6790f9e004865dac239a3ba03bbf776dddacce23d03831b'
+        ;;
+    'x86_64')
+        tmux_platform='linux-x86_64'
+        tmux_sha256='cc56bd1cc873eb6089c615f0496b072385bda8a6d944069f38564a5d49c128aa'
+        ;;
+    *)
+        >&2 echo "Unsupported processor: $(uname -m)"
+        exit 1
+        ;;
+esac
+
+# Debian's tmux is too old for this setup, and tmux's own builds are static binaries
+tmux_path="$(,download-release "https://github.com/tmux/tmux-builds/releases/download/$tmux_version/tmux-${tmux_version#v}-$tmux_platform.tar.gz" "$tmux_sha256" tmux "$tmux_version")"
+,link-in-local-bin "$backup_path" "$tmux_path/tmux" tmux
