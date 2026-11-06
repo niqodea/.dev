@@ -59,12 +59,6 @@ impl Table {
         })
     }
 
-    /// How many columns of the terminal the laid-out table takes.
-    pub fn width(&self) -> usize {
-        // Each cell has a space on both sides and a pipe after it, and the row starts with one
-        self.widths.iter().map(|width| width + 3).sum::<usize>() + 1
-    }
-
     /// The lines of the laid-out table, header in bold and the body's cells as `color_cell`
     /// colors them.
     pub fn render(&self, color_cell: impl Fn(&str) -> String) -> Vec<String> {

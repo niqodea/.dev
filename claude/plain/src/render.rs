@@ -67,8 +67,6 @@ pub struct Output {
     /// How the user stopped the turn that runs, if they did.
     interruption: Option<Interruption>,
     highlighter: Highlighter,
-    /// Reads the terminal's width, none when it cannot tell.
-    read_columns: fn() -> Option<usize>,
 }
 
 /// What Claude does, which the marker in front of the input line shows.
@@ -121,7 +119,7 @@ enum Section {
 }
 
 impl Output {
-    pub fn new(read_columns: fn() -> Option<usize>) -> Self {
+    pub fn new() -> Self {
         Output {
             lines: Vec::new(),
             partial: String::new(),
@@ -132,7 +130,6 @@ impl Output {
             tool_names: HashMap::new(),
             interruption: None,
             highlighter: Highlighter::new(),
-            read_columns,
         }
     }
 
@@ -152,7 +149,7 @@ impl Output {
         // got
         if !self.partial.is_empty() {
             let line = std::mem::take(&mut self.partial);
-            let colored = self.highlighter.color_line(&line, (self.read_columns)());
+            let colored = self.highlighter.color_line(&line);
             self.push_all(colored);
         }
         // A message follows the line before it, and starts what the reply mark then introduces
@@ -199,21 +196,18 @@ impl Output {
         self.partial.push_str(text);
         while let Some(end) = self.partial.find('\n') {
             let line: String = self.partial.drain(..=end).collect();
-            let colored = self
-                .highlighter
-                .color_line(line.trim_end_matches('\n'), (self.read_columns)());
+            let colored = self.highlighter.color_line(line.trim_end_matches('\n'));
             self.push_all(colored);
         }
     }
 
     pub fn show_text_end(&mut self) {
-        let columns = (self.read_columns)();
         if !self.partial.is_empty() {
             let line = std::mem::take(&mut self.partial);
-            let colored = self.highlighter.color_line(&line, columns);
+            let colored = self.highlighter.color_line(&line);
             self.push_all(colored);
         }
-        let held = self.highlighter.finish(columns);
+        let held = self.highlighter.finish();
         self.push_all(held);
         self.status = Status::Working;
     }
@@ -298,13 +292,12 @@ impl Output {
                 }
             }
             AskKind::Plan(plan) => {
-                let columns = (self.read_columns)();
                 let mut highlighter = Highlighter::new();
                 for line in plan.trim().lines() {
-                    let colored = highlighter.color_line(line, columns);
+                    let colored = highlighter.color_line(line);
                     self.push_all(colored);
                 }
-                let held = highlighter.finish(columns);
+                let held = highlighter.finish();
                 self.push_all(held);
             }
             AskKind::Questions(questions) => {
@@ -441,7 +434,7 @@ mod tests {
     }
 
     fn output_after_message() -> Output {
-        let mut output = Output::new(|| Some(80));
+        let mut output = Output::new();
         output.show_message("Hi");
         output.take_lines();
         output

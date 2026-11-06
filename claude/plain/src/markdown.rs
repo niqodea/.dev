@@ -34,21 +34,20 @@ impl Highlighter {
     }
 
     /// Colors the next line, given without its line ending, and returns the lines it completes:
-    /// none while it holds a table's row, and the table's lines once a line ends the table. A
-    /// table is laid out only if it fits in `columns`, the terminal's width when it is known.
-    pub fn color_line(&mut self, line: &str, columns: Option<usize>) -> Vec<String> {
+    /// none while it holds a table's row, and the table's lines once a line ends the table.
+    pub fn color_line(&mut self, line: &str) -> Vec<String> {
         if self.code_block.is_none() && line.trim_start().starts_with('|') {
             self.table.push(line.to_string());
             return vec![];
         }
-        let mut lines = self.take_table(columns);
+        let mut lines = self.take_table();
         lines.push(self.color_other(line));
         lines
     }
 
     /// Returns the lines still held, since the block ended, and starts afresh for the next one.
-    pub fn finish(&mut self, columns: Option<usize>) -> Vec<String> {
-        let lines = self.take_table(columns);
+    pub fn finish(&mut self) -> Vec<String> {
+        let lines = self.take_table();
         *self = Highlighter::new();
         lines
     }
@@ -78,13 +77,13 @@ impl Highlighter {
         }
     }
 
-    /// The table rows held, laid out when they make a table that fits in `columns`, and as they
-    /// were written otherwise.
-    fn take_table(&mut self, columns: Option<usize>) -> Vec<String> {
+    /// The table rows held, laid out when they make a table, and as they were written otherwise.
+    /// A table wider than the terminal is laid out too, and the terminal wraps its lines.
+    fn take_table(&mut self) -> Vec<String> {
         let lines = std::mem::take(&mut self.table);
-        match (Table::read(&lines), columns) {
-            (Some(table), Some(columns)) if table.width() <= columns => table.render(color_inline),
-            _ => lines,
+        match Table::read(&lines) {
+            Some(table) => table.render(color_inline),
+            None => lines,
         }
     }
 }
@@ -162,9 +161,9 @@ mod tests {
         let mut highlighter = Highlighter::new();
         let mut colored: Vec<String> = lines
             .iter()
-            .flat_map(|line| highlighter.color_line(line, Some(80)))
+            .flat_map(|line| highlighter.color_line(line))
             .collect();
-        colored.extend(highlighter.finish(Some(80)));
+        colored.extend(highlighter.finish());
         colored
     }
 
@@ -260,9 +259,11 @@ mod tests {
     }
 
     #[test]
-    fn a_table_wider_than_the_terminal_stays_as_written() {
-        let row = format!("| {} |", "x".repeat(100));
-        assert_eq!(color(&[&row, "|---|"]), [row.as_str(), "|---|"]);
+    fn a_wide_table_is_laid_out_too() {
+        let row = format!("| {} |", "x".repeat(200));
+        let lines = vec![row.clone(), "|---|".to_string()];
+        let laid_out = Table::read(&lines).expect("a table").render(color_inline);
+        assert_eq!(color(&[&row, "|---|"]), laid_out);
     }
 
     #[test]

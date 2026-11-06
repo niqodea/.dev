@@ -133,7 +133,7 @@ fn run() -> Result<ExitCode, String> {
     let to_claude = claude.stdin.take().expect("stdin is piped");
     let from_claude = claude.stdout.take().expect("stdout is piped");
 
-    let output = Arc::new(Mutex::new(Output::new(read_terminal_columns)));
+    let output = Arc::new(Mutex::new(Output::new()));
     let line = Arc::new(Mutex::new(Line::Message));
     let break_signal = Arc::new(AtomicBool::new(false));
     let (input_sender, inputs) = mpsc::channel();
@@ -627,19 +627,6 @@ fn refuse_and_stop() -> Answer {
         message: REFUSAL.to_string(),
         interrupt: true,
     }
-}
-
-/// The terminal's width, none when stdout is no terminal.
-fn read_terminal_columns() -> Option<usize> {
-    let mut size = libc::winsize {
-        ws_row: 0,
-        ws_col: 0,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    // SAFETY: TIOCGWINSZ writes a winsize to the pointer, which points at one
-    let status = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &raw mut size) };
-    (status != -1).then_some(usize::from(size.ws_col))
 }
 
 /// Locks a value the threads share. A thread that panicked while holding it ends the program
