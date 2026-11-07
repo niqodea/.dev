@@ -9,11 +9,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use crossterm::cursor::SetCursorStyle;
 use nu_ansi_term::{Color, Style};
 use reedline::{
-    ExternalOutput, Highlighter, KeyCode, KeyModifiers, Prompt, PromptEditMode,
-    PromptHistorySearch, Reedline, ReedlineEvent, StyledText, Vi, default_vi_insert_keybindings,
-    default_vi_normal_keybindings, default_vi_visual_keybindings,
+    CursorConfig, EditCommand, ExternalOutput, Highlighter, KeyCode, KeyModifiers, Prompt,
+    PromptEditMode, PromptHistorySearch, PromptViMode, Reedline, ReedlineEvent, StyledText, Vi,
+    default_vi_insert_keybindings, default_vi_normal_keybindings, default_vi_visual_keybindings,
 };
 
 use crate::limits::{Level, NEAR_BOUNDS_PASSED};
@@ -146,8 +147,9 @@ impl Prompt for Marker {
     }
 }
 
-/// The input line: vi keys, Enter, Ctrl-C and Ctrl-D as host commands, the bar, V in normal mode
-/// for the editor, and the lines of `output` printed above it.
+/// The input line: vi keys with the cursor's shape for the mode, Enter, Ctrl-C and Ctrl-D as host
+/// commands, the bar, V in normal mode for the editor, and the lines of `output` printed above
+/// it.
 pub fn create_editor(
     editor_command: String,
     break_signal: Arc<AtomicBool>,
@@ -180,17 +182,30 @@ pub fn create_editor(
         // V opens the editor, in place of reedline's Ctrl-O
         keys.remove_binding(KeyModifiers::CONTROL, KeyCode::Char('o'));
     }
-    // reedline's vi mode looks up a key with its letter in lower case
+    // reedline's vi mode looks up a key with its letter in lower case. The text from the editor
+    // is a message to add to or send, so typing goes on in insert mode at the text's end
     normal_keys.add_binding(
         KeyModifiers::SHIFT,
         KeyCode::Char('v'),
-        ReedlineEvent::OpenEditor,
+        ReedlineEvent::Multiple(vec![
+            ReedlineEvent::OpenEditor,
+            ReedlineEvent::SwitchMode(PromptEditMode::Vi(PromptViMode::Insert)),
+            ReedlineEvent::Edit(vec![EditCommand::MoveToEnd { select: false }]),
+        ]),
     );
     Reedline::create()
         .with_edit_mode(Box::new(Vi::new(insert_keys, normal_keys, visual_keys)))
         // Like vim, the cursor of normal mode stays on its line, so `h` stops at the line's start
         // and leaving insert mode on an empty line keeps the cursor there
         .with_cross_line_cursor(false)
+        // Like vim, a bar in insert mode and a block in the others. reedline puts back the
+        // terminal's own cursor when it is dropped, which a killed process skips: the shape then
+        // stays, along with the raw mode reedline holds while it reads, until `reset`
+        .with_cursor_config(CursorConfig {
+            vi_insert: Some(SetCursorStyle::SteadyBar),
+            vi_normal: Some(SetCursorStyle::SteadyBlock),
+            ..CursorConfig::default()
+        })
         .with_highlighter(Box::new(OnBar))
         .use_bracketed_paste(true)
         .with_buffer_editor(

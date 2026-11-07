@@ -5,6 +5,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
+# Only for the cursor's shapes, at the version reedline uses
+crossterm = "0.29"
 libc = "0.2"
 nu-ansi-term = "0.50"
 # A prompt row of its own stays on screen above every printed line in reedline 0.52.1, which
