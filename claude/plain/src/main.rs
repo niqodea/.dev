@@ -290,6 +290,7 @@ fn read_claude(
             match event {
                 Event::Text(text) => output.show_text(&text),
                 Event::TextEnd => output.show_text_end(),
+                Event::ApiError(text) => output.show_error(&text),
                 Event::ToolUse(tool_use) => output.show_tool_use(&tool_use),
                 Event::ToolResult(result) => output.show_tool_result(&result),
                 Event::TurnEnd { failure } => output.show_turn_end(failure.as_deref()),

@@ -6,6 +6,4 @@
 
 - ,claude-plain: say when Claude Code ends, with its exit status and error output, since the client now exits without a word
 
-- ,claude-plain: show API errors, which Claude Code sends as one whole reply without streamed text, so nothing appears
-
 - ,claude-plain: check live that the context level turns red when the cache expires after an hour idle

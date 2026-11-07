@@ -18,6 +18,8 @@ pub enum Event {
     Text(String),
     /// The end of a block of the reply, whose pieces arrived as `Text`.
     TextEnd,
+    /// A call to the API that failed, with Claude Code's words for it, in place of a reply.
+    ApiError(String),
     ToolUse(ToolUse),
     ToolResult(ToolResult),
     /// A tool that waits for the user's answer before it runs.
@@ -266,24 +268,31 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
             event: StreamEvent::MessageStart { message },
             parent_tool_use_id: None,
         } => vec![Event::Call(message.usage.into())],
+        // Claude Code sends an API error as a reply of its own making, whole and never streamed
+        Message::Assistant {
+            message,
+            parent_tool_use_id: None,
+            error: Some(_),
+        } => vec![Event::ApiError(message.content.into_text())],
         // Claude Code sends each block whole once it has streamed it, so the text of a block
         // already arrived piece by piece
         Message::Assistant {
             message,
             parent_tool_use_id,
+            error: _,
         } => message
             .content
             .into_blocks()
             .into_iter()
             .filter_map(|block| match block {
-                Block::Text {} if parent_tool_use_id.is_none() => Some(Event::TextEnd),
+                Block::Text { .. } if parent_tool_use_id.is_none() => Some(Event::TextEnd),
                 Block::ToolUse { id, name, input } => Some(Event::ToolUse(ToolUse {
                     id,
                     name,
                     input,
                     is_subagent: parent_tool_use_id.is_some(),
                 })),
-                Block::Text {} | Block::ToolResult { .. } | Block::Other => None,
+                Block::Text { .. } | Block::ToolResult { .. } | Block::Other => None,
             })
             .collect(),
         Message::User {
@@ -304,7 +313,7 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
                     is_error,
                     is_subagent: parent_tool_use_id.is_some(),
                 })),
-                Block::Text {} | Block::ToolUse { .. } | Block::Other => None,
+                Block::Text { .. } | Block::ToolUse { .. } | Block::Other => None,
             })
             .collect(),
         Message::ControlRequest {
@@ -317,15 +326,7 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
                     request_id,
                     response,
                 },
-        } if request_id == SETTINGS_REQUEST_ID => {
-            let settings: Settings = serde_json::from_value(response.unwrap_or_default())
-                .map_err(|error| format!("Unreadable settings from Claude Code: {error}"))?;
-            if settings.errors.is_empty() {
-                vec![]
-            } else {
-                vec![Event::SettingsErrors(settings.errors)]
-            }
-        }
+        } if request_id == SETTINGS_REQUEST_ID => read_settings(response)?,
         Message::ControlResponse {
             response:
                 Reply::Success {
@@ -352,6 +353,17 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
         | Message::Other => vec![],
     };
     Ok(events)
+}
+
+/// The settings files Claude Code skipped, none when it read them all.
+fn read_settings(response: Option<Value>) -> Result<Vec<Event>, String> {
+    let settings: Settings = serde_json::from_value(response.unwrap_or_default())
+        .map_err(|error| format!("Unreadable settings from Claude Code: {error}"))?;
+    if settings.errors.is_empty() {
+        Ok(vec![])
+    } else {
+        Ok(vec![Event::SettingsErrors(settings.errors)])
+    }
 }
 
 /// The last call of the session, which the context's usage tells. A session without a call has
@@ -411,6 +423,8 @@ enum Message {
     Assistant {
         message: Body,
         parent_tool_use_id: Option<String>,
+        /// The kind of API error the message reports, on a message Claude Code makes for one.
+        error: Option<String>,
     },
     User {
         message: Body,
@@ -537,12 +551,27 @@ impl Content {
             Content::Text(_) => vec![],
         }
     }
+
+    /// The text of the content's text blocks, a line apart.
+    fn into_text(self) -> String {
+        let texts: Vec<String> = self
+            .into_blocks()
+            .into_iter()
+            .filter_map(|block| match block {
+                Block::Text { text } => Some(text),
+                Block::ToolUse { .. } | Block::ToolResult { .. } | Block::Other => None,
+            })
+            .collect();
+        texts.join("\n")
+    }
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Block {
-    Text {},
+    Text {
+        text: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -713,6 +742,22 @@ mod tests {
             panic!("a resumed call");
         };
         assert_eq!(usage.tokens, 22_039);
+    }
+
+    #[test]
+    fn an_api_error_tells_its_text() {
+        let line = json!({
+            "type": "assistant",
+            "parent_tool_use_id": null,
+            "error": "model_not_found",
+            "message": {"content": [{"type": "text", "text": "There's an issue with the selected model"}]},
+        })
+        .to_string();
+        let events = read_events(&line).expect("a readable line");
+        let [Event::ApiError(text)] = events.as_slice() else {
+            panic!("an API error");
+        };
+        assert_eq!(text, "There's an issue with the selected model");
     }
 
     #[test]
