@@ -50,6 +50,12 @@ To always use the subscription, add this to `~/.claude/settings.json`, which emp
 Claude Code's [headless docs](https://code.claude.com/docs/en/headless#start-faster-with-bare-mode) say `--bare` will become the default for `-p` in a future release.
 Bare mode ignores the subscription login, as well as CLAUDE.md files, hooks, plugins and auto-memory, so from that release `,claude-plain` needs whatever turns it back off.
 
+#### Design
+
+Everything `,claude-plain` shows is characters on screen, so it copies along with the rest of the scrollback.
+The one exception is the input line's editing state, like vi's mode: only the person typing needs it, and only while typing, so it may show without characters, like with the cursor's shape.
+The test is whether it would matter to someone reading the scrollback later.
+
 ### Approval
 
 Claude only reads.
