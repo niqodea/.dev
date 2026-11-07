@@ -61,15 +61,21 @@ enum Input {
     Closed,
 }
 
+/// What the threads share, behind one lock, so that no lock waits on another.
+struct Shared {
+    /// What the input line is for, which the prompt reads.
+    line: Line,
+    output: Output,
+    context: Context,
+    limits: Limits,
+}
+
 /// The terminal's side of the session: the input line, and what it shows of Claude's.
 struct Session {
     editor: Reedline,
     /// The prompt in front of the open input line.
     prompt: Marker,
-    /// What the input line is for, which the prompt reads.
-    line: Arc<Mutex<Line>>,
-    output: Arc<Mutex<Output>>,
-    context: Arc<Mutex<Context>>,
+    shared: Arc<Mutex<Shared>>,
     inputs: Receiver<Input>,
     break_signal: Arc<AtomicBool>,
 }
@@ -104,18 +110,13 @@ enum Line {
 /// context's level, marked and red on a cold cache, the levels of the plan's usage limits, and
 /// what Claude does after them; for an answer, the question; at the end, the work Claude still
 /// does.
-struct Marker {
-    line: Arc<Mutex<Line>>,
-    output: Arc<Mutex<Output>>,
-    context: Arc<Mutex<Context>>,
-    limits: Arc<Mutex<Limits>>,
-}
+struct Marker(Arc<Mutex<Shared>>);
 
 /// Draws what the user types on the input line's bar.
 struct OnBar;
 
 /// The lines of the output that wait for reedline, which prints them above the input line.
-struct Pending(Arc<Mutex<Output>>);
+struct Pending(Arc<Mutex<Shared>>);
 
 /// Keeps the terminal from echoing keys, from holding them for a whole line, and from turning
 /// Ctrl-C into a signal, until it is dropped. The input line reads keys this way while it is
@@ -167,22 +168,22 @@ fn run() -> Result<ExitCode, String> {
     let from_claude = claude.stdout.take().expect("stdout is piped");
     let errors_from_claude = claude.stderr.take().expect("stderr is piped");
 
-    let output = Arc::new(Mutex::new(Output::new()));
-    let context = Arc::new(Mutex::new(Context::new()));
-    let limits = Arc::new(Mutex::new(Limits::new()));
-    let line = Arc::new(Mutex::new(Line::Message));
+    let shared = Arc::new(Mutex::new(Shared {
+        line: Line::Message,
+        output: Output::new(),
+        context: Context::new(),
+        limits: Limits::new(),
+    }));
     let break_signal = Arc::new(AtomicBool::new(false));
     let (input_sender, inputs) = mpsc::channel();
     let (cold_at_sender, cold_ats) = mpsc::channel();
     let mut editor = create_editor(
         editor_command,
         Arc::clone(&break_signal),
-        Arc::clone(&output),
+        Arc::clone(&shared),
     );
 
-    let reader_output = Arc::clone(&output);
-    let reader_context = Arc::clone(&context);
-    let reader_limits = Arc::clone(&limits);
+    let reader_shared = Arc::clone(&shared);
     let reader_break_signal = Arc::clone(&break_signal);
     let repaint_signal = editor.repaint_signal();
     let watcher_repaint_signal = repaint_signal.clone();
@@ -190,9 +191,7 @@ fn run() -> Result<ExitCode, String> {
     let reader = thread::spawn(move || {
         read_claude(
             from_claude,
-            &reader_output,
-            &reader_context,
-            &reader_limits,
+            &reader_shared,
             &cold_at_sender,
             &|input| {
                 // The main thread stops reading only on its way out
@@ -202,9 +201,9 @@ fn run() -> Result<ExitCode, String> {
             &|| repaint_signal.request_repaint(),
         );
     });
-    let errors_output = Arc::clone(&output);
+    let errors_shared = Arc::clone(&shared);
     let errors_reader = thread::spawn(move || {
-        read_claude_errors(errors_from_claude, &errors_output, &|| {
+        read_claude_errors(errors_from_claude, &errors_shared, &|| {
             errors_repaint_signal.request_repaint();
         });
     });
@@ -216,15 +215,8 @@ fn run() -> Result<ExitCode, String> {
     let conversation = Conversation {
         session: Session {
             editor,
-            prompt: Marker {
-                line: Arc::clone(&line),
-                output: Arc::clone(&output),
-                context: Arc::clone(&context),
-                limits,
-            },
-            line,
-            output: Arc::clone(&output),
-            context,
+            prompt: Marker(Arc::clone(&shared)),
+            shared: Arc::clone(&shared),
             inputs,
             break_signal,
         },
@@ -235,7 +227,7 @@ fn run() -> Result<ExitCode, String> {
     let result = conversation
         .run()
         .and_then(|ending| ending.map_or(Ok(()), Ending::run));
-    end(claude, [reader, errors_reader], &output, result)
+    end(claude, [reader, errors_reader], &shared, result)
 }
 
 /// Ends the session the user or Claude Code ended, or that failed with `result`'s error, and
@@ -244,7 +236,7 @@ fn run() -> Result<ExitCode, String> {
 fn end(
     mut claude: process::Child,
     readers: [JoinHandle<()>; 2],
-    output: &Mutex<Output>,
+    shared: &Mutex<Shared>,
     result: Result<(), String>,
 ) -> Result<ExitCode, String> {
     let status = claude
@@ -257,7 +249,7 @@ fn end(
     for reader in readers {
         let _ = reader.join();
     }
-    let mut output = lock(output);
+    let output = &mut lock(shared).output;
     let code = match result {
         Ok(()) => exit_code(status),
         Err(error) => {
@@ -294,7 +286,7 @@ fn exit_code(status: ExitStatus) -> ExitCode {
 fn create_editor(
     editor_command: String,
     break_signal: Arc<AtomicBool>,
-    output: Arc<Mutex<Output>>,
+    shared: Arc<Mutex<Shared>>,
 ) -> Reedline {
     let mut insert_keys = default_vi_insert_keybindings();
     let mut normal_keys = default_vi_normal_keybindings();
@@ -335,16 +327,14 @@ fn create_editor(
             env::temp_dir().join(format!("claude-plain-{}.md", process::id())),
         )
         .with_break_signal(break_signal)
-        .with_external_printer(Pending(output))
+        .with_external_printer(Pending(shared))
 }
 
 /// Shows what Claude Code reports, notes what its calls hold in the cache, with when the cache
 /// turns cold for the cache's watcher, and hands the main thread what it has to act on.
 fn read_claude(
     from_claude: ChildStdout,
-    output: &Mutex<Output>,
-    context: &Mutex<Context>,
-    limits: &Mutex<Limits>,
+    shared: &Mutex<Shared>,
     cold_ats: &Sender<Instant>,
     forward: &dyn Fn(Input),
     request_repaint: &dyn Fn(),
@@ -353,45 +343,47 @@ fn read_claude(
         let line = match line {
             Ok(line) => line,
             Err(error) => {
-                lock(output).show_error(&format!("Cannot read from claude: {error}"));
+                lock(shared)
+                    .output
+                    .show_error(&format!("Cannot read from claude: {error}"));
                 break;
             }
         };
         let events = match read_events(&line) {
             Ok(events) => events,
             Err(error) => {
-                lock(output).show_error(&error);
+                lock(shared).output.show_error(&error);
                 continue;
             }
         };
         for event in events {
-            let mut output = lock(output);
-            let status = output.status();
+            let mut shared = lock(shared);
+            let status = shared.output.status();
             match event {
-                Event::Text(text) => output.show_text(&text),
-                Event::TextEnd => output.show_text_end(),
-                Event::ApiError(text) => output.show_error(&text),
-                Event::ToolUse(tool_use) => output.show_tool_use(&tool_use),
-                Event::ToolResult(result) => output.show_tool_result(&result),
-                Event::TurnEnd { failure } => output.show_turn_end(failure.as_deref()),
-                Event::SettingsErrors(errors) => output.show_settings_errors(&errors),
-                Event::State(state) => output.note_state(state),
+                Event::Text(text) => shared.output.show_text(&text),
+                Event::TextEnd => shared.output.show_text_end(),
+                Event::ApiError(text) => shared.output.show_error(&text),
+                Event::ToolUse(tool_use) => shared.output.show_tool_use(&tool_use),
+                Event::ToolResult(result) => shared.output.show_tool_result(&result),
+                Event::TurnEnd { failure } => shared.output.show_turn_end(failure.as_deref()),
+                Event::SettingsErrors(errors) => shared.output.show_settings_errors(&errors),
+                Event::State(state) => shared.output.note_state(state),
                 Event::Limits { session, week } => {
-                    lock(limits).note(session, week);
+                    shared.limits.note(session, week);
                     request_repaint();
                 }
                 Event::BackgroundTasks(tasks) => {
-                    output.note_background_tasks(tasks);
+                    shared.output.note_background_tasks(tasks);
                     request_repaint();
                 }
                 Event::Call(usage) => {
-                    let cold_at = lock(context).note_call(&usage, Instant::now());
+                    let cold_at = shared.context.note_call(&usage, Instant::now());
                     // The watcher stops only on the program's way out
                     let _ = cold_ats.send(cold_at);
                     request_repaint();
                 }
                 Event::LastCall(usage) => {
-                    lock(context).note_last_call(usage.as_ref());
+                    shared.context.note_last_call(usage.as_ref());
                     request_repaint();
                 }
                 Event::Ask(ask) => forward(Input::Ask(ask)),
@@ -403,7 +395,7 @@ fn read_claude(
                     subtype,
                 }),
             }
-            if output.status() != status {
+            if shared.output.status() != status {
                 request_repaint();
             }
         }
@@ -414,20 +406,21 @@ fn read_claude(
 /// Shows each line of Claude Code's error output that adds to what its messages show.
 fn read_claude_errors(
     errors_from_claude: ChildStderr,
-    output: &Mutex<Output>,
+    shared: &Mutex<Shared>,
     request_repaint: &dyn Fn(),
 ) {
     for line in BufReader::new(errors_from_claude).lines() {
         let line = match line {
             Ok(line) => line,
             Err(error) => {
-                lock(output)
+                lock(shared)
+                    .output
                     .show_error(&format!("Cannot read the error output of claude: {error}"));
                 return;
             }
         };
         if !repeats_a_message(&line) {
-            lock(output).show_stderr(&line);
+            lock(shared).output.show_stderr(&line);
             // The prompt says when the line waits
             request_repaint();
         }
@@ -471,7 +464,7 @@ impl Session {
     /// Reads the input line, starting from `draft`. A host command or a break signal leaves the
     /// line on screen, for the next line to take the place of.
     fn read_line(&mut self, line: Line, draft: &str) -> Result<Signal, String> {
-        *lock(&self.line) = line;
+        lock(&self.shared).line = line;
         self.editor.run_edit_commands(&[
             EditCommand::Clear,
             EditCommand::InsertString(draft.to_string()),
@@ -512,7 +505,10 @@ impl Conversation {
                     let text = self.session.editor.current_buffer_contents().to_string();
                     if text.trim().is_empty() {
                         String::new()
-                    } else if lock(&self.session.context).holds_message(Instant::now()) {
+                    } else if lock(&self.session.shared)
+                        .context
+                        .holds_message(Instant::now())
+                    {
                         text
                     } else {
                         self.send_message(&text)?;
@@ -521,7 +517,7 @@ impl Conversation {
                 }
                 // Ctrl-C on an empty line stops Claude, and on a line with text clears it
                 Signal::HostCommand(command) if command == CTRL_C => {
-                    let is_working = lock(&self.session.output).status() != Status::Idle;
+                    let is_working = lock(&self.session.shared).output.status() != Status::Idle;
                     if self.session.editor.current_buffer_contents().is_empty() && is_working {
                         self.interrupt(Interruption::Stop)?;
                     }
@@ -555,7 +551,7 @@ impl Conversation {
 
     /// Asks the user about the tool, and tells Claude Code the answer.
     fn answer(&mut self, ask: &Ask) -> Result<(), String> {
-        lock(&self.session.output).show_ask(ask);
+        lock(&self.session.shared).output.show_ask(ask);
         let answer = match &ask.kind {
             AskKind::Permission { rules, .. } => {
                 let always = if rules.is_empty() { "" } else { "/a" };
@@ -567,7 +563,7 @@ impl Conversation {
             AskKind::Questions(questions) => self.read_questions(ask, questions)?,
         };
         if let Answer::Deny { interrupt, .. } = &answer {
-            let mut output = lock(&self.session.output);
+            let output = &mut lock(&self.session.shared).output;
             output.hide_result(&ask.tool_use_id);
             if *interrupt {
                 output.note_interrupt(Interruption::Stop);
@@ -645,7 +641,9 @@ impl Conversation {
             {
                 Signal::HostCommand(command) if command == SEND => {
                     let text = self.session.editor.current_buffer_contents().to_string();
-                    lock(&self.session.output).show_answer(question, &text);
+                    lock(&self.session.shared)
+                        .output
+                        .show_answer(question, &text);
                     return Ok(Some(text));
                 }
                 // Claude Code asked something more, which waits for this answer
@@ -659,12 +657,14 @@ impl Conversation {
     /// Shows the message and sends it. While Claude works, Claude Code makes way for it, as for
     /// a message sent with its own send-now key.
     fn send_message(&mut self, text: &str) -> Result<(), String> {
-        let is_working = lock(&self.session.output).status() != Status::Idle;
-        lock(&self.session.output).show_message(text);
+        let is_working = lock(&self.session.shared).output.status() != Status::Idle;
+        lock(&self.session.shared).output.show_message(text);
         let id = Uuid::new_v4().to_string();
         self.send(&Command::Message { id: &id, text })?;
         if is_working {
-            lock(&self.session.output).note_interrupt(Interruption::Message);
+            lock(&self.session.shared)
+                .output
+                .note_interrupt(Interruption::Message);
             let request_id = self.next_request_id();
             self.send(&Command::SendNow {
                 request_id,
@@ -681,7 +681,9 @@ impl Conversation {
     }
 
     fn interrupt(&mut self, interruption: Interruption) -> Result<(), String> {
-        lock(&self.session.output).note_interrupt(interruption);
+        lock(&self.session.shared)
+            .output
+            .note_interrupt(interruption);
         let request_id = self.next_request_id();
         self.send(&Command::Interrupt { request_id })
     }
@@ -693,7 +695,7 @@ impl Conversation {
     }
 
     fn refuse(&mut self, request_id: &str, subtype: &str) -> Result<(), String> {
-        lock(&self.session.output).show_error(&format!(
+        lock(&self.session.shared).output.show_error(&format!(
             "Claude Code asked for {subtype}, which this client does not offer"
         ));
         self.send(&Command::Refuse {
@@ -745,7 +747,9 @@ impl Ending {
     /// tasks, as Ctrl-C does a program's work in the terminal, and Claude Code then exits, since
     /// its input closed.
     fn interrupt(&self) -> Result<(), String> {
-        lock(&self.session.output).note_interrupt(Interruption::Stop);
+        lock(&self.session.shared)
+            .output
+            .note_interrupt(Interruption::Stop);
         // SAFETY: kill only sends a signal. The process keeps its id until it is waited for,
         // which the session's end does
         if unsafe { libc::kill(self.claude_pid, libc::SIGINT) } == -1 {
@@ -826,18 +830,12 @@ fn describe_work(output: &Output) -> Option<String> {
 
 impl Prompt for Marker {
     fn render_prompt_left(&self) -> Cow<'_, str> {
-        let label = match &*lock(&self.line) {
+        let shared = lock(&self.0);
+        let label = match &shared.line {
             Line::Message => {
                 let now = Instant::now();
-                // Released before the output is locked, since the output's lock comes first
-                let (level, is_cold, is_cold_confirmed) = {
-                    let context = lock(&self.context);
-                    (
-                        context.level(),
-                        context.is_cold(now),
-                        context.is_cold_confirmed(now),
-                    )
-                };
+                let level = shared.context.level();
+                let is_cold = shared.context.is_cold(now);
                 // On a cold cache, the space in front of T becomes *, which shows the cold cache
                 // without color and keeps the label's width
                 let (cold_mark, level_color) = if is_cold {
@@ -845,21 +843,17 @@ impl Prompt for Marker {
                 } else {
                     (" ", STATUS_COLOR.to_string())
                 };
-                let (session_level, week_level) = {
-                    let limits = lock(&self.limits);
-                    (limits.session_level(), limits.week_level())
-                };
                 let indicators = format!(
                     "{}{level_color}{cold_mark}T{} {} {}",
                     marks(),
                     show_level(level),
-                    limit_indicator('S', session_level),
-                    limit_indicator('W', week_level),
+                    limit_indicator('S', shared.limits.session_level()),
+                    limit_indicator('W', shared.limits.week_level()),
                 );
-                let state = if is_cold_confirmed {
+                let state = if shared.context.is_cold_confirmed(now) {
                     Some("cold, enter sends".to_string())
                 } else {
-                    describe_work(&lock(&self.output))
+                    describe_work(&shared.output)
                 };
                 let state =
                     state.map_or_else(String::new, |state| format!(" {STATUS_COLOR}│ {state}"));
@@ -867,13 +861,13 @@ impl Prompt for Marker {
             }
             Line::Answer(question) => answer_label(question),
             Line::Ending => {
-                let output = lock(&self.output);
+                let output = &shared.output;
                 let tasks = output.background_tasks();
                 let background =
                     (!tasks.is_empty()).then(|| format!("background: {}", tasks.join(", ")));
                 let parts: Vec<String> = ["ending".to_string()]
                     .into_iter()
-                    .chain(describe_work(&output))
+                    .chain(describe_work(output))
                     .chain(background)
                     .collect();
                 format!(
@@ -892,7 +886,7 @@ impl Prompt for Marker {
     }
 
     fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
-        match &*lock(&self.line) {
+        match lock(&self.0).line {
             // A message starts on a row of its own, so its lines copy back as they were written
             Line::Message => Cow::Owned(format!("\n{}", start_bar_row())),
             Line::Answer(_) => Cow::Borrowed(""),
@@ -917,7 +911,7 @@ impl Prompt for Marker {
 
 impl ExternalOutput for Pending {
     fn drain(&mut self) -> io::Result<Vec<String>> {
-        Ok(lock(&self.0).take_lines())
+        Ok(lock(&self.0).output.take_lines())
     }
 }
 
