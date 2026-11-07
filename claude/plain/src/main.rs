@@ -6,6 +6,7 @@
 
 mod code;
 mod context;
+mod limits;
 mod markdown;
 mod protocol;
 mod render;
@@ -33,12 +34,15 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use context::Context;
+use limits::{Limits, NEAR_LEVEL, REACHED_LEVEL};
 use protocol::{Answer, Ask, AskKind, Command, Event, Question, read_events, repeats_a_message};
 use render::{BAR_COLOR, Interruption, Output, Status, answer_label, marks, start_bar_row};
 
 const REFUSAL: &str = "The user refused this tool use.";
 // What Claude does stays in the background
 const STATUS_COLOR: &str = "\x1b[38;5;244m";
+// A limit near its end, before the red of a reached one
+const ORANGE: Color = Color::Fixed(208);
 // The host commands Enter and Ctrl-C send. reedline leaves the line of a host command in place,
 // for the next input line to take the place of. Its own Enter would put the line in the
 // scrollback at once, ahead of the end of the line Claude was writing, which came first, so the
@@ -97,12 +101,14 @@ enum Line {
 }
 
 /// The prompt in front of the input line: for a message, `››` on a row above it, with the
-/// context's level, red on a cold cache, and what Claude does after them; for an answer, the
-/// question; at the end, the work Claude still does.
+/// context's level, marked and red on a cold cache, the levels of the plan's usage limits, and
+/// what Claude does after them; for an answer, the question; at the end, the work Claude still
+/// does.
 struct Marker {
     line: Arc<Mutex<Line>>,
     output: Arc<Mutex<Output>>,
     context: Arc<Mutex<Context>>,
+    limits: Arc<Mutex<Limits>>,
 }
 
 /// Draws what the user types on the input line's bar.
@@ -146,6 +152,7 @@ fn run() -> Result<ExitCode, String> {
             "stdio",
         ])
         .args(env::args().skip(1))
+        // Undocumented, read in Claude Code 2.1.316: makes it send its session state
         .env("CLAUDE_CODE_SDK_READS_SESSION_STATE", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -162,6 +169,7 @@ fn run() -> Result<ExitCode, String> {
 
     let output = Arc::new(Mutex::new(Output::new()));
     let context = Arc::new(Mutex::new(Context::new()));
+    let limits = Arc::new(Mutex::new(Limits::new()));
     let line = Arc::new(Mutex::new(Line::Message));
     let break_signal = Arc::new(AtomicBool::new(false));
     let (input_sender, inputs) = mpsc::channel();
@@ -174,6 +182,7 @@ fn run() -> Result<ExitCode, String> {
 
     let reader_output = Arc::clone(&output);
     let reader_context = Arc::clone(&context);
+    let reader_limits = Arc::clone(&limits);
     let reader_break_signal = Arc::clone(&break_signal);
     let repaint_signal = editor.repaint_signal();
     let watcher_repaint_signal = repaint_signal.clone();
@@ -183,9 +192,13 @@ fn run() -> Result<ExitCode, String> {
             from_claude,
             &reader_output,
             &reader_context,
+            &reader_limits,
             &cold_at_sender,
-            &input_sender,
-            &reader_break_signal,
+            &|input| {
+                // The main thread stops reading only on its way out
+                let _ = input_sender.send(input);
+                reader_break_signal.store(true, Ordering::Relaxed);
+            },
             &|| repaint_signal.request_repaint(),
         );
     });
@@ -207,6 +220,7 @@ fn run() -> Result<ExitCode, String> {
                 line: Arc::clone(&line),
                 output: Arc::clone(&output),
                 context: Arc::clone(&context),
+                limits,
             },
             line,
             output: Arc::clone(&output),
@@ -236,9 +250,10 @@ fn end(
     let status = claude
         .wait()
         .map_err(|error| format!("Cannot wait for claude: {error}"))?;
-    // Every line Claude Code wrote comes before its end. Each reader ends once its output
-    // closes, which it does as Claude Code exits, since the processes Claude Code starts in the
-    // background write to files of their own. A reader that panicked already said why
+    // Undocumented, seen with Claude Code 2.1.316: the processes it starts in the background
+    // write to files of their own, so its output closes as it exits, and each reader ends then.
+    // Every line Claude Code wrote thus comes before its end. A reader that panicked already said
+    // why
     for reader in readers {
         let _ = reader.join();
     }
@@ -329,16 +344,11 @@ fn read_claude(
     from_claude: ChildStdout,
     output: &Mutex<Output>,
     context: &Mutex<Context>,
+    limits: &Mutex<Limits>,
     cold_ats: &Sender<Instant>,
-    inputs: &Sender<Input>,
-    break_signal: &AtomicBool,
+    forward: &dyn Fn(Input),
     request_repaint: &dyn Fn(),
 ) {
-    let forward = |input: Input| {
-        // The main thread stops reading only on its way out
-        let _ = inputs.send(input);
-        break_signal.store(true, Ordering::Relaxed);
-    };
     for line in BufReader::new(from_claude).lines() {
         let line = match line {
             Ok(line) => line,
@@ -366,6 +376,10 @@ fn read_claude(
                 Event::TurnEnd { failure } => output.show_turn_end(failure.as_deref()),
                 Event::SettingsErrors(errors) => output.show_settings_errors(&errors),
                 Event::State(state) => output.note_state(state),
+                Event::Limits { session, week } => {
+                    lock(limits).note(session, week);
+                    request_repaint();
+                }
                 Event::BackgroundTasks(tasks) => {
                     output.note_background_tasks(tasks);
                     request_repaint();
@@ -711,8 +725,8 @@ impl Ending {
         loop {
             match self.session.next_input() {
                 Some(Input::Closed) => return Ok(()),
-                // Claude Code fails each ask once its input closed, with "Stream closed", which
-                // the tool's result then shows
+                // Undocumented, seen with Claude Code 2.1.316: once its input closed, Claude Code
+                // fails each permission request, with "Stream closed" as the tool's result
                 Some(Input::Ask(_) | Input::Unsupported { .. }) | None => {}
             }
             match self.session.read_line(Line::Ending, "")? {
@@ -727,8 +741,9 @@ impl Ending {
         }
     }
 
-    /// Stops Claude's turn and background tasks with SIGINT, as Ctrl-C does a program in the
-    /// terminal. Claude Code then exits.
+    /// Undocumented, seen with Claude Code 2.1.316: SIGINT stops Claude's turn and background
+    /// tasks, as Ctrl-C does a program's work in the terminal, and Claude Code then exits, since
+    /// its input closed.
     fn interrupt(&self) -> Result<(), String> {
         lock(&self.session.output).note_interrupt(Interruption::Stop);
         // SAFETY: kill only sends a signal. The process keeps its id until it is waited for,
@@ -779,6 +794,22 @@ impl Drop for QuietTerminal {
     }
 }
 
+/// A level, with ? for one not known yet.
+fn show_level(level: Option<usize>) -> String {
+    level.map_or_else(|| "?".to_string(), |level| level.to_string())
+}
+
+/// The letter of a usage limit and its level, orange from `NEAR_LEVEL` and red at
+/// `REACHED_LEVEL`, so the color only repeats what the level says.
+fn limit_indicator(letter: char, level: Option<usize>) -> String {
+    let color = match level {
+        Some(REACHED_LEVEL) => Color::Red.prefix().to_string(),
+        Some(level) if level >= NEAR_LEVEL => ORANGE.prefix().to_string(),
+        _ => STATUS_COLOR.to_string(),
+    };
+    format!("{color}{letter}{}", show_level(level))
+}
+
 /// What Claude does, none while it waits for the user.
 fn describe_work(output: &Output) -> Option<String> {
     match output.status() {
@@ -806,14 +837,24 @@ impl Prompt for Marker {
                         context.is_cold_confirmed(now),
                     )
                 };
-                let level_color = if is_cold {
-                    Color::Red.prefix().to_string()
+                // On a cold cache, the space in front of T becomes *, which shows the cold cache
+                // without color and keeps the label's width
+                let (cold_mark, level_color) = if is_cold {
+                    ("*", Color::Red.prefix().to_string())
                 } else {
-                    STATUS_COLOR.to_string()
+                    (" ", STATUS_COLOR.to_string())
                 };
-                // ? is a level not known yet
-                let level = level.map_or_else(|| "?".to_string(), |level| level.to_string());
-                let indicators = format!("{} {level_color}T{level}", marks());
+                let (session_level, week_level) = {
+                    let limits = lock(&self.limits);
+                    (limits.session_level(), limits.week_level())
+                };
+                let indicators = format!(
+                    "{}{level_color}{cold_mark}T{} {} {}",
+                    marks(),
+                    show_level(level),
+                    limit_indicator('S', session_level),
+                    limit_indicator('W', week_level),
+                );
                 let state = if is_cold_confirmed {
                     Some("cold, enter sends".to_string())
                 } else {

@@ -1,6 +1,8 @@
 //! Claude Code's side of the conversation, as `claude -p` carries it in its stream-json format:
 //! the events read from what it writes, and the commands written back.
 //! Ref: sdk.d.ts in the npm package @anthropic-ai/claude-agent-sdk, which types every message
+//! Claude Code documents. Anywhere in the client, what relies on more than those types says so in
+//! a comment that starts with "Undocumented", followed by how it was learned.
 
 use std::time::Duration;
 
@@ -27,6 +29,14 @@ pub enum Event {
     State(State),
     /// What each of the tasks that run in the background does, in the order they started.
     BackgroundTasks(Vec<String>),
+    /// How much of the plan's usage limits the account used, each none when Claude Code left it
+    /// out.
+    Limits {
+        /// The limit over five hours.
+        session: Option<Limit>,
+        /// The limit over seven days.
+        week: Option<Limit>,
+    },
     /// The end of a turn, with the reason Claude Code gives when the turn ended before its work
     /// was done.
     TurnEnd {
@@ -52,6 +62,15 @@ pub enum State {
     Idle,
     Running,
     RequiresAction,
+}
+
+/// How much of one of the plan's usage limits the account used.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Limit {
+    /// The share of the limit used, from 0 to 1.
+    pub utilization: f64,
+    /// Whether the account reached the limit.
+    pub is_reached: bool,
 }
 
 /// What a call of Claude's read and wrote.
@@ -153,7 +172,8 @@ pub enum Command<'a> {
     /// runs or the running turn already took the message in, so it never stops the turn that
     /// answers the message.
     ///
-    /// Its fields are Claude Code's own, absent from the SDK's types. Claude Code announces them
+    /// Undocumented, from Claude Code's changelog: its fields are Claude Code's own, absent from
+    /// the SDK's types. Claude Code announces them
     /// as `interrupt_send_now_v1` when it starts, and one without them takes the request as a
     /// plain interrupt.
     /// Ref: <https://code.claude.com/docs/en/changelog>, on send now moving running tools to the
@@ -345,6 +365,7 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
         Message::Result { subtype } => vec![Event::TurnEnd {
             failure: Some(subtype),
         }],
+        Message::RateLimitEvent { rate_limit_info } => vec![read_limits(rate_limit_info)],
         Message::System(System::SessionStateChanged { state }) => vec![Event::State(state)],
         Message::System(System::BackgroundTasksChanged { tasks }) => vec![Event::BackgroundTasks(
             tasks.into_iter().map(|task| task.description).collect(),
@@ -364,6 +385,14 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
 pub fn repeats_a_message(line: &str) -> bool {
     // Claude Code tags the API error of a model it does not know, which its reply reports
     line.starts_with("[claude-code:unrecognized_model]")
+}
+
+fn read_limits(info: RateLimitInfo) -> Event {
+    let windows = info.unified_windows;
+    Event::Limits {
+        session: windows.five_hour.map(Limit::from),
+        week: windows.seven_day.map(Limit::from),
+    }
 }
 
 /// The settings files Claude Code skipped, none when it read them all.
@@ -451,15 +480,58 @@ enum Message {
     Result {
         subtype: String,
     },
+    RateLimitEvent {
+        rate_limit_info: RateLimitInfo,
+    },
     System(System),
     #[serde(other)]
     Other,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RateLimitInfo {
+    // Undocumented, read in the schema of Claude Code 2.1.316, which marks it internal. Only this
+    // field has every limit: the documented fields describe only the limit that applies now
+    #[serde(default)]
+    unified_windows: UnifiedWindows,
+}
+
+#[derive(Default, Deserialize)]
+struct UnifiedWindows {
+    five_hour: Option<Window>,
+    seven_day: Option<Window>,
+}
+
+#[derive(Deserialize)]
+struct Window {
+    utilization: f64,
+    status: Option<WindowStatus>,
+}
+
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum WindowStatus {
+    Rejected,
+    #[serde(other)]
+    Other,
+}
+
+impl From<Window> for Limit {
+    fn from(window: Window) -> Self {
+        Limit {
+            utilization: window.utilization,
+            is_reached: window.status == Some(WindowStatus::Rejected),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(tag = "subtype", rename_all = "snake_case")]
 enum System {
-    // Sent only when CLAUDE_CODE_SDK_READS_SESSION_STATE is set
+    // Undocumented, read in Claude Code 2.1.316 and seen with it: sent only when
+    // CLAUDE_CODE_SDK_READS_SESSION_STATE is set, which the SDK's types do not name, though they
+    // type the message
     SessionStateChanged {
         state: State,
     },
@@ -745,6 +817,47 @@ mod tests {
             panic!("background tasks");
         };
         assert_eq!(tasks, &["Sleep 20 seconds in background"]);
+    }
+
+    #[test]
+    fn a_rate_limit_event_tells_how_much_of_each_limit_was_used() {
+        // As Claude Code 2.1.316 sent it
+        let line = json!({
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "status": "allowed",
+                "resetsAt": 1_794_088_800,
+                "rateLimitType": "five_hour",
+                "overageStatus": "rejected",
+                "overageDisabledReason": "out_of_credits",
+                "isUsingOverage": false,
+                "unifiedWindows": {
+                    "five_hour": {"utilization": 0.39, "resetsAt": 1_794_088_800, "status": "allowed"},
+                    "seven_day": {"utilization": 1.0, "resetsAt": 1_794_492_000, "status": "rejected"},
+                },
+            },
+            "uuid": "a",
+            "session_id": "b",
+        })
+        .to_string();
+        let events = read_events(&line).expect("a readable line");
+        let [Event::Limits { session, week }] = events.as_slice() else {
+            panic!("limits");
+        };
+        assert_eq!(
+            *session,
+            Some(Limit {
+                utilization: 0.39,
+                is_reached: false
+            })
+        );
+        assert_eq!(
+            *week,
+            Some(Limit {
+                utilization: 1.0,
+                is_reached: true
+            })
+        );
     }
 
     #[test]
