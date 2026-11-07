@@ -26,7 +26,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use context::Context;
-use input_line::{Line, create_editor};
+use input_line::{Line, create_editor, final_line};
 use limits::Limits;
 use protocol::{Event, read_events, repeats_a_message};
 use render::Output;
@@ -143,8 +143,8 @@ fn run() -> Result<ExitCode, String> {
 }
 
 /// Ends the session the user or Claude Code ended, or that failed with `result`'s error, and
-/// shows the rest of the output: all Claude Code wrote, then how it ended. The session is over,
-/// so Claude Code's input closed, and Claude Code exits once its work is done.
+/// shows the rest of the output: all Claude Code wrote, how it ended, and the final line. The
+/// session is over, so Claude Code's input closed, and Claude Code exits once its work is done.
 fn end(
     mut claude: process::Child,
     readers: [JoinHandle<()>; 2],
@@ -173,6 +173,7 @@ fn end(
     for line in output.take_lines() {
         println!("{line}");
     }
+    println!("{}", final_line());
     Ok(code)
 }
 

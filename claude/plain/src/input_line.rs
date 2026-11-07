@@ -27,6 +27,7 @@ const STATUS_COLOR: &str = "\x1b[38;5;244m";
 const ORANGE: &str = "\x1b[38;5;208m";
 // A cold cache, and a limit reached
 const RED: &str = "\x1b[31m";
+const RESET: &str = "\x1b[0m";
 
 // The host commands Enter, Ctrl-C and Ctrl-D send. reedline leaves the line of a host command in
 // place, for the next input line to take the place of. Its own Enter would put the line in the
@@ -47,8 +48,8 @@ pub enum Line {
     Answer(String),
     /// None, since the user has nothing more to say, while Claude finishes its work.
     Ending,
-    /// None, once the session ended: an empty line, which the end of the output takes the place
-    /// of.
+    /// None, once the session ended: an empty line, which the end of the output and then the
+    /// final line take the place of.
     Closed,
 }
 
@@ -197,6 +198,11 @@ pub fn create_editor(
         )
         .with_break_signal(break_signal)
         .with_external_printer(Pending(shared))
+}
+
+/// The last line of the session, on the bar like the ending line.
+pub fn final_line() -> String {
+    format!("{}{} {STATUS_COLOR}ended{RESET}", start_bar_row(), marks())
 }
 
 /// A level, with ? for one not known yet.
