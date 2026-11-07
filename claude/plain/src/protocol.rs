@@ -11,6 +11,7 @@ use serde::de::IgnoredAny;
 use serde_json::{Map, Value, json};
 
 /// The ids of the requests sent before the first message
+const INITIALIZE_REQUEST_ID: &str = "initialize";
 const SETTINGS_REQUEST_ID: &str = "settings";
 const CONTEXT_REQUEST_ID: &str = "context";
 
@@ -44,6 +45,10 @@ pub enum Event {
     },
     /// Settings files Claude Code skipped, so none of their rules or hooks apply.
     SettingsErrors(Vec<SettingsError>),
+    /// The key that pays for the session in place of the subscription, like `ANTHROPIC_API_KEY`.
+    PayingKey(String),
+    /// The id of the session, which `--resume` takes.
+    SessionId(String),
     /// A call of Claude's to the API, whose reply starts.
     Call(Usage),
     /// The last call of the session as Claude Code starts it, none in a new session.
@@ -182,6 +187,8 @@ pub enum Command<'a> {
         request_id: String,
         message_id: &'a str,
     },
+    /// Starts the session. Claude Code answers with the account that pays for it.
+    Initialize,
     GetSettings,
     /// Asks for the context's usage, which tells the last call of a resumed session. The
     /// summary comes from that call's usage, where the full answer would count each part of
@@ -245,6 +252,11 @@ impl Command<'_> {
                 "type": "control_request",
                 "request_id": request_id,
                 "request": {"subtype": "interrupt", "send_now": true, "message_uuid": message_id},
+            }),
+            Command::Initialize => json!({
+                "type": "control_request",
+                "request_id": INITIALIZE_REQUEST_ID,
+                "request": {"subtype": "initialize"},
             }),
             Command::GetSettings => json!({
                 "type": "control_request",
@@ -348,14 +360,7 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
                     request_id,
                     response,
                 },
-        } if request_id == SETTINGS_REQUEST_ID => read_settings(response)?,
-        Message::ControlResponse {
-            response:
-                Reply::Success {
-                    request_id,
-                    response,
-                },
-        } if request_id == CONTEXT_REQUEST_ID => read_context_usage(response)?,
+        } => read_response(&request_id, response)?,
         Message::ControlResponse {
             response: Reply::Error { request_id, error },
         } => return Err(format!("Claude Code refused request {request_id}: {error}")),
@@ -366,17 +371,12 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
             failure: Some(subtype),
         }],
         Message::RateLimitEvent { rate_limit_info } => vec![read_limits(rate_limit_info)],
+        Message::System(System::Init { session_id }) => vec![Event::SessionId(session_id)],
         Message::System(System::SessionStateChanged { state }) => vec![Event::State(state)],
         Message::System(System::BackgroundTasksChanged { tasks }) => vec![Event::BackgroundTasks(
             tasks.into_iter().map(|task| task.description).collect(),
         )],
-        Message::StreamEvent { .. }
-        // The other requests sent are interrupts, whose success needs no word
-        | Message::ControlResponse {
-            response: Reply::Success { .. },
-        }
-        | Message::System(System::Other)
-        | Message::Other => vec![],
+        Message::StreamEvent { .. } | Message::System(System::Other) | Message::Other => vec![],
     };
     Ok(events)
 }
@@ -393,6 +393,31 @@ fn read_limits(info: RateLimitInfo) -> Event {
         session: windows.five_hour.map(Limit::from),
         week: windows.seven_day.map(Limit::from),
     }
+}
+
+/// The events in the response to one of the requests sent before the first message.
+fn read_response(request_id: &str, response: Option<Value>) -> Result<Vec<Event>, String> {
+    match request_id {
+        INITIALIZE_REQUEST_ID => read_account(response),
+        SETTINGS_REQUEST_ID => read_settings(response),
+        CONTEXT_REQUEST_ID => read_context_usage(response),
+        // The other requests sent are interrupts, whose success needs no word
+        _ => Ok(vec![]),
+    }
+}
+
+/// The key that pays for the session, none when the subscription does.
+fn read_account(response: Option<Value>) -> Result<Vec<Event>, String> {
+    let initialize: Initialize = serde_json::from_value(response.unwrap_or_default())
+        .map_err(|error| format!("Unreadable account from Claude Code: {error}"))?;
+    let account = initialize.account;
+    // Undocumented, seen with Claude Code 2.1.319: ANTHROPIC_API_KEY fills apiKeySource with its
+    // name, ANTHROPIC_AUTH_TOKEN fills tokenSource with its name, and the subscription's login
+    // leaves apiKeySource out and tokenSource out or claude.ai
+    let key = account.api_key_source.or(account
+        .token_source
+        .filter(|source| source == "ANTHROPIC_AUTH_TOKEN"));
+    Ok(key.map(Event::PayingKey).into_iter().collect())
 }
 
 /// The settings files Claude Code skipped, none when it read them all.
@@ -529,6 +554,10 @@ impl From<Window> for Limit {
 #[derive(Deserialize)]
 #[serde(tag = "subtype", rename_all = "snake_case")]
 enum System {
+    /// Carries the id of the session Claude Code runs.
+    Init {
+        session_id: String,
+    },
     // Undocumented, read in Claude Code 2.1.316 and seen with it: sent only when
     // CLAUDE_CODE_SDK_READS_SESSION_STATE is set, which the SDK's types do not name, though they
     // type the message
@@ -734,6 +763,18 @@ enum Reply {
 }
 
 #[derive(Deserialize)]
+struct Initialize {
+    account: Account,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Account {
+    api_key_source: Option<String>,
+    token_source: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct Settings {
     // Claude Code leaves the list out when no file failed
     #[serde(default)]
@@ -864,6 +905,57 @@ mod tests {
     fn a_reply_of_a_subagent_tells_nothing_of_the_context() {
         let events = read_events(&message_start(&json!("toolu_1"))).expect("a readable line");
         assert!(events.is_empty());
+    }
+
+    fn initialize_response(account: &Value) -> String {
+        json!({
+            "type": "control_response",
+            "response": {"subtype": "success", "request_id": INITIALIZE_REQUEST_ID, "response": {
+                "commands": [],
+                "account": account,
+            }},
+        })
+        .to_string()
+    }
+
+    fn paying_key(account: &Value) -> Option<String> {
+        let events = read_events(&initialize_response(account)).expect("a readable line");
+        match events.as_slice() {
+            [] => None,
+            [Event::PayingKey(key)] => Some(key.clone()),
+            _ => panic!("a paying key at most"),
+        }
+    }
+
+    #[test]
+    fn the_subscription_pays_with_no_key() {
+        assert_eq!(
+            paying_key(&json!({"subscriptionType": "Claude Team"})),
+            None
+        );
+        assert_eq!(paying_key(&json!({"tokenSource": "claude.ai"})), None);
+    }
+
+    #[test]
+    fn an_api_key_pays() {
+        let account = json!({"tokenSource": "claude.ai", "apiKeySource": "ANTHROPIC_API_KEY"});
+        assert_eq!(paying_key(&account).as_deref(), Some("ANTHROPIC_API_KEY"));
+    }
+
+    #[test]
+    fn an_auth_token_pays() {
+        let account = json!({"tokenSource": "ANTHROPIC_AUTH_TOKEN"});
+        assert_eq!(
+            paying_key(&account).as_deref(),
+            Some("ANTHROPIC_AUTH_TOKEN")
+        );
+    }
+
+    #[test]
+    fn claude_code_tells_the_session() {
+        let line = json!({"type": "system", "subtype": "init", "session_id": "a1", "tools": []});
+        let events = read_events(&line.to_string()).expect("a readable line");
+        assert!(matches!(events.as_slice(), [Event::SessionId(id)] if id == "a1"));
     }
 
     fn context_response(api_usage: &Value) -> String {

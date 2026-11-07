@@ -200,9 +200,14 @@ pub fn create_editor(
         .with_external_printer(Pending(shared))
 }
 
-/// The last line of the session, on the bar like the ending line.
-pub fn final_line() -> String {
-    format!("{}{} {STATUS_COLOR}ended{RESET}", start_bar_row(), marks())
+/// The last line of the session, on the bar, with the session's id once Claude Code told it.
+pub fn final_line(session_id: Option<&str>) -> String {
+    let session = session_id.map_or_else(String::new, |id| format!(" │ session {id}"));
+    format!(
+        "{}{} {STATUS_COLOR}ended{session}{RESET}",
+        start_bar_row(),
+        marks()
+    )
 }
 
 /// A level, with ? for one not known yet.

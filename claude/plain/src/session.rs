@@ -64,6 +64,7 @@ impl<'a> Conversation<'a> {
     /// Runs the conversation until Claude Code ends, or until the user has nothing more to say,
     /// which the ending follows.
     pub fn run(mut self) -> Result<Option<Ending<'a>>, String> {
+        self.send(&Command::Initialize)?;
         self.send(&Command::GetSettings)?;
         self.send(&Command::GetContext)?;
         let mut draft = String::new();

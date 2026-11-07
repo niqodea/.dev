@@ -18,6 +18,8 @@ const GREEN: &str = "\x1b[32m";
 // The marks of the user's lines
 const LIGHT_CYAN: &str = "\x1b[96m";
 const YELLOW: &str = "\x1b[33m";
+// For a warning
+const ORANGE: &str = "\x1b[38;5;208m";
 // Only for failures, since red reads as an error
 const RED: &str = "\x1b[31m";
 // For what Claude did, which supports what Claude wrote
@@ -419,6 +421,13 @@ impl Output {
                 error.path, error.message
             ));
         }
+    }
+
+    pub fn show_paying_key(&mut self, key: &str) {
+        self.begin(Section::Notice);
+        self.push(format!(
+            "{ORANGE}{key} pays for this session, not the subscription{RESET}"
+        ));
     }
 
     pub fn show_error(&mut self, error: &str) {

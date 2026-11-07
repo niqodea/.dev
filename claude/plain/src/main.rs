@@ -40,6 +40,8 @@ struct Shared {
     output: Output,
     context: Context,
     limits: Limits,
+    /// The session's id, once Claude Code tells it.
+    session_id: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -89,6 +91,7 @@ fn run() -> Result<ExitCode, String> {
         output: Output::new(),
         context: Context::new(),
         limits: Limits::new(),
+        session_id: None,
     }));
     let break_signal = Arc::new(AtomicBool::new(false));
     let (input_sender, inputs) = mpsc::channel();
@@ -161,7 +164,8 @@ fn end(
     for reader in readers {
         let _ = reader.join();
     }
-    let output = &mut lock(shared).output;
+    let shared = &mut lock(shared);
+    let output = &mut shared.output;
     let code = match result {
         Ok(()) => exit_code(status),
         Err(error) => {
@@ -173,7 +177,7 @@ fn end(
     for line in output.take_lines() {
         println!("{line}");
     }
-    println!("{}", final_line());
+    println!("{}", final_line(shared.session_id.as_deref()));
     Ok(code)
 }
 
@@ -231,6 +235,8 @@ fn read_claude(
                 Event::ToolResult(result) => shared.output.show_tool_result(&result),
                 Event::TurnEnd { failure } => shared.output.show_turn_end(failure.as_deref()),
                 Event::SettingsErrors(errors) => shared.output.show_settings_errors(&errors),
+                Event::PayingKey(key) => shared.output.show_paying_key(&key),
+                Event::SessionId(id) => shared.session_id = Some(id),
                 Event::State(state) => shared.output.note_state(state),
                 Event::Limits { session, week } => {
                     shared.limits.note(session, week);
