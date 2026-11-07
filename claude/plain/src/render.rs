@@ -9,13 +9,14 @@
 
 use std::collections::{HashMap, HashSet};
 
-use nu_ansi_term::{Color, Style};
 use serde_json::{Map, Value};
 
 use crate::markdown::Highlighter;
 use crate::protocol::{Ask, AskKind, SettingsError, State, ToolResult, ToolUse};
 
 const GREEN: &str = "\x1b[32m";
+// The marks of the user's lines
+const LIGHT_CYAN: &str = "\x1b[96m";
 const YELLOW: &str = "\x1b[33m";
 // Only for failures, since red reads as an error
 const RED: &str = "\x1b[31m";
@@ -460,21 +461,18 @@ impl Output {
 
 /// The start of a row on the bar, which fills the whole row.
 pub fn start_bar_row() -> String {
-    let bar = Style::new().on(Color::Fixed(BAR_COLOR)).prefix();
-    format!("{bar}{FILL_ROW}")
+    format!("\x1b[48;5;{BAR_COLOR}m{FILL_ROW}")
 }
 
 /// The marks in front of a message, on a row of their own.
 pub fn marks() -> String {
-    format!("{}››", Color::LightCyan.prefix())
+    format!("{LIGHT_CYAN}››")
 }
 
 /// The question in front of an answer, on the bar.
 pub fn answer_label(question: &str) -> String {
     let bar = start_bar_row();
-    let mark = Color::LightCyan.prefix();
-    let question = Color::Yellow.paint(question);
-    format!("{bar}{question}{bar} {mark}›{RESET}{bar} ")
+    format!("{bar}{YELLOW}{question}{RESET}{bar} {LIGHT_CYAN}›{RESET}{bar} ")
 }
 
 /// The input's summary field for a tool that has one, and its start in JSON otherwise.

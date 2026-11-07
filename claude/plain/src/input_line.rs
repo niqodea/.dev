@@ -24,7 +24,9 @@ use crate::{Shared, lock};
 const STATUS_COLOR: &str = "\x1b[38;5;244m";
 
 // A limit near its end, before the red of a reached one
-const ORANGE: Color = Color::Fixed(208);
+const ORANGE: &str = "\x1b[38;5;208m";
+// A cold cache, and a limit reached
+const RED: &str = "\x1b[31m";
 
 // The host commands Enter and Ctrl-C send. reedline leaves the line of a host command in place,
 // for the next input line to take the place of. Its own Enter would put the line in the
@@ -67,9 +69,9 @@ impl Prompt for Marker {
                 // On a cold cache, the space in front of T becomes *, which shows the cold cache
                 // without color and keeps the label's width
                 let (cold_mark, level_color) = if is_cold {
-                    ("*", Color::Red.prefix().to_string())
+                    ("*", RED)
                 } else {
-                    (" ", STATUS_COLOR.to_string())
+                    (" ", STATUS_COLOR)
                 };
                 let indicators = format!(
                     "{}{level_color}{cold_mark}T{} {} {}",
@@ -195,10 +197,10 @@ fn show_level(level: Option<usize>) -> String {
 /// reached, so the color only repeats what the level says.
 fn limit_indicator(letter: char, level: Option<Level>) -> String {
     let color = match level {
-        None => STATUS_COLOR.to_string(),
-        Some(Level::Below(passed)) if passed < NEAR_BOUNDS_PASSED => STATUS_COLOR.to_string(),
-        Some(Level::Below(_)) => ORANGE.prefix().to_string(),
-        Some(Level::Reached) => Color::Red.prefix().to_string(),
+        None => STATUS_COLOR,
+        Some(Level::Below(passed)) if passed < NEAR_BOUNDS_PASSED => STATUS_COLOR,
+        Some(Level::Below(_)) => ORANGE,
+        Some(Level::Reached) => RED,
     };
     format!("{color}{letter}{}", show_level(level.map(Level::to_number)))
 }
@@ -221,6 +223,7 @@ struct OnBar;
 
 impl Highlighter for OnBar {
     fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
+        // reedline takes its styles from nu_ansi_term
         let bar = Style::new().on(Color::Fixed(BAR_COLOR));
         let mut styled = StyledText::new();
         styled.push((bar, line.to_string()));
