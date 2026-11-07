@@ -12,7 +12,7 @@ use reedline::{EditCommand, HistoryItem, Reedline, Signal};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use crate::input_line::{CTRL_C, Line, Marker, SEND};
+use crate::input_line::{CTRL_C, CTRL_D, Line, Marker, SEND};
 use crate::protocol::{Answer, Ask, AskKind, Command, Question};
 use crate::render::{Interruption, Status};
 use crate::{Shared, lock};
@@ -80,7 +80,10 @@ impl<'a> Conversation<'a> {
                     self.refuse(&request_id, &subtype)?;
                     continue;
                 }
-                Some(Input::Closed) => return Ok(None),
+                Some(Input::Closed) => {
+                    self.session.close_line()?;
+                    return Ok(None);
+                }
                 None => {}
             }
             draft = match self.session.read_line(Line::Message, &draft)? {
@@ -110,9 +113,11 @@ impl<'a> Conversation<'a> {
                 }
                 // Claude Code asked something, which the next round of the loop answers
                 Signal::ExternalBreak(text) => text,
+                Signal::HostCommand(command) if command == CTRL_D => {
+                    return Ok(Some(self.end_input()));
+                }
                 // Ctrl-C in a history search, which leaves the search
                 Signal::CtrlC(_) => String::new(),
-                Signal::CtrlD => return Ok(Some(self.end_input())),
                 signal => return Err(format!("Unexpected input: {signal:?}")),
             };
         }
@@ -230,7 +235,7 @@ impl<'a> Conversation<'a> {
                 }
                 // Claude Code asked something more, which waits for this answer
                 Signal::ExternalBreak(text) => draft = text,
-                Signal::HostCommand(_) | Signal::CtrlC(_) | Signal::CtrlD => return Ok(None),
+                Signal::HostCommand(_) | Signal::CtrlC(_) => return Ok(None),
                 signal => return Err(format!("Unexpected input: {signal:?}")),
             }
         }
@@ -316,7 +321,7 @@ impl Ending<'_> {
     pub fn run(mut self) -> Result<(), String> {
         loop {
             match self.session.next_input() {
-                Some(Input::Closed) => return Ok(()),
+                Some(Input::Closed) => return self.session.close_line(),
                 // Undocumented, seen with Claude Code 2.1.316: once its input closed, Claude Code
                 // fails each permission request, with "Stream closed" as the tool's result
                 Some(Input::Ask(_) | Input::Unsupported { .. }) | None => {}
@@ -324,10 +329,7 @@ impl Ending<'_> {
             match self.session.read_line(Line::Ending, "")? {
                 Signal::HostCommand(command) if command == CTRL_C => self.interrupt()?,
                 // What the user types has no one left to read it
-                Signal::HostCommand(_)
-                | Signal::ExternalBreak(_)
-                | Signal::CtrlC(_)
-                | Signal::CtrlD => {}
+                Signal::HostCommand(_) | Signal::ExternalBreak(_) | Signal::CtrlC(_) => {}
                 signal => return Err(format!("Unexpected input: {signal:?}")),
             }
         }
@@ -376,16 +378,34 @@ impl Session {
     }
 
     /// Reads the input line, starting from `draft`. A host command or a break signal leaves the
-    /// line on screen, for the next line to take the place of.
+    /// line on screen, for the next line to take the place of. Ctrl-D ends the input only on an
+    /// empty line, as in a shell, so on a line with text the line stays open as it was.
     fn read_line(&mut self, line: Line, draft: &str) -> Result<Signal, String> {
         lock(&self.shared).line = line;
         self.editor.run_edit_commands(&[
             EditCommand::Clear,
             EditCommand::InsertString(draft.to_string()),
         ]);
-        self.editor
-            .read_line(&self.prompt)
-            .map_err(|error| format!("Cannot read the input line: {error}"))
+        loop {
+            let signal = self
+                .editor
+                .read_line(&self.prompt)
+                .map_err(|error| format!("Cannot read the input line: {error}"))?;
+            match signal {
+                Signal::HostCommand(command)
+                    if command == CTRL_D && !self.editor.current_buffer_contents().is_empty() => {}
+                signal => return Ok(signal),
+            }
+        }
+    }
+
+    /// Closes the input line once Claude Code ended, so the end of the output takes its place.
+    /// reedline paints the line that follows a break signal in the place of the line before, and
+    /// returns at once on a break signal raised before it reads a key, so this paints an empty
+    /// line over the input line and leaves the cursor at its start.
+    fn close_line(&mut self) -> Result<(), String> {
+        self.break_signal.store(true, Ordering::Relaxed);
+        self.read_line(Line::Closed, "").map(|_| ())
     }
 }
 

@@ -28,13 +28,16 @@ const ORANGE: &str = "\x1b[38;5;208m";
 // A cold cache, and a limit reached
 const RED: &str = "\x1b[31m";
 
-// The host commands Enter and Ctrl-C send. reedline leaves the line of a host command in place,
-// for the next input line to take the place of. Its own Enter would put the line in the
+// The host commands Enter, Ctrl-C and Ctrl-D send. reedline leaves the line of a host command in
+// place, for the next input line to take the place of. Its own Enter would put the line in the
 // scrollback at once, ahead of the end of the line Claude was writing, which came first, so the
-// user's lines reach the scrollback only through the output, in the order Claude sees them
+// user's lines reach the scrollback only through the output, in the order Claude sees them. Its
+// own Ctrl-D would leave the line in the scrollback too, above the line that follows it
 pub const SEND: &str = "send";
 
 pub const CTRL_C: &str = "ctrl-c";
+
+pub const CTRL_D: &str = "ctrl-d";
 
 /// What the input line is for.
 #[derive(Clone)]
@@ -44,12 +47,15 @@ pub enum Line {
     Answer(String),
     /// None, since the user has nothing more to say, while Claude finishes its work.
     Ending,
+    /// None, once the session ended: an empty line, which the end of the output takes the place
+    /// of.
+    Closed,
 }
 
 /// The prompt in front of the input line: for a message, `››` on a row above it, with the
 /// context's level, marked and red on a cold cache, the levels of the plan's usage limits, and
 /// what Claude does after them; for an answer, the question; at the end, the work Claude still
-/// does.
+/// does; once closed, nothing.
 pub struct Marker(Arc<Mutex<Shared>>);
 
 impl Marker {
@@ -107,6 +113,7 @@ impl Prompt for Marker {
                     parts.join(" │ ")
                 )
             }
+            Line::Closed => String::new(),
         };
         Cow::Owned(label)
     }
@@ -119,9 +126,8 @@ impl Prompt for Marker {
         match lock(&self.0).line {
             // A message starts on a row of its own, so its lines copy back as they were written
             Line::Message => Cow::Owned(format!("\n{}", start_bar_row())),
-            Line::Answer(_) => Cow::Borrowed(""),
-            // The ending takes no input, and what the terminal shows after the client starts on
-            // the row below
+            Line::Answer(_) | Line::Closed => Cow::Borrowed(""),
+            // The ending takes no input, so the cursor waits on the row below
             Line::Ending => Cow::Borrowed("\n"),
         }
     }
@@ -139,8 +145,8 @@ impl Prompt for Marker {
     }
 }
 
-/// The input line: vi keys, Enter and Ctrl-C as host commands, the bar, Ctrl-G for the editor,
-/// and the lines of `output` printed above it.
+/// The input line: vi keys, Enter, Ctrl-C and Ctrl-D as host commands, the bar, Ctrl-G for the
+/// editor, and the lines of `output` printed above it.
 pub fn create_editor(
     editor_command: String,
     break_signal: Arc<AtomicBool>,
@@ -164,6 +170,11 @@ pub fn create_editor(
             KeyModifiers::CONTROL,
             KeyCode::Char('c'),
             ReedlineEvent::ExecuteHostCommand(CTRL_C.to_string()),
+        );
+        keys.add_binding(
+            KeyModifiers::CONTROL,
+            KeyCode::Char('d'),
+            ReedlineEvent::ExecuteHostCommand(CTRL_D.to_string()),
         );
         // Claude Code opens its prompt in the editor with Ctrl-G, where reedline takes Ctrl-O
         keys.remove_binding(KeyModifiers::CONTROL, KeyCode::Char('o'));
