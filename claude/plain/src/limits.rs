@@ -3,16 +3,31 @@
 
 use crate::protocol::Limit;
 
-/// The shares of a limit from which its level is 1 to 3. They are this client's own choice:
+/// The shares of a limit that raise its level by one each. They are this client's own choice:
 /// Claude Code's server decides where Claude Code warns, and no source lists those points. The
 /// steps get smaller near the limit, where less usage remains.
 const LEVEL_BOUNDS: [f64; 3] = [0.5, 0.75, 0.9];
 
-/// The level from which the indicator turns orange.
-pub const NEAR_LEVEL: usize = 2;
+/// The number of bounds passed from which the indicator turns orange.
+pub const NEAR_BOUNDS_PASSED: usize = 2;
 
-/// The level of a limit the account reached.
-pub const REACHED_LEVEL: usize = LEVEL_BOUNDS.len() + 1;
+/// How much of a limit the account used.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Level {
+    /// Short of the limit, with how many of `LEVEL_BOUNDS` the account passed.
+    Below(usize),
+    Reached,
+}
+
+impl Level {
+    /// The number the indicator shows: the bounds passed, then one more once reached.
+    pub fn to_number(self) -> usize {
+        match self {
+            Level::Below(passed) => passed,
+            Level::Reached => LEVEL_BOUNDS.len() + 1,
+        }
+    }
+}
 
 pub struct Limits {
     session: Option<Limit>,
@@ -34,25 +49,25 @@ impl Limits {
     }
 
     /// The level of the limit over five hours, none before Claude Code sends it.
-    pub fn session_level(&self) -> Option<usize> {
+    pub fn session_level(&self) -> Option<Level> {
         self.session.map(level)
     }
 
     /// The level of the limit over seven days, none before Claude Code sends it.
-    pub fn week_level(&self) -> Option<usize> {
+    pub fn week_level(&self) -> Option<Level> {
         self.week.map(level)
     }
 }
 
-/// From 0, below the first warning, to `REACHED_LEVEL`, at the limit.
-fn level(limit: Limit) -> usize {
+fn level(limit: Limit) -> Level {
     if limit.is_reached {
-        return REACHED_LEVEL;
+        return Level::Reached;
     }
-    LEVEL_BOUNDS
+    let passed = LEVEL_BOUNDS
         .iter()
         .take_while(|&&bound| limit.utilization >= bound)
-        .count()
+        .count();
+    Level::Below(passed)
 }
 
 #[cfg(test)]
@@ -67,22 +82,23 @@ mod tests {
     }
 
     #[test]
-    fn each_warning_passed_raises_the_level() {
-        assert_eq!(level(used(0.0)), 0);
-        assert_eq!(level(used(0.49)), 0);
-        assert_eq!(level(used(0.5)), 1);
-        assert_eq!(level(used(0.75)), 2);
-        assert_eq!(level(used(0.9)), 3);
-        assert_eq!(level(used(0.99)), 3);
+    fn each_bound_passed_raises_the_level() {
+        assert_eq!(level(used(0.0)), Level::Below(0));
+        assert_eq!(level(used(0.49)), Level::Below(0));
+        assert_eq!(level(used(0.5)), Level::Below(1));
+        assert_eq!(level(used(0.75)), Level::Below(2));
+        assert_eq!(level(used(0.9)), Level::Below(3));
+        assert_eq!(level(used(0.99)), Level::Below(3));
     }
 
     #[test]
-    fn a_reached_limit_has_a_level_of_its_own() {
+    fn a_reached_limit_shows_one_past_the_last_bound() {
         let reached = Limit {
             utilization: 1.0,
             is_reached: true,
         };
-        assert_eq!(level(reached), REACHED_LEVEL);
+        assert_eq!(level(reached), Level::Reached);
+        assert_eq!(Level::Reached.to_number(), 4);
     }
 
     #[test]
@@ -90,7 +106,7 @@ mod tests {
         let mut limits = Limits::new();
         limits.note(Some(used(0.6)), Some(used(0.2)));
         limits.note(None, Some(used(0.8)));
-        assert_eq!(limits.session_level(), Some(1));
-        assert_eq!(limits.week_level(), Some(2));
+        assert_eq!(limits.session_level(), Some(Level::Below(1)));
+        assert_eq!(limits.week_level(), Some(Level::Below(2)));
     }
 }

@@ -34,7 +34,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use context::Context;
-use limits::{Limits, NEAR_LEVEL, REACHED_LEVEL};
+use limits::{Level, Limits, NEAR_BOUNDS_PASSED};
 use protocol::{Answer, Ask, AskKind, Command, Event, Question, read_events, repeats_a_message};
 use render::{BAR_COLOR, Interruption, Output, Status, answer_label, marks, start_bar_row};
 
@@ -799,15 +799,16 @@ fn show_level(level: Option<usize>) -> String {
     level.map_or_else(|| "?".to_string(), |level| level.to_string())
 }
 
-/// The letter of a usage limit and its level, orange from `NEAR_LEVEL` and red at
-/// `REACHED_LEVEL`, so the color only repeats what the level says.
-fn limit_indicator(letter: char, level: Option<usize>) -> String {
+/// The letter of a usage limit and its level, orange from `NEAR_BOUNDS_PASSED` and red once
+/// reached, so the color only repeats what the level says.
+fn limit_indicator(letter: char, level: Option<Level>) -> String {
     let color = match level {
-        Some(REACHED_LEVEL) => Color::Red.prefix().to_string(),
-        Some(level) if level >= NEAR_LEVEL => ORANGE.prefix().to_string(),
-        _ => STATUS_COLOR.to_string(),
+        None => STATUS_COLOR.to_string(),
+        Some(Level::Below(passed)) if passed < NEAR_BOUNDS_PASSED => STATUS_COLOR.to_string(),
+        Some(Level::Below(_)) => ORANGE.prefix().to_string(),
+        Some(Level::Reached) => Color::Red.prefix().to_string(),
     };
-    format!("{color}{letter}{}", show_level(level))
+    format!("{color}{letter}{}", show_level(level.map(Level::to_number)))
 }
 
 /// What Claude does, none while it waits for the user.
