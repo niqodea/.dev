@@ -6,7 +6,7 @@
 
 - ,claude-plain: check live that the context level turns red, with a * in front, when the cache expires after an hour idle
 
-- ,claude-plain: words are cut where the pane's margin wraps them, and an input line longer than a row loses its background before the row's end; look up how others solve both
+- ,claude-plain: words are cut where the pane's margin wraps them; look up how others solve it
 
 - ,claude-plain: keys for useful Claude Code commands like /compact; check the docs for which commands work under `claude -p` and which earn a key
 

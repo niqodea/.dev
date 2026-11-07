@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# Only for the cursor's shapes, at the version reedline uses
+# Only for the cursor's shapes and the terminal's width, at the version reedline uses
 crossterm = "0.29"
 libc = "0.2"
 nu-ansi-term = "0.50"

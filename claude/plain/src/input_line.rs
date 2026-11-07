@@ -10,12 +10,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crossterm::cursor::SetCursorStyle;
+use crossterm::terminal;
 use nu_ansi_term::{Color, Style};
 use reedline::{
     CursorConfig, EditCommand, ExternalOutput, Highlighter, KeyCode, KeyModifiers, Prompt,
     PromptEditMode, PromptHistorySearch, PromptViMode, Reedline, ReedlineEvent, StyledText, Vi,
     default_vi_insert_keybindings, default_vi_normal_keybindings, default_vi_visual_keybindings,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::limits::{Level, NEAR_BOUNDS_PASSED};
 use crate::render::{BAR_COLOR, Output, Status, answer_label, marks, start_bar_row};
@@ -125,9 +127,14 @@ impl Prompt for Marker {
     }
 
     fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
-        match lock(&self.0).line {
+        let shared = lock(&self.0);
+        match shared.line {
             // A message starts on a row of its own, so its lines copy back as they were written
-            Line::Message => Cow::Owned(format!("\n{}", start_bar_row())),
+            Line::Message => Cow::Owned(format!(
+                "\n{}{}",
+                start_bar_row(),
+                bar_on_wrapped_rows(&shared.input)
+            )),
             Line::Answer(_) | Line::Closed => Cow::Borrowed(""),
             // The ending takes no input, so the cursor waits on the row below
             Line::Ending => Cow::Borrowed("\n"),
@@ -206,7 +213,7 @@ pub fn create_editor(
             vi_normal: Some(SetCursorStyle::SteadyBlock),
             ..CursorConfig::default()
         })
-        .with_highlighter(Box::new(OnBar))
+        .with_highlighter(Box::new(OnBar(Arc::clone(&shared))))
         .use_bracketed_paste(true)
         .with_buffer_editor(
             process::Command::new(editor_command),
@@ -256,11 +263,38 @@ fn describe_work(output: &Output) -> Option<String> {
     }
 }
 
-/// Draws what the user types on the input line's bar.
-struct OnBar;
+/// Fills with the bar each row below the first that `input` takes, for an input that starts at the
+/// start of a row, then puts the cursor back. Written just before the input, since the terminal
+/// colors only the cells that text covers on a row it wraps the text onto.
+///
+/// reedline, as of commit c9fcec8, calls the highlighter, which stores the input, before it renders
+/// the prompt. In the other order, the bar would lag one key behind the input.
+///
+/// The rows are counted from the input's width, so the count can be one off from the terminal's.
+/// One short, when a double-width character moves to the next row for lack of a column, or with a
+/// tab: the last row then has the bar only under its text. One long, when the terminal draws a
+/// character narrower than unicode-width counts it: the row below the input then has the bar too.
+fn bar_on_wrapped_rows(input: &str) -> String {
+    // reedline wraps the input at the terminal's width too
+    let Ok((columns, _)) = terminal::size() else {
+        return String::new();
+    };
+    let columns = usize::from(columns).max(1);
+    let rows: usize = input
+        .split('\n')
+        .map(|line| line.width().div_ceil(columns).max(1))
+        .sum();
+    // Saves the cursor, fills each row below the first in the background color in effect, then
+    // puts the cursor back
+    format!("\x1b7{}\x1b8", "\x1b[B\x1b[K".repeat(rows - 1))
+}
+
+/// Draws what the user types on the input line's bar, and stores it in the shared state.
+struct OnBar(Arc<Mutex<Shared>>);
 
 impl Highlighter for OnBar {
     fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
+        line.clone_into(&mut lock(&self.0).input);
         // reedline takes its styles from nu_ansi_term
         let bar = Style::new().on(Color::Fixed(BAR_COLOR));
         let mut styled = StyledText::new();

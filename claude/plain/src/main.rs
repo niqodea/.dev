@@ -37,6 +37,8 @@ use terminal::QuietTerminal;
 struct Shared {
     /// What the input line is for, which the prompt reads.
     line: Line,
+    /// The text on the input line, as last drawn.
+    input: String,
     output: Output,
     context: Context,
     limits: Limits,
@@ -88,6 +90,7 @@ fn run() -> Result<ExitCode, String> {
 
     let shared = Arc::new(Mutex::new(Shared {
         line: Line::Message,
+        input: String::new(),
         output: Output::new(),
         context: Context::new(),
         limits: Limits::new(),
