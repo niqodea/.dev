@@ -146,8 +146,8 @@ impl Prompt for Marker {
     }
 }
 
-/// The input line: vi keys, Enter, Ctrl-C and Ctrl-D as host commands, the bar, Ctrl-G for the
-/// editor, and the lines of `output` printed above it.
+/// The input line: vi keys, Enter, Ctrl-C and Ctrl-D as host commands, the bar, V in normal mode
+/// for the editor, and the lines of `output` printed above it.
 pub fn create_editor(
     editor_command: String,
     break_signal: Arc<AtomicBool>,
@@ -177,14 +177,15 @@ pub fn create_editor(
             KeyCode::Char('d'),
             ReedlineEvent::ExecuteHostCommand(CTRL_D.to_string()),
         );
-        // Claude Code opens its prompt in the editor with Ctrl-G, where reedline takes Ctrl-O
+        // V opens the editor, in place of reedline's Ctrl-O
         keys.remove_binding(KeyModifiers::CONTROL, KeyCode::Char('o'));
-        keys.add_binding(
-            KeyModifiers::CONTROL,
-            KeyCode::Char('g'),
-            ReedlineEvent::OpenEditor,
-        );
     }
+    // reedline's vi mode looks up a key with its letter in lower case
+    normal_keys.add_binding(
+        KeyModifiers::SHIFT,
+        KeyCode::Char('v'),
+        ReedlineEvent::OpenEditor,
+    );
     Reedline::create()
         .with_edit_mode(Box::new(Vi::new(insert_keys, normal_keys, visual_keys)))
         // Like vim, the cursor of normal mode stays on its line, so `h` stops at the line's start

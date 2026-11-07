@@ -56,7 +56,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<ExitCode, String> {
     let editor_command =
-        env::var("EDITOR").map_err(|_| "Set EDITOR to the editor Ctrl-O opens".to_string())?;
+        env::var("EDITOR").map_err(|_| "Set EDITOR to the editor V opens".to_string())?;
     let mut claude = process::Command::new("claude")
         .args([
             "--print",
