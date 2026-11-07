@@ -61,10 +61,11 @@ pub struct Output {
     status: Status,
     /// The tool uses whose result repeats what the screen already shows.
     hidden_results: HashSet<String>,
-    /// The name of each tool use that waits for its result, which names the tool on the
-    /// result's line. Claude can run several tools at once, so a result can come after a line
-    /// of another tool.
-    tool_names: HashMap<String, String>,
+    /// Each tool use that waits for its result. Claude can run several tools at once, so a
+    /// result can come after a line of another tool.
+    pending_calls: HashMap<String, PendingCall>,
+    /// The tag of the next tool use.
+    next_tag: u8,
     /// How the user stopped the turn that runs, if they did.
     interruption: Option<Interruption>,
     highlighter: Highlighter,
@@ -73,6 +74,16 @@ pub struct Output {
     waiting_stderr: Vec<String>,
     /// What each task that runs in the background does.
     background_tasks: Vec<String>,
+}
+
+/// A tool use that waits for its result, whose line names the tool and repeats the tag.
+struct PendingCall {
+    name: String,
+    /// What ties the result's line to the call's line: two hexadecimal digits, which keep the
+    /// columns of both lines in place. Tags count up and wrap from ff to 00, on the assumption
+    /// that a call's result arrives before 255 more calls start. A call that waits longer
+    /// shares its tag with a newer call.
+    tag: u8,
 }
 
 /// What Claude does, which the marker in front of the input line shows.
@@ -133,7 +144,8 @@ impl Output {
             pending_break: None,
             status: Status::Idle,
             hidden_results: HashSet::new(),
-            tool_names: HashMap::new(),
+            pending_calls: HashMap::new(),
+            next_tag: 0,
             interruption: None,
             highlighter: Highlighter::new(),
             waiting_stderr: Vec::new(),
@@ -257,16 +269,28 @@ impl Output {
             self.hidden_results.insert(tool_use.id.clone());
             return;
         }
-        if !tool_use.is_subagent {
-            self.tool_names
-                .insert(tool_use.id.clone(), tool_use.name.clone());
-        }
+        // What a subagent did shows in what it reports back to Claude, so its calls have no
+        // result line to tie to
+        let mark = if tool_use.is_subagent {
+            format!("  {BOLD}●")
+        } else {
+            let tag = self.next_tag;
+            self.next_tag = tag.wrapping_add(1);
+            self.pending_calls.insert(
+                tool_use.id.clone(),
+                PendingCall {
+                    name: tool_use.name.clone(),
+                    tag,
+                },
+            );
+            format!("{BOLD}●{RESET} {DIM}#{tag:02x}{RESET}{BOLD}")
+        };
         self.begin(Section::Tools);
         let indent = if tool_use.is_subagent { "  " } else { "" };
         let summary = summarize(&tool_use.name, &tool_use.input);
         let mut summary_lines = summary.lines();
         let first = summary_lines.next().unwrap_or_default();
-        self.push(format!("{indent}{BOLD}● {}{RESET} {first}", tool_use.name));
+        self.push(format!("{mark} {}{RESET} {first}", tool_use.name));
         for line in summary_lines {
             self.push(format!("{indent}  {line}"));
         }
@@ -286,7 +310,7 @@ impl Output {
         if !result.is_subagent {
             self.set_status(Status::Working);
         }
-        let name = self.tool_names.remove(&result.tool_use_id);
+        let call = self.pending_calls.remove(&result.tool_use_id);
         // What a subagent did shows in what it reports back to Claude. A tool the interrupt
         // stopped fails with Claude Code's message to Claude.
         if result.is_subagent
@@ -296,7 +320,12 @@ impl Output {
             return;
         }
         self.begin(Section::Tools);
-        let color = if result.is_error { RED } else { DIM };
+        // The outcome is all the line adds to the call's line, so the rest stays in the back
+        let outcome = if result.is_error {
+            format!("{RED}✗")
+        } else {
+            format!("{GREEN}✓")
+        };
         let text = result.text.as_deref().map_or("(no text)", str::trim);
         let mut lines = text.lines();
         let first = lines.next().unwrap_or("(no output)");
@@ -304,9 +333,11 @@ impl Output {
             0 => String::new(),
             count => format!(" (+{count} lines)"),
         };
-        let label = name.map_or_else(String::new, |name| format!("{name}: "));
         // Other lines can come between a call and its result, so the result stands on its own
-        self.push(format!("{color}○ {label}{first}{more}{RESET}"));
+        let label = call.map_or_else(String::new, |call| {
+            format!("#{:02x} {}: ", call.tag, call.name)
+        });
+        self.push(format!("{outcome}{RESET} {DIM}{label}{first}{more}{RESET}"));
     }
 
     pub fn show_ask(&mut self, ask: &Ask) {
@@ -616,10 +647,27 @@ mod tests {
     }
 
     #[test]
-    fn a_result_names_its_tool() {
+    fn a_result_repeats_its_call_tag_and_names_its_tool() {
         let mut output = output_after_message();
         output.show_tool_use(&read_call("1", "a.txt"));
-        output.show_tool_result(&result("1", "a"));
-        assert_eq!(output.take_lines()[2], format!("{DIM}○ Read: a{RESET}"));
+        output.show_tool_use(&read_call("2", "b.txt"));
+        output.show_tool_result(&result("2", "b"));
+        let lines = output.take_lines();
+        assert_eq!(
+            lines[2],
+            format!("{BOLD}●{RESET} {DIM}#01{RESET}{BOLD} Read{RESET} b.txt")
+        );
+        assert_eq!(lines[3], format!("{GREEN}✓{RESET} {DIM}#01 Read: b{RESET}"));
+    }
+
+    #[test]
+    fn tags_wrap_from_ff_to_00() {
+        let mut output = output_after_message();
+        for id in 0..257 {
+            output.show_tool_use(&read_call(&id.to_string(), "a.txt"));
+        }
+        let lines = output.take_lines();
+        assert!(lines[256].contains("#ff"));
+        assert!(lines[257].contains("#00"));
     }
 }
