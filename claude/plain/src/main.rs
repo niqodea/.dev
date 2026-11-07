@@ -15,12 +15,12 @@ use std::borrow::Cow;
 use std::env;
 use std::io::{self, BufRead, BufReader, Write};
 use std::mem::MaybeUninit;
-use std::os::unix::process::CommandExt;
-use std::process::{self, ChildStderr, ChildStdin, ChildStdout, ExitCode, Stdio};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::process::{self, ChildStderr, ChildStdin, ChildStdout, ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use nu_ansi_term::{Color, Style};
@@ -161,7 +161,7 @@ fn run() -> Result<ExitCode, String> {
     let repaint_signal = editor.repaint_signal();
     let watcher_repaint_signal = repaint_signal.clone();
     let errors_repaint_signal = repaint_signal.clone();
-    thread::spawn(move || {
+    let reader = thread::spawn(move || {
         read_claude(
             from_claude,
             &reader_output,
@@ -173,7 +173,7 @@ fn run() -> Result<ExitCode, String> {
         );
     });
     let errors_output = Arc::clone(&output);
-    thread::spawn(move || {
+    let errors_reader = thread::spawn(move || {
         read_claude_errors(errors_from_claude, &errors_output, &|| {
             errors_repaint_signal.request_repaint();
         });
@@ -198,21 +198,63 @@ fn run() -> Result<ExitCode, String> {
         to_claude,
         request_count: 0,
     };
-    session.send(&Command::GetSettings)?;
-    session.send(&Command::GetContext)?;
-    session.run()?;
+    let result = session
+        .send(&Command::GetSettings)
+        .and_then(|()| session.send(&Command::GetContext))
+        .and_then(|()| session.run());
+    end(session, claude, [reader, errors_reader], &output, result)
+}
+
+/// Ends the session the user or Claude Code ended, or that failed with `result`'s error, and
+/// shows the rest of the output: all Claude Code wrote, then how it ended.
+fn end(
+    session: Session,
+    mut claude: process::Child,
+    readers: [JoinHandle<()>; 2],
+    output: &Mutex<Output>,
+    result: Result<(), String>,
+) -> Result<ExitCode, String> {
     // Claude Code ends once its input closes
     drop(session);
-    for line in lock(&output).take_lines() {
-        println!("{line}");
-    }
     let status = claude
         .wait()
         .map_err(|error| format!("Cannot wait for claude: {error}"))?;
-    Ok(match status.code() {
-        Some(0) => ExitCode::SUCCESS,
-        _ => ExitCode::FAILURE,
-    })
+    // Every line Claude Code wrote comes before its end. Each reader ends once its output
+    // closes, which it does as Claude Code exits, since the processes Claude Code starts in the
+    // background write to files of their own. A reader that panicked already said why
+    for reader in readers {
+        let _ = reader.join();
+    }
+    let mut output = lock(output);
+    let code = match result {
+        Ok(()) => exit_code(status),
+        Err(error) => {
+            output.show_error(&error);
+            ExitCode::FAILURE
+        }
+    };
+    output.show_end(describe_exit(status).as_deref());
+    for line in output.take_lines() {
+        println!("{line}");
+    }
+    Ok(code)
+}
+
+/// How Claude Code exited, none when with status 0.
+fn describe_exit(status: ExitStatus) -> Option<String> {
+    // Like "exit status: 1", or "signal: 9 (SIGKILL)"
+    (!status.success()).then(|| format!("Claude Code ended with {status}"))
+}
+
+/// The status a shell gives for a program that ended as Claude Code did, which the client ends
+/// with, so it passes Claude Code's on.
+fn exit_code(status: ExitStatus) -> ExitCode {
+    let code = status
+        .code()
+        .or_else(|| status.signal().map(|signal| 128 + signal))
+        .and_then(|code| u8::try_from(code).ok())
+        .unwrap_or(1);
+    ExitCode::from(code)
 }
 
 /// The input line: vi keys, Enter and Ctrl-C as host commands, the bar, Ctrl-G for the editor,
@@ -596,11 +638,19 @@ impl Session {
         })
     }
 
+    /// Sends the command, which Claude Code that already ended never reads. Its reader then
+    /// says it closed, and the session's end says how it exited.
     fn send(&mut self, command: &Command) -> Result<(), String> {
-        self.to_claude
+        match self
+            .to_claude
             .write_all(command.to_line().as_bytes())
             .and_then(|()| self.to_claude.flush())
-            .map_err(|error| format!("Cannot write to claude: {error}"))
+        {
+            Err(error) if error.kind() != io::ErrorKind::BrokenPipe => {
+                Err(format!("Cannot write to claude: {error}"))
+            }
+            _ => Ok(()),
+        }
     }
 }
 

@@ -206,6 +206,27 @@ impl Output {
     }
 
     pub fn show_text_end(&mut self) {
+        self.end_text();
+        self.set_status(Status::Working);
+    }
+
+    /// Ends the conversation, since Claude Code ended. The text Claude was writing ends where it
+    /// stopped, the error output that waited for it follows, and then how Claude Code exited,
+    /// when it says more than that it exited with status 0. The line states it and leaves to
+    /// the user what it means, since a status that is not 0 can come from the user too, like
+    /// from quitting while Claude works.
+    pub fn show_end(&mut self, exit: Option<&str>) {
+        self.end_text();
+        self.set_status(Status::Idle);
+        if let Some(exit) = exit {
+            self.begin(Section::Notice);
+            self.push(format!("{DIM}{exit}{RESET}"));
+        }
+    }
+
+    /// Adds the rest of the text Claude wrote, which its last line and the lines the
+    /// highlighter holds wait in.
+    fn end_text(&mut self) {
         if !self.partial.is_empty() {
             let line = std::mem::take(&mut self.partial);
             let colored = self.highlighter.color_line(&line);
@@ -213,7 +234,6 @@ impl Output {
         }
         let held = self.highlighter.finish();
         self.push_all(held);
-        self.set_status(Status::Working);
     }
 
     pub fn show_tool_use(&mut self, tool_use: &ToolUse) {
