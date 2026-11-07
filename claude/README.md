@@ -32,6 +32,13 @@ A Claude pane killed from outside Claude signals nothing, so the workstation pan
 `,claude-plain` runs Claude Code in plain text: replies are appended to the terminal, above an input line.
 It drives `claude -p`, and passes its arguments on to `claude`.
 
+`,claude-plain` assumes a session keeps one permission mode, so it has no key to switch modes and shows none on the bar.
+Set the mode you always use in `~/.claude/settings.json`:
+
+```json
+{ "permissions": { "defaultMode": "<mode>" } }
+```
+
 When the shell has `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` set, Claude Code pays with them instead of our subscription.
 The interactive Claude asks first, `claude -p` does not, so `,claude-plain` warns in orange as it starts.
 To always use the subscription, add this to `~/.claude/settings.json`, which empties both for every Claude Code session:
