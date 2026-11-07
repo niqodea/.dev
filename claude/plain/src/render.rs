@@ -70,6 +70,8 @@ pub struct Output {
     /// The lines of Claude Code's error output that wait for Claude to finish the text it
     /// writes.
     waiting_stderr: Vec<String>,
+    /// What each task that runs in the background does.
+    background_tasks: Vec<String>,
 }
 
 /// What Claude does, which the marker in front of the input line shows.
@@ -134,11 +136,20 @@ impl Output {
             interruption: None,
             highlighter: Highlighter::new(),
             waiting_stderr: Vec::new(),
+            background_tasks: Vec::new(),
         }
     }
 
     pub fn status(&self) -> Status {
         self.status.clone()
+    }
+
+    pub fn background_tasks(&self) -> &[String] {
+        &self.background_tasks
+    }
+
+    pub fn note_background_tasks(&mut self, tasks: Vec<String>) {
+        self.background_tasks = tasks;
     }
 
     /// Takes the lines that wait to be printed above the input line.

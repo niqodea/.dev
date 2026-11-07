@@ -57,6 +57,7 @@ enum Input {
     Closed,
 }
 
+/// The terminal's side of the session: the input line, and what it shows of Claude's.
 struct Session {
     editor: Reedline,
     /// The prompt in front of the open input line.
@@ -67,8 +68,22 @@ struct Session {
     context: Arc<Mutex<Context>>,
     inputs: Receiver<Input>,
     break_signal: Arc<AtomicBool>,
+}
+
+/// The session while the user talks with Claude, through Claude Code's input.
+struct Conversation {
+    session: Session,
     to_claude: ChildStdin,
+    claude_pid: libc::pid_t,
     request_count: u64,
+}
+
+/// The session once the user has nothing more to say: Claude Code's input closed, and Claude
+/// finishes its work.
+struct Ending {
+    session: Session,
+    /// Claude Code's process, which Ctrl-C interrupts.
+    claude_pid: libc::pid_t,
 }
 
 /// What the input line is for.
@@ -77,11 +92,13 @@ enum Line {
     Message,
     /// The answer to what a tool asks, with the question.
     Answer(String),
+    /// None, since the user has nothing more to say, while Claude finishes its work.
+    Ending,
 }
 
 /// The prompt in front of the input line: for a message, `››` on a row above it, with the
 /// context's level, red on a cold cache, and what Claude does after them; for an answer, the
-/// question.
+/// question; at the end, the work Claude still does.
 struct Marker {
     line: Arc<Mutex<Line>>,
     output: Arc<Mutex<Output>>,
@@ -183,39 +200,39 @@ fn run() -> Result<ExitCode, String> {
     });
 
     let _quiet_terminal = QuietTerminal::new()?;
-    let mut session = Session {
-        editor,
-        prompt: Marker {
-            line: Arc::clone(&line),
+    let conversation = Conversation {
+        session: Session {
+            editor,
+            prompt: Marker {
+                line: Arc::clone(&line),
+                output: Arc::clone(&output),
+                context: Arc::clone(&context),
+            },
+            line,
             output: Arc::clone(&output),
-            context: Arc::clone(&context),
+            context,
+            inputs,
+            break_signal,
         },
-        line,
-        output: Arc::clone(&output),
-        context,
-        inputs,
-        break_signal,
         to_claude,
+        claude_pid: claude.id().cast_signed(),
         request_count: 0,
     };
-    let result = session
-        .send(&Command::GetSettings)
-        .and_then(|()| session.send(&Command::GetContext))
-        .and_then(|()| session.run());
-    end(session, claude, [reader, errors_reader], &output, result)
+    let result = conversation
+        .run()
+        .and_then(|ending| ending.map_or(Ok(()), Ending::run));
+    end(claude, [reader, errors_reader], &output, result)
 }
 
 /// Ends the session the user or Claude Code ended, or that failed with `result`'s error, and
-/// shows the rest of the output: all Claude Code wrote, then how it ended.
+/// shows the rest of the output: all Claude Code wrote, then how it ended. The session is over,
+/// so Claude Code's input closed, and Claude Code exits once its work is done.
 fn end(
-    session: Session,
     mut claude: process::Child,
     readers: [JoinHandle<()>; 2],
     output: &Mutex<Output>,
     result: Result<(), String>,
 ) -> Result<ExitCode, String> {
-    // Claude Code ends once its input closes
-    drop(session);
     let status = claude
         .wait()
         .map_err(|error| format!("Cannot wait for claude: {error}"))?;
@@ -349,6 +366,10 @@ fn read_claude(
                 Event::TurnEnd { failure } => output.show_turn_end(failure.as_deref()),
                 Event::SettingsErrors(errors) => output.show_settings_errors(&errors),
                 Event::State(state) => output.note_state(state),
+                Event::BackgroundTasks(tasks) => {
+                    output.note_background_tasks(tasks);
+                    request_repaint();
+                }
                 Event::Call(usage) => {
                     let cold_at = lock(context).note_call(&usage, Instant::now());
                     // The watcher stops only on the program's way out
@@ -422,35 +443,62 @@ fn watch_cache(cold_ats: &Receiver<Instant>, request_repaint: &dyn Fn()) {
 }
 
 impl Session {
-    /// Runs the conversation until the user ends it, or Claude Code does.
-    fn run(&mut self) -> Result<(), String> {
+    /// What Claude Code asks of the main thread, if anything waits.
+    fn next_input(&self) -> Option<Input> {
+        // A break signal raised before the line opens has nothing left to break
+        self.break_signal.store(false, Ordering::Relaxed);
+        match self.inputs.try_recv() {
+            Ok(input) => Some(input),
+            Err(TryRecvError::Disconnected) => Some(Input::Closed),
+            Err(TryRecvError::Empty) => None,
+        }
+    }
+
+    /// Reads the input line, starting from `draft`. A host command or a break signal leaves the
+    /// line on screen, for the next line to take the place of.
+    fn read_line(&mut self, line: Line, draft: &str) -> Result<Signal, String> {
+        *lock(&self.line) = line;
+        self.editor.run_edit_commands(&[
+            EditCommand::Clear,
+            EditCommand::InsertString(draft.to_string()),
+        ]);
+        self.editor
+            .read_line(&self.prompt)
+            .map_err(|error| format!("Cannot read the input line: {error}"))
+    }
+}
+
+impl Conversation {
+    /// Runs the conversation until Claude Code ends, or until the user has nothing more to say,
+    /// which the ending follows.
+    fn run(mut self) -> Result<Option<Ending>, String> {
+        self.send(&Command::GetSettings)?;
+        self.send(&Command::GetContext)?;
         let mut draft = String::new();
         loop {
-            // A break signal raised before the line opens has nothing left to break
-            self.break_signal.store(false, Ordering::Relaxed);
-            match self.inputs.try_recv() {
-                Ok(Input::Ask(ask)) => {
+            match self.session.next_input() {
+                Some(Input::Ask(ask)) => {
                     self.answer(&ask)?;
                     continue;
                 }
-                Ok(Input::Unsupported {
+                Some(Input::Unsupported {
                     request_id,
                     subtype,
                 }) => {
                     self.refuse(&request_id, &subtype)?;
                     continue;
                 }
-                Ok(Input::Closed) | Err(TryRecvError::Disconnected) => return Ok(()),
-                Err(TryRecvError::Empty) => {}
+                Some(Input::Closed) => return Ok(None),
+                None => {}
             }
-            draft = match self.read_line(Line::Message, &draft)? {
+            draft = match self.session.read_line(Line::Message, &draft)? {
                 // A message on a cold cache stays on the input line the first time, and the
                 // label says the next Enter sends it
                 Signal::HostCommand(command) if command == SEND => {
-                    let text = self.editor.current_buffer_contents().to_string();
+                    let text = self.session.editor.current_buffer_contents().to_string();
                     if text.trim().is_empty() {
                         String::new()
-                    } else if lock(&self.context).holds_message(Instant::now()) {
+                    } else if lock(&self.session.context).holds_message(Instant::now()) {
                         text
                     } else {
                         self.send_message(&text)?;
@@ -459,8 +507,8 @@ impl Session {
                 }
                 // Ctrl-C on an empty line stops Claude, and on a line with text clears it
                 Signal::HostCommand(command) if command == CTRL_C => {
-                    let is_working = lock(&self.output).status() != Status::Idle;
-                    if self.editor.current_buffer_contents().is_empty() && is_working {
+                    let is_working = lock(&self.session.output).status() != Status::Idle;
+                    if self.session.editor.current_buffer_contents().is_empty() && is_working {
                         self.interrupt(Interruption::Stop)?;
                     }
                     String::new()
@@ -469,20 +517,31 @@ impl Session {
                 Signal::ExternalBreak(text) => text,
                 // Ctrl-C in a history search, which leaves the search
                 Signal::CtrlC(_) => String::new(),
-                Signal::CtrlD => {
-                    if lock(&self.output).status() != Status::Idle {
-                        self.interrupt(Interruption::Stop)?;
-                    }
-                    return Ok(());
-                }
+                Signal::CtrlD => return Ok(Some(self.end_input())),
                 signal => return Err(format!("Unexpected input: {signal:?}")),
             };
         }
     }
 
+    /// Closes Claude Code's input, as the end of input does a program's in the terminal, since
+    /// the user has nothing more to say.
+    fn end_input(self) -> Ending {
+        let Conversation {
+            session,
+            to_claude,
+            claude_pid,
+            request_count: _,
+        } = self;
+        drop(to_claude);
+        Ending {
+            session,
+            claude_pid,
+        }
+    }
+
     /// Asks the user about the tool, and tells Claude Code the answer.
     fn answer(&mut self, ask: &Ask) -> Result<(), String> {
-        lock(&self.output).show_ask(ask);
+        lock(&self.session.output).show_ask(ask);
         let answer = match &ask.kind {
             AskKind::Permission { rules, .. } => {
                 let always = if rules.is_empty() { "" } else { "/a" };
@@ -494,7 +553,7 @@ impl Session {
             AskKind::Questions(questions) => self.read_questions(ask, questions)?,
         };
         if let Answer::Deny { interrupt, .. } = &answer {
-            let mut output = lock(&self.output);
+            let mut output = lock(&self.session.output);
             output.hide_result(&ask.tool_use_id);
             if *interrupt {
                 output.note_interrupt(Interruption::Stop);
@@ -566,10 +625,13 @@ impl Session {
     fn read_answer(&mut self, question: &str) -> Result<Option<String>, String> {
         let mut draft = String::new();
         loop {
-            match self.read_line(Line::Answer(question.to_string()), &draft)? {
+            match self
+                .session
+                .read_line(Line::Answer(question.to_string()), &draft)?
+            {
                 Signal::HostCommand(command) if command == SEND => {
-                    let text = self.editor.current_buffer_contents().to_string();
-                    lock(&self.output).show_answer(question, &text);
+                    let text = self.session.editor.current_buffer_contents().to_string();
+                    lock(&self.session.output).show_answer(question, &text);
                     return Ok(Some(text));
                 }
                 // Claude Code asked something more, which waits for this answer
@@ -580,28 +642,15 @@ impl Session {
         }
     }
 
-    /// Reads the input line, starting from `draft`. A host command or a break signal leaves the
-    /// line on screen, for the next line to take the place of.
-    fn read_line(&mut self, line: Line, draft: &str) -> Result<Signal, String> {
-        *lock(&self.line) = line;
-        self.editor.run_edit_commands(&[
-            EditCommand::Clear,
-            EditCommand::InsertString(draft.to_string()),
-        ]);
-        self.editor
-            .read_line(&self.prompt)
-            .map_err(|error| format!("Cannot read the input line: {error}"))
-    }
-
     /// Shows the message and sends it. While Claude works, Claude Code makes way for it, as for
     /// a message sent with its own send-now key.
     fn send_message(&mut self, text: &str) -> Result<(), String> {
-        let is_working = lock(&self.output).status() != Status::Idle;
-        lock(&self.output).show_message(text);
+        let is_working = lock(&self.session.output).status() != Status::Idle;
+        lock(&self.session.output).show_message(text);
         let id = Uuid::new_v4().to_string();
         self.send(&Command::Message { id: &id, text })?;
         if is_working {
-            lock(&self.output).note_interrupt(Interruption::Message);
+            lock(&self.session.output).note_interrupt(Interruption::Message);
             let request_id = self.next_request_id();
             self.send(&Command::SendNow {
                 request_id,
@@ -609,7 +658,8 @@ impl Session {
             })?;
         }
         // reedline keeps in its history only the lines its own Enter submits
-        self.editor
+        self.session
+            .editor
             .history_mut()
             .save(HistoryItem::from_command_line(text))
             .map(|_| ())
@@ -617,7 +667,7 @@ impl Session {
     }
 
     fn interrupt(&mut self, interruption: Interruption) -> Result<(), String> {
-        lock(&self.output).note_interrupt(interruption);
+        lock(&self.session.output).note_interrupt(interruption);
         let request_id = self.next_request_id();
         self.send(&Command::Interrupt { request_id })
     }
@@ -629,7 +679,7 @@ impl Session {
     }
 
     fn refuse(&mut self, request_id: &str, subtype: &str) -> Result<(), String> {
-        lock(&self.output).show_error(&format!(
+        lock(&self.session.output).show_error(&format!(
             "Claude Code asked for {subtype}, which this client does not offer"
         ));
         self.send(&Command::Refuse {
@@ -651,6 +701,45 @@ impl Session {
             }
             _ => Ok(()),
         }
+    }
+}
+
+impl Ending {
+    /// Shows Claude finish its work, until Claude Code exits once its turn and its background
+    /// tasks end. Ctrl-C stops them.
+    fn run(mut self) -> Result<(), String> {
+        loop {
+            match self.session.next_input() {
+                Some(Input::Closed) => return Ok(()),
+                // Claude Code fails each ask once its input closed, with "Stream closed", which
+                // the tool's result then shows
+                Some(Input::Ask(_) | Input::Unsupported { .. }) | None => {}
+            }
+            match self.session.read_line(Line::Ending, "")? {
+                Signal::HostCommand(command) if command == CTRL_C => self.interrupt()?,
+                // What the user types has no one left to read it
+                Signal::HostCommand(_)
+                | Signal::ExternalBreak(_)
+                | Signal::CtrlC(_)
+                | Signal::CtrlD => {}
+                signal => return Err(format!("Unexpected input: {signal:?}")),
+            }
+        }
+    }
+
+    /// Stops Claude's turn and background tasks with SIGINT, as Ctrl-C does a program in the
+    /// terminal. Claude Code then exits.
+    fn interrupt(&self) -> Result<(), String> {
+        lock(&self.session.output).note_interrupt(Interruption::Stop);
+        // SAFETY: kill only sends a signal. The process keeps its id until it is waited for,
+        // which the session's end does
+        if unsafe { libc::kill(self.claude_pid, libc::SIGINT) } == -1 {
+            return Err(format!(
+                "Cannot stop claude: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -690,6 +779,19 @@ impl Drop for QuietTerminal {
     }
 }
 
+/// What Claude does, none while it waits for the user.
+fn describe_work(output: &Output) -> Option<String> {
+    match output.status() {
+        Status::Idle => None,
+        Status::Working => Some("working".to_string()),
+        Status::Writing if output.has_waiting_stderr() => {
+            Some("writing, stderr waiting".to_string())
+        }
+        Status::Writing => Some("writing".to_string()),
+        Status::Running(tool) => Some(format!("running {tool}")),
+    }
+}
+
 impl Prompt for Marker {
     fn render_prompt_left(&self) -> Cow<'_, str> {
         let label = match &*lock(&self.line) {
@@ -715,22 +817,30 @@ impl Prompt for Marker {
                 let state = if is_cold_confirmed {
                     Some("cold, enter sends".to_string())
                 } else {
-                    let output = lock(&self.output);
-                    match output.status() {
-                        Status::Idle => None,
-                        Status::Working => Some("working".to_string()),
-                        Status::Writing if output.has_waiting_stderr() => {
-                            Some("writing, stderr waiting".to_string())
-                        }
-                        Status::Writing => Some("writing".to_string()),
-                        Status::Running(tool) => Some(format!("running {tool}")),
-                    }
+                    describe_work(&lock(&self.output))
                 };
                 let state =
                     state.map_or_else(String::new, |state| format!(" {STATUS_COLOR}│ {state}"));
                 format!("{}{indicators}{state}", start_bar_row())
             }
             Line::Answer(question) => answer_label(question),
+            Line::Ending => {
+                let output = lock(&self.output);
+                let tasks = output.background_tasks();
+                let background =
+                    (!tasks.is_empty()).then(|| format!("background: {}", tasks.join(", ")));
+                let parts: Vec<String> = ["ending".to_string()]
+                    .into_iter()
+                    .chain(describe_work(&output))
+                    .chain(background)
+                    .collect();
+                format!(
+                    "{}{} {STATUS_COLOR}{}",
+                    start_bar_row(),
+                    marks(),
+                    parts.join(" │ ")
+                )
+            }
         };
         Cow::Owned(label)
     }
@@ -744,6 +854,9 @@ impl Prompt for Marker {
             // A message starts on a row of its own, so its lines copy back as they were written
             Line::Message => Cow::Owned(format!("\n{}", start_bar_row())),
             Line::Answer(_) => Cow::Borrowed(""),
+            // The ending takes no input, and what the terminal shows after the client starts on
+            // the row below
+            Line::Ending => Cow::Borrowed("\n"),
         }
     }
 

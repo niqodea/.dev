@@ -25,6 +25,8 @@ pub enum Event {
     /// A tool that waits for the user's answer before it runs.
     Ask(Ask),
     State(State),
+    /// What each of the tasks that run in the background does, in the order they started.
+    BackgroundTasks(Vec<String>),
     /// The end of a turn, with the reason Claude Code gives when the turn ended before its work
     /// was done.
     TurnEnd {
@@ -344,6 +346,9 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
             failure: Some(subtype),
         }],
         Message::System(System::SessionStateChanged { state }) => vec![Event::State(state)],
+        Message::System(System::BackgroundTasksChanged { tasks }) => vec![Event::BackgroundTasks(
+            tasks.into_iter().map(|task| task.description).collect(),
+        )],
         Message::StreamEvent { .. }
         // The other requests sent are interrupts, whose success needs no word
         | Message::ControlResponse {
@@ -458,8 +463,17 @@ enum System {
     SessionStateChanged {
         state: State,
     },
+    /// Sent each time a task starts or ends, with every task that still runs.
+    BackgroundTasksChanged {
+        tasks: Vec<BackgroundTask>,
+    },
     #[serde(other)]
     Other,
+}
+
+#[derive(Deserialize)]
+struct BackgroundTask {
+    description: String,
 }
 
 #[derive(Deserialize)]
@@ -710,6 +724,27 @@ mod tests {
         };
         assert_eq!(usage.tokens, 22_039);
         assert_eq!(usage.cache_ttl, Some(Duration::from_hours(1)));
+    }
+
+    #[test]
+    fn a_change_of_the_background_tasks_tells_what_each_one_does() {
+        // As Claude Code 2.1.316 sent it
+        let line = json!({
+            "type": "system",
+            "subtype": "background_tasks_changed",
+            "tasks": [{
+                "task_id": "bbaaokkwa",
+                "run_id": "0mw6q3kby-4c564330",
+                "task_type": "local_bash",
+                "description": "Sleep 20 seconds in background",
+            }],
+        })
+        .to_string();
+        let events = read_events(&line).expect("a readable line");
+        let [Event::BackgroundTasks(tasks)] = events.as_slice() else {
+            panic!("background tasks");
+        };
+        assert_eq!(tasks, &["Sleep 20 seconds in background"]);
     }
 
     #[test]
