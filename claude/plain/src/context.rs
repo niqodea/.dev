@@ -13,11 +13,6 @@ use crate::protocol::Usage;
 /// holds little more than that.
 const LEVEL_BOUNDS: [u64; 3] = [30_000, 80_000, 150_000];
 
-/// The API keeps a cache entry for its TTL after the call that last read or wrote it. That call
-/// reached the API before its reply started, by up to the time the API takes to read a context
-/// it has no cache for, so the cache counts as cold this long before its TTL ends.
-const REPLY_DELAY: Duration = Duration::from_secs(60);
-
 /// The shortest TTL the API gives a cache entry, which a call that wrote nothing to the cache
 /// keeps when no call before it told its TTL.
 const SHORTEST_TTL: Duration = Duration::from_mins(5);
@@ -54,13 +49,16 @@ impl Context {
     }
 
     /// Notes a call of Claude's whose reply starts at `now`, and returns when its cache turns
-    /// cold.
+    /// cold. The API keeps a cache entry for its TTL after the call that last read or wrote it,
+    /// and that call reached the API a little before its reply started, so the cache can turn
+    /// cold that much earlier. Claude Code 2.1.316 counts its own cache's TTL the same way, from
+    /// its own clock and with no margin.
     pub fn note_call(&mut self, usage: &Usage, now: Instant) -> Instant {
         self.tokens = usage.tokens;
         if let Some(ttl) = usage.cache_ttl {
             self.ttl = ttl;
         }
-        let cold_at = now + self.ttl.saturating_sub(REPLY_DELAY);
+        let cold_at = now + self.ttl;
         self.cache = Cache::WarmUntil(cold_at);
         self.is_cold_confirmed = false;
         cold_at
@@ -149,11 +147,11 @@ mod tests {
     }
 
     #[test]
-    fn the_cache_turns_cold_ahead_of_its_ttl() {
+    fn the_cache_turns_cold_once_its_ttl_passes() {
         let mut context = Context::new();
         let now = Instant::now();
         let cold_at = context.note_call(&usage(40_000, Some(HOUR)), now);
-        assert_eq!(cold_at, now + HOUR.saturating_sub(REPLY_DELAY));
+        assert_eq!(cold_at, now + HOUR);
         assert!(!context.is_cold(now));
         assert!(context.is_cold(cold_at));
     }
@@ -164,7 +162,7 @@ mod tests {
         let now = Instant::now();
         context.note_call(&usage(40_000, Some(HOUR)), now);
         let cold_at = context.note_call(&usage(40_000, None), now);
-        assert_eq!(cold_at, now + HOUR.saturating_sub(REPLY_DELAY));
+        assert_eq!(cold_at, now + HOUR);
     }
 
     #[test]
