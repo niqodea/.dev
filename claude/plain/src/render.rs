@@ -67,6 +67,9 @@ pub struct Output {
     /// How the user stopped the turn that runs, if they did.
     interruption: Option<Interruption>,
     highlighter: Highlighter,
+    /// The lines of Claude Code's error output that wait for Claude to finish the text it
+    /// writes.
+    waiting_stderr: Vec<String>,
 }
 
 /// What Claude does, which the marker in front of the input line shows.
@@ -130,6 +133,7 @@ impl Output {
             tool_names: HashMap::new(),
             interruption: None,
             highlighter: Highlighter::new(),
+            waiting_stderr: Vec::new(),
         }
     }
 
@@ -160,7 +164,7 @@ impl Output {
             self.lines.push(format!("{}{line}{RESET}", start_bar_row()));
         }
         self.position = Position::In(Section::Message);
-        self.status = Status::Working;
+        self.set_status(Status::Working);
         // An interrupt sent as its turn ended had no turn left to stop
         self.interruption = None;
     }
@@ -182,9 +186,9 @@ impl Output {
 
     pub fn note_state(&mut self, state: State) {
         match state {
-            State::Idle => self.status = Status::Idle,
+            State::Idle => self.set_status(Status::Idle),
             // What Claude does in its turn says more, once it is known
-            State::Running if self.status == Status::Idle => self.status = Status::Working,
+            State::Running if self.status == Status::Idle => self.set_status(Status::Working),
             // The input line asks the user, which says more than any label
             State::Running | State::RequiresAction => {}
         }
@@ -192,7 +196,7 @@ impl Output {
 
     pub fn show_text(&mut self, text: &str) {
         self.begin(Section::Text);
-        self.status = Status::Writing;
+        self.set_status(Status::Writing);
         self.partial.push_str(text);
         while let Some(end) = self.partial.find('\n') {
             let line: String = self.partial.drain(..=end).collect();
@@ -209,12 +213,12 @@ impl Output {
         }
         let held = self.highlighter.finish();
         self.push_all(held);
-        self.status = Status::Working;
+        self.set_status(Status::Working);
     }
 
     pub fn show_tool_use(&mut self, tool_use: &ToolUse) {
         if !tool_use.is_subagent {
-            self.status = Status::Running(tool_use.name.clone());
+            self.set_status(Status::Running(tool_use.name.clone()));
         }
         // Its ask shows the questions, and the input line the answers
         if tool_use.name == "AskUserQuestion" {
@@ -248,7 +252,7 @@ impl Output {
 
     pub fn show_tool_result(&mut self, result: &ToolResult) {
         if !result.is_subagent {
-            self.status = Status::Working;
+            self.set_status(Status::Working);
         }
         let name = self.tool_names.remove(&result.tool_use_id);
         // What a subagent did shows in what it reports back to Claude. A tool the interrupt
@@ -269,7 +273,8 @@ impl Output {
             count => format!(" (+{count} lines)"),
         };
         let label = name.map_or_else(String::new, |name| format!("{name}: "));
-        self.push(format!("  {color}⎿ {label}{first}{more}{RESET}"));
+        // Other lines can come between a call and its result, so the result stands on its own
+        self.push(format!("{color}○ {label}{first}{more}{RESET}"));
     }
 
     pub fn show_ask(&mut self, ask: &Ask) {
@@ -356,6 +361,38 @@ impl Output {
     pub fn show_error(&mut self, error: &str) {
         self.begin(Section::Notice);
         self.push(format!("{RED}{error}{RESET}"));
+    }
+
+    /// Shows a line of Claude Code's error output. Claude's text has nothing that names it, so
+    /// the line waits until Claude finishes writing and the paragraphs stay whole. Every other
+    /// line says what it is, like a tool's result, which names its tool, so the line goes in at
+    /// once, between a tool's call and its result too.
+    pub fn show_stderr(&mut self, line: &str) {
+        if self.status == Status::Writing {
+            self.waiting_stderr.push(line.to_string());
+        } else {
+            self.push_stderr(line);
+        }
+    }
+
+    pub fn has_waiting_stderr(&self) -> bool {
+        !self.waiting_stderr.is_empty()
+    }
+
+    fn push_stderr(&mut self, line: &str) {
+        self.begin(Section::Notice);
+        self.push(format!("{DIM}stderr │{RESET} {RED}{line}{RESET}"));
+    }
+
+    /// Sets what Claude does. Once Claude stops writing, the lines of error output that waited
+    /// follow its text.
+    fn set_status(&mut self, status: Status) {
+        if self.status == Status::Writing && status != Status::Writing {
+            for line in std::mem::take(&mut self.waiting_stderr) {
+                self.push_stderr(&line);
+            }
+        }
+        self.status = status;
     }
 
     /// Starts a section, set apart by the next line written: Claude's reply from the user's
@@ -448,6 +485,26 @@ mod tests {
     }
 
     #[test]
+    fn error_output_waits_for_the_text_claude_writes() {
+        let mut output = output_after_message();
+        output.show_text("One.\n\nTw");
+        output.show_stderr("Failed");
+        output.show_text("o.\n");
+        output.show_text_end();
+        let lines = output.take_lines();
+        assert_eq!(
+            lines[..4],
+            [
+                reply_mark(),
+                "One.".to_string(),
+                String::new(),
+                "Two.".to_string()
+            ]
+        );
+        assert_eq!(lines[5], format!("{DIM}stderr │{RESET} {RED}Failed{RESET}"));
+    }
+
+    #[test]
     fn a_message_sent_mid_line_follows_what_claude_wrote_of_the_line() {
         let mut output = output_after_message();
         output.show_text("Hel");
@@ -534,6 +591,6 @@ mod tests {
         let mut output = output_after_message();
         output.show_tool_use(&read_call("1", "a.txt"));
         output.show_tool_result(&result("1", "a"));
-        assert_eq!(output.take_lines()[2], format!("  {DIM}⎿ Read: a{RESET}"));
+        assert_eq!(output.take_lines()[2], format!("{DIM}○ Read: a{RESET}"));
     }
 }

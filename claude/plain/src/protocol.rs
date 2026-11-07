@@ -355,6 +355,12 @@ pub fn read_events(line: &str) -> Result<Vec<Event>, String> {
     Ok(events)
 }
 
+/// Whether a line of Claude Code's error output repeats what one of its messages shows.
+pub fn repeats_a_message(line: &str) -> bool {
+    // Claude Code tags the API error of a model it does not know, which its reply reports
+    line.starts_with("[claude-code:unrecognized_model]")
+}
+
 /// The settings files Claude Code skipped, none when it read them all.
 fn read_settings(response: Option<Value>) -> Result<Vec<Event>, String> {
     let settings: Settings = serde_json::from_value(response.unwrap_or_default())

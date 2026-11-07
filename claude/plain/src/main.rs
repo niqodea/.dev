@@ -16,7 +16,7 @@ use std::env;
 use std::io::{self, BufRead, BufReader, Write};
 use std::mem::MaybeUninit;
 use std::os::unix::process::CommandExt;
-use std::process::{self, ChildStdin, ChildStdout, ExitCode, Stdio};
+use std::process::{self, ChildStderr, ChildStdin, ChildStdout, ExitCode, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -33,7 +33,7 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use context::Context;
-use protocol::{Answer, Ask, AskKind, Command, Event, Question, read_events};
+use protocol::{Answer, Ask, AskKind, Command, Event, Question, read_events, repeats_a_message};
 use render::{BAR_COLOR, Interruption, Output, Status, answer_label, marks, start_bar_row};
 
 const REFUSAL: &str = "The user refused this tool use.";
@@ -132,12 +132,16 @@ fn run() -> Result<ExitCode, String> {
         .env("CLAUDE_CODE_SDK_READS_SESSION_STATE", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        // Its error output reaches the terminal through the output, above the input line that
+        // reedline redraws
+        .stderr(Stdio::piped())
         // Keys reach only this process, which turns Ctrl-C into an interrupt of the turn
         .process_group(0)
         .spawn()
         .map_err(|error| format!("Cannot start claude: {error}"))?;
     let to_claude = claude.stdin.take().expect("stdin is piped");
     let from_claude = claude.stdout.take().expect("stdout is piped");
+    let errors_from_claude = claude.stderr.take().expect("stderr is piped");
 
     let output = Arc::new(Mutex::new(Output::new()));
     let context = Arc::new(Mutex::new(Context::new()));
@@ -156,6 +160,7 @@ fn run() -> Result<ExitCode, String> {
     let reader_break_signal = Arc::clone(&break_signal);
     let repaint_signal = editor.repaint_signal();
     let watcher_repaint_signal = repaint_signal.clone();
+    let errors_repaint_signal = repaint_signal.clone();
     thread::spawn(move || {
         read_claude(
             from_claude,
@@ -166,6 +171,12 @@ fn run() -> Result<ExitCode, String> {
             &reader_break_signal,
             &|| repaint_signal.request_repaint(),
         );
+    });
+    let errors_output = Arc::clone(&output);
+    thread::spawn(move || {
+        read_claude_errors(errors_from_claude, &errors_output, &|| {
+            errors_repaint_signal.request_repaint();
+        });
     });
     thread::spawn(move || {
         watch_cache(&cold_ats, &|| watcher_repaint_signal.request_repaint());
@@ -321,6 +332,29 @@ fn read_claude(
         }
     }
     forward(Input::Closed);
+}
+
+/// Shows each line of Claude Code's error output that adds to what its messages show.
+fn read_claude_errors(
+    errors_from_claude: ChildStderr,
+    output: &Mutex<Output>,
+    request_repaint: &dyn Fn(),
+) {
+    for line in BufReader::new(errors_from_claude).lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(error) => {
+                lock(output)
+                    .show_error(&format!("Cannot read the error output of claude: {error}"));
+                return;
+            }
+        };
+        if !repeats_a_message(&line) {
+            lock(output).show_stderr(&line);
+            // The prompt says when the line waits
+            request_repaint();
+        }
+    }
 }
 
 /// Repaints the prompt as the cache turns cold, at the latest of the instants `cold_ats` sends,
@@ -631,9 +665,13 @@ impl Prompt for Marker {
                 let state = if is_cold_confirmed {
                     Some("cold, enter sends".to_string())
                 } else {
-                    match lock(&self.output).status() {
+                    let output = lock(&self.output);
+                    match output.status() {
                         Status::Idle => None,
                         Status::Working => Some("working".to_string()),
+                        Status::Writing if output.has_waiting_stderr() => {
+                            Some("writing, stderr waiting".to_string())
+                        }
                         Status::Writing => Some("writing".to_string()),
                         Status::Running(tool) => Some(format!("running {tool}")),
                     }
