@@ -288,24 +288,25 @@ impl Output {
             format!("{BOLD}●{RESET} {DIM}#{tag:02x}{RESET}{BOLD}")
         };
         self.begin(Section::Tools);
-        let indent = if tool_use.is_subagent { "  " } else { "" };
+        // One line per call keeps the tool calls out of the way of the conversation
         let summary = summarize(&tool_use.name, &tool_use.input);
         let mut summary_lines = summary.lines();
         let first = summary_lines.next().unwrap_or_default();
-        self.push(format!("{mark} {}{RESET} {first}", tool_use.name));
-        for line in summary_lines {
-            self.push(format!("{indent}  {line}"));
-        }
-        if tool_use.name == "Edit" {
-            let removed = read_field(&tool_use.input, "old_string");
-            let added = read_field(&tool_use.input, "new_string");
-            for line in removed.lines() {
-                self.push(format!("{indent}  {RED}- {line}{RESET}"));
-            }
-            for line in added.lines() {
-                self.push(format!("{indent}  {GREEN}+ {line}{RESET}"));
-            }
-        }
+        let more = match summary_lines.count() {
+            0 => String::new(),
+            count => format!(" {DIM}(+{count} lines){RESET}"),
+        };
+        let changes = if tool_use.name == "Edit" {
+            let removed = read_field(&tool_use.input, "old_string").lines().count();
+            let added = read_field(&tool_use.input, "new_string").lines().count();
+            format!(" {RED}-{removed}{RESET} {GREEN}+{added}{RESET}")
+        } else {
+            String::new()
+        };
+        self.push(format!(
+            "{mark} {}{RESET} {first}{more}{changes}",
+            tool_use.name
+        ));
     }
 
     pub fn show_tool_result(&mut self, result: &ToolResult) {
@@ -533,6 +534,8 @@ fn read_field<'a>(input: &'a Map<String, Value>, field: &str) -> &'a str {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     fn reply_mark() -> String {
@@ -667,6 +670,48 @@ mod tests {
             format!("{BOLD}●{RESET} {DIM}#01{RESET}{BOLD} Read{RESET} b.txt")
         );
         assert_eq!(lines[3], format!("{GREEN}✓{RESET} {DIM}#01 Read: b{RESET}"));
+    }
+
+    fn tool_use(name: &str, input: Value) -> ToolUse {
+        let Value::Object(input) = input else {
+            panic!("an object");
+        };
+        ToolUse {
+            id: "toolu_1".to_string(),
+            name: name.to_string(),
+            input,
+            is_subagent: false,
+        }
+    }
+
+    #[test]
+    fn a_long_command_shows_its_first_line() {
+        let mut output = output_after_message();
+        output.show_tool_use(&tool_use(
+            "Bash",
+            json!({"command": "cd a\nmake\nmake test"}),
+        ));
+        let lines = output.take_lines();
+        assert_eq!(
+            lines.last().expect("the call's line"),
+            &format!(
+                "{BOLD}●{RESET} {DIM}#00{RESET}{BOLD} Bash{RESET} cd a {DIM}(+2 lines){RESET}"
+            )
+        );
+    }
+
+    #[test]
+    fn an_edit_shows_how_many_lines_it_changes() {
+        let mut output = output_after_message();
+        let input = json!({"file_path": "a.rs", "old_string": "x\ny", "new_string": "z"});
+        output.show_tool_use(&tool_use("Edit", input));
+        let lines = output.take_lines();
+        assert_eq!(
+            lines.last().expect("the call's line"),
+            &format!(
+                "{BOLD}●{RESET} {DIM}#00{RESET}{BOLD} Edit{RESET} a.rs {RED}-2{RESET} {GREEN}+1{RESET}"
+            )
+        );
     }
 
     #[test]
