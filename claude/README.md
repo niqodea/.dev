@@ -27,6 +27,22 @@ Picking it moves to the workstation pane, as we left it.
 The workstation pane mirrors since when the Claude of its session on the workstation waits, and the hooks signal the mirror whenever they change `@status`.
 A Claude pane killed from outside Claude signals nothing, so the workstation pane shows it waiting until another Claude there signals.
 
+### Plain client
+
+`,claude-plain` runs Claude Code in plain text: replies are appended to the terminal, above an input line.
+It drives `claude -p`, and passes its arguments on to `claude`.
+
+When the shell has `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` set, Claude Code pays with them instead of our subscription.
+The interactive Claude asks first, `claude -p` does not, so a key exported for another project gets billed silently.
+To always use the subscription, add this to `~/.claude/settings.json`, which empties both for every Claude Code session:
+
+```json
+{ "env": { "ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": "" } }
+```
+
+Claude Code's [headless docs](https://code.claude.com/docs/en/headless#start-faster-with-bare-mode) say `--bare` will become the default for `-p` in a future release.
+Bare mode ignores the subscription login, as well as CLAUDE.md files, hooks, plugins and auto-memory, so from that release `,claude-plain` needs whatever turns it back off.
+
 ### Approval
 
 Claude only reads.
