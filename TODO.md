@@ -14,6 +14,10 @@
 
 - ,claude-plain: a key to see the whole conversation uncollapsed, without reading Claude Code's transcript file and without holding the session in memory
 
+- ,claude-plain: an option for the input box's height, now fixed at 3 rows
+
+- ,claude-plain: show Claude's prose word by word as it streams, now that the client draws its input box itself; tables and code blocks still need all their lines
+
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:

@@ -5,15 +5,13 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# Only for the cursor's shapes and the terminal's width, at the version reedline uses
+# At the version edtui uses, whose key events it takes
 crossterm = "0.29"
+# The input box's vi keys, without its clipboard, mouse and syntax highlighting
+edtui = { version = "0.11.7", default-features = false }
 libc = "0.2"
-nu-ansi-term = "0.50"
-# A prompt row of its own stays on screen above every printed line in reedline 0.52.1, which
-# the commit pinned here fixes
-# Ref: https://github.com/nushell/reedline/pull/1243
-# TODO: Depend on the first release that holds the fix instead of this commit
-reedline = { git = "https://github.com/nushell/reedline", rev = "c9fcec8a91b034b21fc89fd77aa54a07569ee3c3" }
+# The cells edtui draws the input box into
+ratatui-core = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Only the grammars and a regex engine in Rust, since the terminal's own colors replace its themes

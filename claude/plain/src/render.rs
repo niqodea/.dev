@@ -29,7 +29,8 @@ const RESET: &str = "\x1b[0m";
 /// The background of the user's lines, which sets them apart from Claude's.
 pub const BAR_COLOR: u8 = 236;
 // Erases to the end of the row in the background color that is set, which fills the row's
-// rest with the bar without writing spaces into the text
+// rest with the bar without writing spaces into the text. Written after the text too, it fills
+// the rest of the last row the terminal wraps the text onto
 const FILL_ROW: &str = "\x1b[K";
 
 // Past this, a tool's input in JSON is noise to read through
@@ -185,9 +186,10 @@ impl Output {
         // A message follows the line before it, and starts what the reply mark then introduces
         self.pending_break = None;
         self.lines
-            .push(format!("{}{}{RESET}", start_bar_row(), marks()));
+            .push(format!("{}{}{FILL_ROW}{RESET}", start_bar_row(), marks()));
         for line in text.split('\n') {
-            self.lines.push(format!("{}{line}{RESET}", start_bar_row()));
+            self.lines
+                .push(format!("{}{line}{FILL_ROW}{RESET}", start_bar_row()));
         }
         self.position = Position::In(Section::Message);
         self.set_status(Status::Working);
@@ -197,7 +199,7 @@ impl Output {
 
     /// Shows the user's answer to what a tool asks, after the question.
     pub fn show_answer(&mut self, question: &str, text: &str) {
-        self.push(format!("{}{text}{RESET}", answer_label(question)));
+        self.push(format!("{}{text}{FILL_ROW}{RESET}", answer_label(question)));
     }
 
     /// Notes that the user stopped the turn, whose end then says so in the user's terms.
@@ -583,7 +585,7 @@ mod tests {
         output.show_message("Stop");
         let lines = output.take_lines();
         assert_eq!(lines[..2], [reply_mark(), "Hel".to_string()]);
-        assert!(lines[3].ends_with(&format!("Stop{RESET}")));
+        assert!(lines[3].ends_with(&format!("Stop{FILL_ROW}{RESET}")));
     }
 
     #[test]

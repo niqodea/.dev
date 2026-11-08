@@ -20,13 +20,13 @@ use std::io::{BufRead, BufReader};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{self, ChildStderr, ChildStdout, ExitCode, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
 use context::Context;
-use input_line::{Line, create_editor, final_line};
+use input_line::{InputLine, Line, final_line};
 use limits::Limits;
 use protocol::{Event, read_events, repeats_a_message};
 use render::Output;
@@ -37,8 +37,6 @@ use terminal::QuietTerminal;
 struct Shared {
     /// What the input line is for, which the prompt reads.
     line: Line,
-    /// The text on the input line, as last drawn.
-    input: String,
     output: Output,
     context: Context,
     limits: Limits,
@@ -58,7 +56,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<ExitCode, String> {
     let editor_command =
-        env::var("EDITOR").map_err(|_| "Set EDITOR to the editor V opens".to_string())?;
+        env::var("EDITOR").map_err(|_| "Set EDITOR to the editor : opens".to_string())?;
     let mut claude = process::Command::new("claude")
         .args([
             "--print",
@@ -90,7 +88,6 @@ fn run() -> Result<ExitCode, String> {
 
     let shared = Arc::new(Mutex::new(Shared {
         line: Line::Message,
-        input: String::new(),
         output: Output::new(),
         context: Context::new(),
         limits: Limits::new(),
@@ -98,44 +95,29 @@ fn run() -> Result<ExitCode, String> {
     }));
     let break_signal = Arc::new(AtomicBool::new(false));
     let (input_sender, inputs) = mpsc::channel();
-    let (cold_at_sender, cold_ats) = mpsc::channel();
-    let mut editor = create_editor(
-        editor_command,
-        Arc::clone(&break_signal),
-        Arc::clone(&shared),
-    );
 
     let reader_shared = Arc::clone(&shared);
     let reader_break_signal = Arc::clone(&break_signal);
-    let repaint_signal = editor.repaint_signal();
-    let watcher_repaint_signal = repaint_signal.clone();
-    let errors_repaint_signal = repaint_signal.clone();
     let reader = thread::spawn(move || {
-        read_claude(
-            from_claude,
-            &reader_shared,
-            &cold_at_sender,
-            &|input| {
-                // The main thread stops reading only on its way out
-                let _ = input_sender.send(input);
-                reader_break_signal.store(true, Ordering::Relaxed);
-            },
-            &|| repaint_signal.request_repaint(),
-        );
+        read_claude(from_claude, &reader_shared, &|input| {
+            // The main thread stops reading only on its way out
+            let _ = input_sender.send(input);
+            reader_break_signal.store(true, Ordering::Relaxed);
+        });
     });
     let errors_shared = Arc::clone(&shared);
     let errors_reader = thread::spawn(move || {
-        read_claude_errors(errors_from_claude, &errors_shared, &|| {
-            errors_repaint_signal.request_repaint();
-        });
-    });
-    thread::spawn(move || {
-        watch_cache(&cold_ats, &|| watcher_repaint_signal.request_repaint());
+        read_claude_errors(errors_from_claude, &errors_shared);
     });
 
     let _quiet_terminal = QuietTerminal::new()?;
+    let input = InputLine::new(
+        editor_command,
+        Arc::clone(&break_signal),
+        Arc::clone(&shared),
+    )?;
     let conversation = Conversation::new(
-        editor,
+        input,
         Arc::clone(&shared),
         inputs,
         break_signal,
@@ -201,15 +183,9 @@ fn exit_code(status: ExitStatus) -> ExitCode {
     ExitCode::from(code)
 }
 
-/// Shows what Claude Code reports, notes what its calls hold in the cache, with when the cache
-/// turns cold for the cache's watcher, and hands the main thread what it has to act on.
-fn read_claude(
-    from_claude: ChildStdout,
-    shared: &Mutex<Shared>,
-    cold_ats: &Sender<Instant>,
-    forward: &dyn Fn(Input),
-    request_repaint: &dyn Fn(),
-) {
+/// Shows what Claude Code reports, notes what its calls hold in the cache, and hands the main
+/// thread what it has to act on.
+fn read_claude(from_claude: ChildStdout, shared: &Mutex<Shared>, forward: &dyn Fn(Input)) {
     for line in BufReader::new(from_claude).lines() {
         let line = match line {
             Ok(line) => line,
@@ -229,7 +205,6 @@ fn read_claude(
         };
         for event in events {
             let mut shared = lock(shared);
-            let status = shared.output.status();
             match event {
                 Event::Text(text) => shared.output.show_text(&text),
                 Event::TextEnd => shared.output.show_text_end(),
@@ -241,24 +216,12 @@ fn read_claude(
                 Event::PayingKey(key) => shared.output.show_paying_key(&key),
                 Event::SessionId(id) => shared.session_id = Some(id),
                 Event::State(state) => shared.output.note_state(state),
-                Event::Limits { session, week } => {
-                    shared.limits.note(session, week);
-                    request_repaint();
-                }
-                Event::BackgroundTasks(tasks) => {
-                    shared.output.note_background_tasks(tasks);
-                    request_repaint();
-                }
+                Event::Limits { session, week } => shared.limits.note(session, week),
+                Event::BackgroundTasks(tasks) => shared.output.note_background_tasks(tasks),
                 Event::Call(usage) => {
-                    let cold_at = shared.context.note_call(&usage, Instant::now());
-                    // The watcher stops only on the program's way out
-                    let _ = cold_ats.send(cold_at);
-                    request_repaint();
+                    shared.context.note_call(&usage, Instant::now());
                 }
-                Event::LastCall(usage) => {
-                    shared.context.note_last_call(usage.as_ref());
-                    request_repaint();
-                }
+                Event::LastCall(usage) => shared.context.note_last_call(usage.as_ref()),
                 Event::Ask(ask) => forward(Input::Ask(ask)),
                 Event::Unsupported {
                     request_id,
@@ -268,20 +231,13 @@ fn read_claude(
                     subtype,
                 }),
             }
-            if shared.output.status() != status {
-                request_repaint();
-            }
         }
     }
     forward(Input::Closed);
 }
 
 /// Shows each line of Claude Code's error output that adds to what its messages show.
-fn read_claude_errors(
-    errors_from_claude: ChildStderr,
-    shared: &Mutex<Shared>,
-    request_repaint: &dyn Fn(),
-) {
+fn read_claude_errors(errors_from_claude: ChildStderr, shared: &Mutex<Shared>) {
     for line in BufReader::new(errors_from_claude).lines() {
         let line = match line {
             Ok(line) => line,
@@ -294,30 +250,6 @@ fn read_claude_errors(
         };
         if !repeats_a_message(&line) {
             lock(shared).output.show_stderr(&line);
-            // The prompt says when the line waits
-            request_repaint();
-        }
-    }
-}
-
-/// Repaints the prompt as the cache turns cold, at the latest of the instants `cold_ats` sends,
-/// so the context's level turns red while the user waits.
-fn watch_cache(cold_ats: &Receiver<Instant>, request_repaint: &dyn Fn()) {
-    let mut next_cold_at: Option<Instant> = None;
-    loop {
-        let received = match next_cold_at {
-            Some(cold_at) => {
-                cold_ats.recv_timeout(cold_at.saturating_duration_since(Instant::now()))
-            }
-            None => cold_ats.recv().map_err(RecvTimeoutError::from),
-        };
-        match received {
-            Ok(cold_at) => next_cold_at = Some(cold_at),
-            Err(RecvTimeoutError::Timeout) => {
-                next_cold_at = None;
-                request_repaint();
-            }
-            Err(RecvTimeoutError::Disconnected) => return,
         }
     }
 }

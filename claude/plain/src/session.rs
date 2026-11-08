@@ -8,11 +8,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use reedline::{EditCommand, HistoryItem, Reedline, Signal};
 use serde_json::{Map, Value};
 use uuid::Uuid;
 
-use crate::input_line::{CTRL_C, CTRL_D, Line, Marker, SEND};
+use crate::input_line::{InputLine, Line, Outcome};
 use crate::protocol::{Answer, Ask, AskKind, Command, Question};
 use crate::render::{Interruption, Status};
 use crate::{Shared, lock};
@@ -40,7 +39,7 @@ pub struct Conversation<'a> {
 
 impl<'a> Conversation<'a> {
     pub fn new(
-        editor: Reedline,
+        input: InputLine,
         shared: Arc<Mutex<Shared>>,
         inputs: Receiver<Input>,
         break_signal: Arc<AtomicBool>,
@@ -49,8 +48,7 @@ impl<'a> Conversation<'a> {
     ) -> Self {
         Conversation {
             session: Session {
-                editor,
-                prompt: Marker::new(Arc::clone(&shared)),
+                input,
                 shared,
                 inputs,
                 break_signal,
@@ -87,11 +85,10 @@ impl<'a> Conversation<'a> {
                 }
                 None => {}
             }
-            draft = match self.session.read_line(Line::Message, &draft)? {
+            draft = match self.session.read_line(&Line::Message, &draft)? {
                 // A message on a cold cache stays on the input line the first time, and the
                 // label says the next Enter sends it
-                Signal::HostCommand(command) if command == SEND => {
-                    let text = self.session.editor.current_buffer_contents().to_string();
+                Outcome::Send(text) => {
                     if text.trim().is_empty() {
                         String::new()
                     } else if lock(&self.session.shared)
@@ -105,21 +102,16 @@ impl<'a> Conversation<'a> {
                     }
                 }
                 // Ctrl-C on an empty line stops Claude, and on a line with text clears it
-                Signal::HostCommand(command) if command == CTRL_C => {
+                Outcome::Interrupt(text) => {
                     let is_working = lock(&self.session.shared).output.status() != Status::Idle;
-                    if self.session.editor.current_buffer_contents().is_empty() && is_working {
+                    if text.is_empty() && is_working {
                         self.interrupt(Interruption::Stop)?;
                     }
                     String::new()
                 }
                 // Claude Code asked something, which the next round of the loop answers
-                Signal::ExternalBreak(text) => text,
-                Signal::HostCommand(command) if command == CTRL_D => {
-                    return Ok(Some(self.end_input()));
-                }
-                // Ctrl-C in a history search, which leaves the search
-                Signal::CtrlC(_) => String::new(),
-                signal => return Err(format!("Unexpected input: {signal:?}")),
+                Outcome::Break(text) => text,
+                Outcome::End(_) => return Ok(Some(self.end_input())),
             };
         }
     }
@@ -225,19 +217,17 @@ impl<'a> Conversation<'a> {
         loop {
             match self
                 .session
-                .read_line(Line::Answer(question.to_string()), &draft)?
+                .read_line(&Line::Answer(question.to_string()), &draft)?
             {
-                Signal::HostCommand(command) if command == SEND => {
-                    let text = self.session.editor.current_buffer_contents().to_string();
+                Outcome::Send(text) => {
                     lock(&self.session.shared)
                         .output
                         .show_answer(question, &text);
                     return Ok(Some(text));
                 }
                 // Claude Code asked something more, which waits for this answer
-                Signal::ExternalBreak(text) => draft = text,
-                Signal::HostCommand(_) | Signal::CtrlC(_) => return Ok(None),
-                signal => return Err(format!("Unexpected input: {signal:?}")),
+                Outcome::Break(text) => draft = text,
+                Outcome::Interrupt(_) | Outcome::End(_) => return Ok(None),
             }
         }
     }
@@ -259,13 +249,7 @@ impl<'a> Conversation<'a> {
                 message_id: &id,
             })?;
         }
-        // reedline keeps in its history only the lines its own Enter submits
-        self.session
-            .editor
-            .history_mut()
-            .save(HistoryItem::from_command_line(text))
-            .map(|_| ())
-            .map_err(|error| format!("Cannot keep the message in the input history: {error}"))
+        Ok(())
     }
 
     fn interrupt(&mut self, interruption: Interruption) -> Result<(), String> {
@@ -327,11 +311,10 @@ impl Ending<'_> {
                 // fails each permission request, with "Stream closed" as the tool's result
                 Some(Input::Ask(_) | Input::Unsupported { .. }) | None => {}
             }
-            match self.session.read_line(Line::Ending, "")? {
-                Signal::HostCommand(command) if command == CTRL_C => self.interrupt()?,
+            match self.session.read_line(&Line::Ending, "")? {
+                Outcome::Interrupt(_) => self.interrupt()?,
                 // What the user types has no one left to read it
-                Signal::HostCommand(_) | Signal::ExternalBreak(_) | Signal::CtrlC(_) => {}
-                signal => return Err(format!("Unexpected input: {signal:?}")),
+                Outcome::Send(_) | Outcome::End(_) | Outcome::Break(_) => {}
             }
         }
     }
@@ -358,9 +341,7 @@ impl Ending<'_> {
 
 /// The terminal's side of the session: the input line, and what it shows of Claude's.
 struct Session {
-    editor: Reedline,
-    /// The prompt in front of the open input line.
-    prompt: Marker,
+    input: InputLine,
     shared: Arc<Mutex<Shared>>,
     inputs: Receiver<Input>,
     break_signal: Arc<AtomicBool>,
@@ -378,35 +359,21 @@ impl Session {
         }
     }
 
-    /// Reads the input line, starting from `draft`. A host command or a break signal leaves the
-    /// line on screen, for the next line to take the place of. Ctrl-D ends the input only on an
-    /// empty line, as in a shell, so on a line with text the line stays open as it was.
-    fn read_line(&mut self, line: Line, draft: &str) -> Result<Signal, String> {
-        lock(&self.shared).line = line;
-        self.editor.run_edit_commands(&[
-            EditCommand::Clear,
-            EditCommand::InsertString(draft.to_string()),
-        ]);
+    /// Reads the input line, starting from `draft`. Ctrl-D ends the input only on an empty line,
+    /// as in a shell, so on a line with text the line stays open as it was.
+    fn read_line(&mut self, line: &Line, draft: &str) -> Result<Outcome, String> {
+        let mut draft = draft.to_string();
         loop {
-            let signal = self
-                .editor
-                .read_line(&self.prompt)
-                .map_err(|error| format!("Cannot read the input line: {error}"))?;
-            match signal {
-                Signal::HostCommand(command)
-                    if command == CTRL_D && !self.editor.current_buffer_contents().is_empty() => {}
-                signal => return Ok(signal),
+            match self.input.read(line.clone(), &draft)? {
+                Outcome::End(text) if !text.is_empty() => draft = text,
+                outcome => return Ok(outcome),
             }
         }
     }
 
     /// Closes the input line once Claude Code ended, so the end of the output takes its place.
-    /// reedline paints the line that follows a break signal in the place of the line before, and
-    /// returns at once on a break signal raised before it reads a key, so this paints an empty
-    /// line over the input line and leaves the cursor at its start.
     fn close_line(&mut self) -> Result<(), String> {
-        self.break_signal.store(true, Ordering::Relaxed);
-        self.read_line(Line::Closed, "").map(|_| ())
+        self.input.close()
     }
 }
 
