@@ -27,35 +27,6 @@ Picking it moves to the workstation pane, as we left it.
 The workstation pane mirrors since when the Claude of its session on the workstation waits, and the hooks signal the mirror whenever they change `@status`.
 A Claude pane killed from outside Claude signals nothing, so the workstation pane shows it waiting until another Claude there signals.
 
-### Plain client
-
-`,claude-plain` runs Claude Code in plain text: replies are appended to the terminal, above an input line.
-It drives `claude -p`, and passes its arguments on to `claude`.
-
-`,claude-plain` assumes a session keeps one permission mode, so it has no key to switch modes and shows none on the bar.
-Set the mode you always use in `~/.claude/settings.json`:
-
-```json
-{ "permissions": { "defaultMode": "<mode>" } }
-```
-
-When the shell has `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` set, Claude Code pays with them instead of our subscription.
-The interactive Claude asks first, `claude -p` does not, so `,claude-plain` warns in orange as it starts.
-To always use the subscription, add this to `~/.claude/settings.json`, which empties both for every Claude Code session:
-
-```json
-{ "env": { "ANTHROPIC_API_KEY": "", "ANTHROPIC_AUTH_TOKEN": "" } }
-```
-
-Claude Code's [headless docs](https://code.claude.com/docs/en/headless#start-faster-with-bare-mode) say `--bare` will become the default for `-p` in a future release.
-Bare mode ignores the subscription login, as well as CLAUDE.md files, hooks, plugins and auto-memory, so from that release `,claude-plain` needs whatever turns it back off.
-
-#### Design
-
-Everything `,claude-plain` shows is characters on screen, so it copies along with the rest of the scrollback.
-The one exception is the input line's editing state, like vi's mode: only the person typing needs it, and only while typing, so it may show without characters, like with the cursor's shape.
-The test is whether it would matter to someone reading the scrollback later.
-
 ### Approval
 
 Claude only reads.

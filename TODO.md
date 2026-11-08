@@ -4,21 +4,13 @@
 
 - Explore customizing Claude Code's UI
 
-- ,claude-plain: check live that the context level turns red, with a * in front, when the cache expires after an hour idle
+- claudio: words are cut where the pane's margin wraps them. No terminal or tmux wraps at words, and other tools either cut words or break lines themselves, which breaks copying and resizing. Plan: fork tmux 3.8 with a private mode the client turns on around each paragraph of Claude's, so tmux wraps that text at spaces, flags its lines to wrap at spaces again on resize, and leaves the empty cells at a row's end out of copies. The client draws its own input box, so nothing else predicts the rows a paragraph takes. Pick an unused mode number against xterm's control sequences and the terminal working group first
 
-- ,claude-plain: words are cut where the pane's margin wraps them. No terminal or tmux wraps at words, and other tools either cut words or break lines themselves, which breaks copying and resizing. Plan: fork tmux 3.8 with a private mode the client turns on around each paragraph of Claude's, so tmux wraps that text at spaces, flags its lines to wrap at spaces again on resize, and leaves the empty cells at a row's end out of copies. The client draws its own input box, so nothing else predicts the rows a paragraph takes. Pick an unused mode number against xterm's control sequences and the terminal working group first
+- claudio: keys for useful Claude Code commands like /compact; check the docs for which commands work under `claude -p` and which earn a key
 
-- ,claude-plain: keys for useful Claude Code commands like /compact; check the docs for which commands work under `claude -p` and which earn a key
+- claudio: an option for the input box's height, now fixed at 3 rows
 
-- ,claude-plain: a detailed status to look at on demand, with exact context and limit percentages, reset times and token counts
-
-- ,claude-plain: a key to see the whole conversation uncollapsed, without reading Claude Code's transcript file and without holding the session in memory
-
-- ,claude-plain: an option for the input box's height, now fixed at 3 rows
-
-- ,claude-plain: show Claude's prose word by word as it streams, now that the client draws its input box itself; tables and code blocks still need all their lines
-
-- ,claude-plain: mark Claude's prose so it stands out among tool calls, as the bar marks the user's messages
+- claudio: show Claude's prose word by word as it streams, now that the client draws its input box itself; tables and code blocks still need all their lines
 
 - zsh: show whether vi mode is in insert or normal mode
 

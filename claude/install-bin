@@ -10,8 +10,9 @@ cargo build --manifest-path="$root/approval/Cargo.toml" --release
 ,copy-in-home "$backup_path" "$root/approval/target/release/approval" .local/bin/,approval
 ,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,approval-answer
 
-cargo build --manifest-path="$root/plain/Cargo.toml" --release
-,copy-in-home "$backup_path" "$root/plain/target/release/plain" .local/bin/,claude-plain
+claudio_path="$root/submodules/claudio"
+cargo build --manifest-path="$claudio_path/Cargo.toml" --release
+,copy-in-home "$backup_path" "$claudio_path/target/release/claudio" .local/bin/claudio
 
 version='2.1.303'
 

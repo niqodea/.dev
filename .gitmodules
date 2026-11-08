@@ -19,3 +19,6 @@
 [submodule "utils/submodules/lm"]
 	path = utils/submodules/lm
 	url = https://github.com/niqodea/lm.git
+[submodule "claude/submodules/claudio"]
+	path = claude/submodules/claudio
+	url = https://github.com/niqodea/claudio.git
