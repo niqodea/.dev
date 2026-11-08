@@ -276,7 +276,7 @@ impl Output {
         // What a subagent did shows in what it reports back to Claude, so its calls have no
         // result line to tie to
         let mark = if tool_use.is_subagent {
-            format!("  {BOLD}●")
+            format!("  {BOLD}○")
         } else {
             let tag = self.next_tag;
             self.next_tag = tag.wrapping_add(1);
@@ -287,7 +287,7 @@ impl Output {
                     tag,
                 },
             );
-            format!("{BOLD}●{RESET} {DIM}#{tag:02x}{RESET}{BOLD}")
+            format!("{BOLD}○{RESET} {DIM}#{tag:02x}{RESET}{BOLD}")
         };
         self.begin(Section::Tools);
         // One line per call keeps the tool calls out of the way of the conversation
@@ -669,7 +669,7 @@ mod tests {
         let lines = output.take_lines();
         assert_eq!(
             lines[2],
-            format!("{BOLD}●{RESET} {DIM}#01{RESET}{BOLD} Read{RESET} b.txt")
+            format!("{BOLD}○{RESET} {DIM}#01{RESET}{BOLD} Read{RESET} b.txt")
         );
         assert_eq!(lines[3], format!("{GREEN}✓{RESET} {DIM}#01 Read: b{RESET}"));
     }
@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(
             lines.last().expect("the call's line"),
             &format!(
-                "{BOLD}●{RESET} {DIM}#00{RESET}{BOLD} Bash{RESET} cd a {DIM}(+2 lines){RESET}"
+                "{BOLD}○{RESET} {DIM}#00{RESET}{BOLD} Bash{RESET} cd a {DIM}(+2 lines){RESET}"
             )
         );
     }
@@ -711,7 +711,7 @@ mod tests {
         assert_eq!(
             lines.last().expect("the call's line"),
             &format!(
-                "{BOLD}●{RESET} {DIM}#00{RESET}{BOLD} Edit{RESET} a.rs {RED}-2{RESET} {GREEN}+1{RESET}"
+                "{BOLD}○{RESET} {DIM}#00{RESET}{BOLD} Edit{RESET} a.rs {RED}-2{RESET} {GREEN}+1{RESET}"
             )
         );
     }
