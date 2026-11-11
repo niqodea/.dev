@@ -13,6 +13,7 @@ cargo build --manifest-path="$root/approval/Cargo.toml" --release
 claudio_path="$root/submodules/claudio"
 cargo build --manifest-path="$claudio_path/Cargo.toml" --release
 ,copy-in-home "$backup_path" "$claudio_path/target/release/claudio" .local/bin/claudio
+"$claudio_path/target/release/claudio" install-claude-code
 
 version='2.1.303'
 
