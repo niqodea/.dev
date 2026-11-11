@@ -16,6 +16,8 @@
 
 - claudio: warn at startup when Claude Code's version is newer than the one its undocumented behaviour was last checked against, 2.1.319 today, so a release that changes that behaviour shows up as a warning, not as a silent failure. Check whether the init message reports the version, as a `claude_code_version` field in the SDK's types; `claude --version` works otherwise. Keep the checked version in one constant next to the protocol code, and bump it after checking each "Undocumented" comment against a new release
 
+- claudio: safeguard risky actions like Ctrl-D and Ctrl-C with a second press, with no timers
+
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:
