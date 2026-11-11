@@ -14,6 +14,12 @@
 
 - claudio: consider drawing the question view below the conversation, growing the bottom of the terminal, instead of on the alternate screen, so the conversation that led to the questions stays in view
 
+- claudio: add btw command if possible
+
+- claudio: format tables to not go over X columns somehow
+
+- claudio: review copywriting (do not mention claudio inside claudio) and what gets cut and not cut
+
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:
