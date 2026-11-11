@@ -12,6 +12,10 @@
 
 - claudio: support permission prompts, now refused since only auto mode is supported. They belong behind Ctrl-Y too, where plans and multiple-choice questions already wait, so work out how they fit that view; ,approval-answer, which marks y or n on each request and carries out the marked ones on Enter, is one model. Each decision should add one line to the conversation naming the call it answers, like `allowed #01 Bash rm -rf build`
 
+- claudio: no message can ever be sent when Claude Code refuses the `get_context_usage` request sent at startup, or answers it in a shape claudio cannot read, like a renamed `maxTokens`. The cache then stays in its starting state, where `Context::holds_message` holds every message, and nothing ends that state. Treat a refused or unreadable answer like a resumed session whose cache age is unknown, so a message waits for a second Enter once and then goes
+
+- claudio: warn at startup when Claude Code's version is newer than the one its undocumented behaviour was last checked against, 2.1.319 today, so a release that changes that behaviour shows up as a warning, not as a silent failure. Check whether the init message reports the version, as a `claude_code_version` field in the SDK's types; `claude --version` works otherwise. Keep the checked version in one constant next to the protocol code, and bump it after checking each "Undocumented" comment against a new release
+
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:
