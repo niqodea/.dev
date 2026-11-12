@@ -18,6 +18,10 @@
 
 - claudio: reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
+- claudio: better integrate subagents. Today the Agent call and its report show, and each tool call a subagent makes shows as an indented line, but: its calls have no result line, so a failing command inside it is invisible; its text is skipped; `parent_tool_use_id` is read only as a yes/no `is_subagent`, so the calls of parallel subagents interleave and can't be told apart (first step: give each subagent line its Agent call's tag, like `  ○ #0a Bash cargo test`); the label row says `running Agent` and skips a subagent's slow permission check; and background subagents (`run_in_background`) likely go through the background task lines, but the contract checks cover only `local_bash` tasks
+
+- claudio: list the background tasks that are running in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`)
+
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:
