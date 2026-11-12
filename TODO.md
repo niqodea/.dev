@@ -16,7 +16,7 @@
 
 - claudio: format tables to not go over X columns somehow
 
-- claudio: review copywriting (do not mention claudio inside claudio) and what gets cut and not cut
+- claudio: reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
 - zsh: show whether vi mode is in insert or normal mode
 
