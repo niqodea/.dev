@@ -22,6 +22,8 @@
 
 - claudio: list the background tasks that are running in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`)
 
+- claudio: fix lines lost when the terminal is resized. Seen on 2026-11-12 with Claude Code 2.1.322: after a resize while Claude worked, its reply showed only its last paragraph, with no `‹‹` before it, so the rest was lost from the scrollback. A past session looked into this and stopped right before a fix
+
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:
