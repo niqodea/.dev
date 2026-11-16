@@ -12,6 +12,8 @@
 
 - claudio: consider drawing the question view below the conversation, growing the bottom of the terminal, instead of on the alternate screen, so the conversation that led to the questions stays in view
 
+- claudio: keep styled text as text and style apart until it is written to the terminal. Today it is a `String` with ANSI escapes inside, so where a code sits changes its meaning (a color set outside a string is lost after `cut`'s `…`, seen on 2026-11-15 with the question view's field names), every text operation parses the escapes again (5 hand-written scanners in `render.rs`, `input_line.rs` and `protocol.rs`), and the rule that a line holds its own colors lives only in `cut`'s doc comment. Plan: a small `Span` (text and one style) and `Line` (spans) type, as ratatui models text, with cut, width and wrap on it, and escapes written only at the end; move the question screen first, then the conversation renderer and `code.rs`, then delete the scanners
+
 - claudio: add btw command if possible
 
 - claudio: format tables to not go over X columns somehow
