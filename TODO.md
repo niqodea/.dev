@@ -18,7 +18,17 @@
 
 - claudio: reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
-- claudio: better integrate subagents. Today the Agent call and its report show, and each tool call a subagent makes shows as an indented line, but: its calls have no result line, so a failing command inside it is invisible; its text is skipped; `parent_tool_use_id` is read only as a yes/no `is_subagent`, so the calls of parallel subagents interleave and can't be told apart (first step: give each subagent line its Agent call's tag, like `  ○ #0a Bash cargo test`); the label row says `running Agent` and skips a subagent's slow permission check; and background subagents (`run_in_background`) likely go through the background task lines, but the contract checks cover only `local_bash` tasks
+- claudio: look into what Ctrl+L does to a subagent that still runs in the background. Claude Code 2.1.322 keeps it across a clear (`hasAgentTaskSurvivingClear` in its code), so its work and its end land in the new session, which is surprising and a hazard. Consider waiting for such subagents to end before the cleared session goes on, and check first what the new session's Claude learns of them
+
+- claudio: bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
+
+- claudio: name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code 2.1.322 renames a subagent whose name a running one holds (`allocateName`, like `reviewer-2`) and frees a name only 30 seconds after its holder ends, so claudio cannot tell which subagent a name reaches. Look first for where Claude Code tells the name it gave, like the Agent call's result
+
+- claudio: look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
+
+- claudio: sort the contract checks by what they run against, not only by cost. Today they split into free and paid, while a second split stays unnamed: the checks against the fake API run with a config directory of their own, so they see Claude Code's flags at their defaults, while the others run with the user's login and see the flags Anthropic serves. Name both splits in the checks and the README, and decide which checks should see the served flags
+
+- claudio: design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
 
 - claudio: list the background tasks that are running in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`)
 
