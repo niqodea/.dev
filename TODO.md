@@ -6,32 +6,6 @@
 
 - tmux: when a narrower screen wraps rows into more, take the extra rows from the empty rows below the cursor first, as a shorter screen already does (`screen_resize_y`), rather than pushing the screen's top into the scrollback. Today `grid_reflow` keeps the last rows that fit, empty ones included, so until claudio's conversation fills the screen, a narrower screen pushes the start of claudio's label row into the scrollback, where it stays as a copy (README's Resizing). Unchanged on tmux master as of 2026-11-16, and no tmux issue reports it then. https://github.com/tmux/tmux/issues/516 is the same family: shells' prompts broken by the rewrap on a resize, which claudio's climb already avoids. Its maintainer refuses new options and new meanings for escape sequences, and asks for fixes that work by default, as this one does. It helps shells too: a wide prompt near the top of a mostly empty screen goes to the scrollback the same way. The patch goes in `screen_resize_cursor` in `screen.c`; open an issue and send it upstream, or carry it in the tmux fork planned for word wrapping
 
-- claudio: words are cut where the pane's margin wraps them. No terminal or tmux wraps at words, and other tools either cut words or break lines themselves, which breaks copying and resizing. Plan: fork tmux 3.8 with a private mode the client turns on around each paragraph of Claude's, so tmux wraps that text at spaces, flags its lines to wrap at spaces again on resize, and leaves the empty cells at a row's end out of copies. The client draws its own input box, so nothing else predicts the rows a paragraph takes. Pick an unused mode number against xterm's control sequences and the terminal working group first
-
-- claudio: consider drawing the question view below the conversation, growing the bottom of the terminal, instead of on the alternate screen, so the conversation that led to the questions stays in view
-
-- claudio: keep styled text as text and style apart until it is written to the terminal. Today it is a `String` with ANSI escapes inside, so where a code sits changes its meaning (a color set outside a string is lost after `cut`'s `…`, seen on 2026-11-15 with the question view's field names), every text operation parses the escapes again (5 hand-written scanners in `render.rs`, `input_line.rs` and `protocol.rs`), and the rule that a line holds its own colors lives only in `cut`'s doc comment. Plan: a small `Span` (text and one style) and `Line` (spans) type, as ratatui models text, with cut, width and wrap on it, and escapes written only at the end; move the question screen first, then the conversation renderer and `code.rs`, then delete the scanners
-
-- claudio: add btw command if possible
-
-- claudio: format tables to not go over X columns somehow
-
-- claudio: reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
-
-- claudio: look into what Ctrl+L does to a subagent that still runs in the background. Claude Code 2.1.322 keeps it across a clear (`hasAgentTaskSurvivingClear` in its code), so its work and its end land in the new session, which is surprising and a hazard. Consider waiting for such subagents to end before the cleared session goes on, and check first what the new session's Claude learns of them
-
-- claudio: bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
-
-- claudio: name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code 2.1.322 renames a subagent whose name a running one holds (`allocateName`, like `reviewer-2`) and frees a name only 30 seconds after its holder ends, so claudio cannot tell which subagent a name reaches. Look first for where Claude Code tells the name it gave, like the Agent call's result
-
-- claudio: look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
-
-- claudio: sort the contract checks by what they run against, not only by cost. Today they split into free and paid, while a second split stays unnamed: the checks against the fake API run with a config directory of their own, so they see Claude Code's flags at their defaults, while the others run with the user's login and see the flags Anthropic serves. Name both splits in the checks and the README, and decide which checks should see the served flags
-
-- claudio: design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
-
-- claudio: list the background tasks that are running in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`)
-
 - zsh: show whether vi mode is in insert or normal mode
 
 - Replace logic that guesses a time with waiting for the event it depends on:
@@ -39,3 +13,47 @@
   - test-macos-install: retries SSH every 5 s for up to 5 minutes, and waits up to 300 s for the virtual machine's address
 
 - Fix bug where tmux fish would not recognize tokens broken up over multiple lines
+
+## claudio
+
+### Before going public
+
+- Settle whether Anthropic allows claudio's use of the subscription login. claudio drives `claude -p` with the user's claude.ai login, and the Agent SDK's docs, as remembered, say third-party developers may not offer claude.ai login or its rate limits in their products without Anthropic's approval. claudio may fall outside that, since each user runs their own official Claude Code with their own login, but the line is Anthropic's to draw. Read the current wording in the Agent SDK's docs and the Consumer Terms, and ask Anthropic if it stays unclear
+
+- Rewrite the README so its first screen says what claudio is and what it is not: unofficial, checked only in tmux 3.5 for resizing, pinned to one version of Claude Code, and built on behavior that is observed rather than documented
+
+- Say in the README that each version of Claude Code needs claudio's checks and a release of its own, since claudio runs only the version it was checked against, so users wait for that release before a newer Claude Code
+
+- Keep the README's note on bare mode in view: Claude Code's docs say `--bare` will become the default for `-p`, and bare mode ignores the subscription login, so the release that does it needs claudio to turn it back off
+
+- Keep the README's note on server-side flags in view: the checks against the fake run on Claude Code's default flags, so a user's session, which gets the flags Anthropic serves, can differ with no new version of Claude Code
+
+- Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
+
+### Later
+
+- Words are cut where the pane's margin wraps them. No terminal or tmux wraps at words, and other tools either cut words or break lines themselves, which breaks copying and resizing. Plan: fork tmux 3.8 with a private mode the client turns on around each paragraph of Claude's, so tmux wraps that text at spaces, flags its lines to wrap at spaces again on resize, and leaves the empty cells at a row's end out of copies. The client draws its own input box, so nothing else predicts the rows a paragraph takes. Pick an unused mode number against xterm's control sequences and the terminal working group first
+
+- Consider drawing the question view below the conversation, growing the bottom of the terminal, instead of on the alternate screen, so the conversation that led to the questions stays in view
+
+- Keep styled text as text and style apart until it is written to the terminal. Today it is a `String` with ANSI escapes inside, so where a code sits changes its meaning (a color set outside a string is lost after `cut`'s `…`, seen on 2026-11-15 with the question view's field names), every text operation parses the escapes again (5 hand-written scanners in `render.rs`, `input_line.rs` and `protocol.rs`), and the rule that a line holds its own colors lives only in `cut`'s doc comment. Plan: a small `Span` (text and one style) and `Line` (spans) type, as ratatui models text, with cut, width and wrap on it, and escapes written only at the end; move the question screen first, then the conversation renderer and `code.rs`, then delete the scanners
+
+- Add btw command if possible
+
+- Format tables to not go over X columns somehow
+
+- Reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
+
+- Look into what Ctrl+L does to a subagent that still runs in the background. Claude Code 2.1.322 keeps it across a clear (`hasAgentTaskSurvivingClear` in its code), so its work and its end land in the new session, which is surprising and a hazard. Consider waiting for such subagents to end before the cleared session goes on, and check first what the new session's Claude learns of them
+
+- Bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
+
+- Name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code 2.1.322 renames a subagent whose name a running one holds (`allocateName`, like `reviewer-2`) and frees a name only 30 seconds after its holder ends, so claudio cannot tell which subagent a name reaches. Look first for where Claude Code tells the name it gave, like the Agent call's result
+
+- Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
+
+- Sort the contract checks by what they run against, not only by cost. Today they split into free and paid, while a second split stays unnamed: the checks against the fake API run with a config directory of their own, so they see Claude Code's flags at their defaults, while the others run with the user's login and see the flags Anthropic serves. Name both splits in the checks and the README, and decide which checks should see the served flags
+
+- Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
+
+- List the background tasks that are running in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`)
