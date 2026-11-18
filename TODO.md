@@ -18,8 +18,6 @@
 
 ### Before going public
 
-- Settle whether Anthropic allows claudio's use of the subscription login. claudio drives `claude -p` with the user's claude.ai login, and the Agent SDK's docs, as remembered, say third-party developers may not offer claude.ai login or its rate limits in their products without Anthropic's approval. claudio may fall outside that, since each user runs their own official Claude Code with their own login, but the line is Anthropic's to draw. Read the current wording in the Agent SDK's docs and the Consumer Terms, and ask Anthropic if it stays unclear
-
 - Rewrite the README so its first screen says what claudio is and what it is not: unofficial, checked only in tmux 3.5 for resizing, pinned to one version of Claude Code, and built on behavior that is observed rather than documented
 
 - Say in the README that each version of Claude Code needs claudio's checks and a release of its own, since claudio runs only the version it was checked against, so users wait for that release before a newer Claude Code
@@ -44,11 +42,11 @@
 
 - Reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
-- Look into what Ctrl+L does to a subagent that still runs in the background. Claude Code 2.1.322 keeps it across a clear (`hasAgentTaskSurvivingClear` in its code), so its work and its end land in the new session, which is surprising and a hazard. Consider waiting for such subagents to end before the cleared session goes on, and check first what the new session's Claude learns of them
+- Look into what Ctrl+L does to a subagent that still runs in the background. Claude Code 2.1.322 keeps it across a clear, so its work and its end land in the new session, which is surprising and a hazard. Consider waiting for such subagents to end before the cleared session goes on, and check first what the new session's Claude learns of them
 
 - Bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
 
-- Name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code 2.1.322 renames a subagent whose name a running one holds (`allocateName`, like `reviewer-2`) and frees a name only 30 seconds after its holder ends, so claudio cannot tell which subagent a name reaches. Look first for where Claude Code tells the name it gave, like the Agent call's result
+- Name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code 2.1.322 renames a subagent whose name a running one holds, like `reviewer-2`, and frees a name only 30 seconds after its holder ends, so claudio cannot tell which subagent a name reaches. Look first for where Claude Code tells the name it gave, like the Agent call's result
 
 - Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
 
