@@ -44,7 +44,10 @@
 
 - Reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
-- Look into what Ctrl+L does to a subagent that still runs in the background. Claude Code 2.1.322 keeps it across a clear, so its work and its end land in the new session, which is surprising and a hazard. Consider waiting for such subagents to end before the cleared session goes on, and check first what the new session's Claude learns of them
+- Settle how background work stops, in three steps, each its own commit. Seen with Claude Code 2.1.322 against the fake API on 2026-11-19: without `perTaskStopAffordance` in `initialize`, which claudio leaves out today, an interrupt kills background subagents, with the commands they run, and spares background commands, against what the README says of Ctrl+C. With it, an interrupt spares both, and `stop_task` stops one task, which ends as `stopped`. A clear spares both too, and their ends reach the new session, whose Claude starts a turn on them. A bare `sleep 30` is blocked by Claude Code, so a probe that needs a long command runs `perl -e 'sleep 30'`
+  1. Declare `perTaskStopAffordance`, so Ctrl+C stops the turn and its foreground tasks alone, and add a check of what the interrupt spares
+  2. List the background tasks in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`), with a key that stops the one selected by `stop_task`
+  3. Keep background work from reaching the next session: the second Ctrl+L, when background tasks run, waits for them to end before it clears, and the label row says it waits. Ctrl+C while it waits stops them and clears, as Ctrl+C does after Ctrl+D's two presses. No key cancels the wait
 
 - Bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
 
@@ -56,4 +59,3 @@
 
 - Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
 
-- List the background tasks that are running in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`)
