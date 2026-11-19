@@ -44,8 +44,6 @@
 
 - Reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
-- Keep background work from reaching the next session: the second Ctrl+L, when tasks run in the background, waits for them to end before it clears, and the label row says it waits. Ctrl+K while it waits stops them, as it stops everything, and the clear then goes through. No key cancels the wait. Seen with Claude Code 2.1.322 against the fake API on 2026-11-19: a clear spares the tasks that run in the background, and their ends reach the new session, whose Claude starts a turn on them. A bare `sleep 30` is blocked by Claude Code, so a probe that needs a long command runs `perl -e 'sleep 30'`
-
 - List the background tasks in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`), and let Ctrl+K there stop the one selected, once it is clear how the status view takes keys
 
 - Bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
