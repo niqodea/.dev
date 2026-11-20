@@ -18,13 +18,13 @@
 
 ### Before going public
 
-- Rewrite the README so its first screen says what claudio is and what it is not: unofficial, checked only in tmux 3.5 for resizing, pinned to one version of Claude Code, and built on behavior that is observed rather than documented
+- Rewrite the README so its first screen says what claudio is and what it is not: unofficial, checked only in tmux 3.8 for resizing, pinned to one version of Claude Code, and built on behavior that is observed rather than documented
 
 - Say in the README that each version of Claude Code needs claudio's checks and a release of its own, since claudio runs only the version it was checked against, so users wait for that release before a newer Claude Code
 
 - Keep the README's note on bare mode in view: Claude Code's docs say `--bare` will become the default for `-p`, and bare mode ignores the subscription login, so the release that does it needs claudio to turn it back off
 
-- Keep the README's note on server-side flags in view: the checks against the fake run on Claude Code's default flags, so a user's session, which gets the flags Anthropic serves, can differ with no new version of Claude Code
+- Keep the README's note on server-side flags in view: the hermetic checks run on Claude Code's default flags, so a user's session, which gets the flags Anthropic serves, can differ with no new version of Claude Code
 
 - Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
 
