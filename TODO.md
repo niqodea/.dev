@@ -52,7 +52,5 @@
 
 - Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
 
-- Sort the contract checks by what they run against, not only by cost. Today they split into free and paid, while a second split stays unnamed: the checks against the fake API run with a config directory of their own, so they see Claude Code's flags at their defaults, while the others run with the user's login and see the flags Anthropic serves. Name both splits in the checks and the README, and decide which checks should see the served flags
-
 - Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
 
