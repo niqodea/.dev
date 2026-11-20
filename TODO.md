@@ -40,8 +40,6 @@
 
 - Add btw command if possible
 
-- Format tables to not go over X columns somehow
-
 - Reconsider setting code in bold. Bold otherwise means what to read first, like headings, tool names and the option under the cursor, while code in bold means literal text, as in man pages. Backticks tell code from strong text, so it works for now, but it is the first use to change if bold gets crowded
 
 - List the background tasks in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`), and let Ctrl+K there stop the one selected, once it is clear how the status view takes keys
