@@ -52,3 +52,4 @@
 
 - Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
 
+- Make the status on the label row while a request waits for an answer clearer than `running AskUserQuestion`
