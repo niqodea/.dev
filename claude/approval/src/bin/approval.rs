@@ -94,7 +94,7 @@ fn run_submit(program: &OsString, action: &str, arguments: &str) -> Result<(), S
         cli,
         action: action.to_string(),
         arguments,
-        description: Some(description),
+        description,
     };
     let queue = Queue::new(read_queue_directory(&home)?);
     submit(&actions, &queue, request)
@@ -204,6 +204,7 @@ fn format_outcome(request: &Request, outcome: &Outcome) -> String {
 
 #[cfg(test)]
 mod tests {
+    use approval::Description;
     use indexmap::IndexMap;
     use serde_json::json;
 
@@ -214,7 +215,10 @@ mod tests {
             cli: "demo".to_string(),
             action: "note".to_string(),
             arguments: IndexMap::from([("title".to_string(), json!("it's done"))]),
-            description: None,
+            description: Description {
+                title: "Add a note".to_string(),
+                fields: IndexMap::from([("Title".to_string(), "it's done".to_string())]),
+            },
         }
     }
 
@@ -225,22 +229,22 @@ mod tests {
         };
         assert_eq!(
             format_outcome(&note(), &succeeded),
-            r#"succeeded: demo note {"title":"it's done"}: saved
-3 lines"#
+            r"succeeded: demo · Add a note · Title it's done: saved
+3 lines"
         );
         let failed = Outcome::Failed {
             error: "Traceback\nOSError: disk full".to_string(),
         };
         assert_eq!(
             format_outcome(&note(), &failed),
-            r#"failed: demo note {"title":"it's done"}: OSError: disk full"#
+            r"failed: demo · Add a note · Title it's done: OSError: disk full"
         );
         let empty = Outcome::Succeeded {
             output: String::new(),
         };
         assert_eq!(
             format_outcome(&note(), &empty),
-            r#"succeeded: demo note {"title":"it's done"}"#
+            r"succeeded: demo · Add a note · Title it's done"
         );
     }
 
@@ -251,7 +255,7 @@ mod tests {
         };
         assert_eq!(
             format_outcome(&note(), &succeeded),
-            r#"succeeded: demo note {"title":"it's done"}: \u{1b}[2Jcleared\rover\u{202e}"#
+            r"succeeded: demo · Add a note · Title it's done: \u{1b}[2Jcleared\rover\u{202e}"
         );
     }
 

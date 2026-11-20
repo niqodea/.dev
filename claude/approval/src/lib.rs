@@ -36,8 +36,7 @@ pub struct Request {
     pub cli: String,
     pub action: String,
     pub arguments: IndexMap<String, Value>,
-    // None in the requests logged before CLIs installed a describe executable
-    pub description: Option<Description>,
+    pub description: Description,
 }
 
 /// What a CLI's describe executable prints for a request, as a JSON object,
@@ -100,23 +99,18 @@ pub struct Queue {
 
 impl Request {
     /// Write the request on one line: its CLI, then its description's title
-    /// and each field, or its action and its arguments as a JSON object when
-    /// it has none, with every control and format character escaped.
+    /// and each field, with every control and format character escaped.
     #[must_use]
     pub fn format(&self) -> String {
-        let line = match &self.description {
-            Some(Description { title, fields }) => {
-                let parts = fields
-                    .iter()
-                    .map(|(label, value)| format!("{label} {}", value.replace('\n', " ")));
-                [format!("{} · {title}", self.cli)]
-                    .into_iter()
-                    .chain(parts)
-                    .collect::<Vec<_>>()
-                    .join(" · ")
-            }
-            None => format!("{} {} {}", self.cli, self.action, encode(&self.arguments)),
-        };
+        let Description { title, fields } = &self.description;
+        let parts = fields
+            .iter()
+            .map(|(label, value)| format!("{label} {}", value.replace('\n', " ")));
+        let line = [format!("{} · {title}", self.cli)]
+            .into_iter()
+            .chain(parts)
+            .collect::<Vec<_>>()
+            .join(" · ");
         show_controls(&line)
     }
 }
@@ -712,7 +706,10 @@ mod tests {
             cli: cli.to_string(),
             action: action.to_string(),
             arguments: arguments.clone().into_iter().collect(),
-            description: None,
+            description: Description {
+                title: action.to_string(),
+                fields: IndexMap::new(),
+            },
         }
     }
 
@@ -837,15 +834,6 @@ printf '{"title": "%s a file", "fields": {"File": "notes.txt"}}' "$1""#;
     }
 
     #[test]
-    fn requests_logged_before_arguments_were_json_still_read() {
-        let request: Request = serde_json::from_str(
-            r#"{"cli":"test","action":"run","arguments":{"pod":"p","command":["ls","-la"]}}"#,
-        )
-        .unwrap();
-        assert_eq!(request.arguments["command"], json!(["ls", "-la"]));
-    }
-
-    #[test]
     fn show_controls_escapes_all_but_line_breaks_and_tabs() {
         assert_eq!(
             show_controls("a\tb\nc\x1b[2J\r\u{202e}d"),
@@ -856,25 +844,16 @@ printf '{"title": "%s a file", "fields": {"File": "notes.txt"}}' "$1""#;
     #[test]
     fn format_writes_the_title_and_the_fields_on_one_line_with_controls_escaped() {
         let mut described = request(CLI, "note", &json!({"title": "it's done"}));
-        described.description = Some(Description {
+        described.description = Description {
             title: "Add a note".to_string(),
             fields: IndexMap::from([
                 ("Title".to_string(), "it's done\u{202e}".to_string()),
                 ("Text".to_string(), "two\nlines".to_string()),
             ]),
-        });
+        };
         assert_eq!(
             described.format(),
             r"test · Add a note · Title it's done\u{202e} · Text two lines"
-        );
-    }
-
-    #[test]
-    fn format_writes_the_arguments_as_json_without_a_description() {
-        let arguments = json!({"title": "it's done", "text": "a\u{202e}b", "count": 2});
-        assert_eq!(
-            request(CLI, "note", &arguments).format(),
-            r#"test note {"title":"it's done","text":"a\u{202e}b","count":2}"#
         );
     }
 }

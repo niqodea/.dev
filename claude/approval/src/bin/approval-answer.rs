@@ -10,8 +10,8 @@ use std::path::Path;
 use std::process::{self, ExitCode};
 
 use approval::{
-    Actions, Decision, Description, Outcome, Queue, QueuedJob, Request, format_age, get_last_line,
-    get_now_ns, read_queue_directory, read_variable, show_controls,
+    Actions, Decision, Outcome, Queue, QueuedJob, Request, format_age, get_last_line, get_now_ns,
+    read_queue_directory, read_variable, show_controls,
 };
 use serde_json::Value;
 
@@ -323,14 +323,18 @@ fn show_details(
     } else {
         "j/k scroll"
     };
-    // A request logged before CLIs described them has only its arguments
-    let mut is_showing_arguments = request.description.is_none();
-    let rows = |is_showing_arguments: bool| match &request.description {
-        Some(Description { fields, .. }) if !is_showing_arguments => fields
-            .iter()
-            .map(|(label, value)| (label.clone(), value.clone()))
-            .collect(),
-        _ => argument_rows.clone(),
+    let mut is_showing_arguments = false;
+    let rows = |is_showing_arguments: bool| {
+        if is_showing_arguments {
+            argument_rows.clone()
+        } else {
+            request
+                .description
+                .fields
+                .iter()
+                .map(|(label, value)| (label.clone(), value.clone()))
+                .collect()
+        }
     };
     // The outcome is what the person opened an answered job for, and its
     // fields stay a { away
@@ -370,10 +374,10 @@ fn show_details(
         } else {
             String::new()
         };
-        let switch_key = match (&request.description, is_showing_arguments) {
-            (None, _) => "",
-            (Some(_), false) => "   a arguments",
-            (Some(_), true) => "   a description",
+        let switch_key = if is_showing_arguments {
+            "   a description"
+        } else {
+            "   a arguments"
         };
         print_keys(&format!("{decision_keys}{switch_key}   q back{position}"))?;
         match read_key()? {
@@ -399,7 +403,7 @@ fn show_details(
                     .rfind(|&start| start < first_line)
                     .unwrap_or(0);
             }
-            Some(b'a') if request.description.is_some() => {
+            Some(b'a') => {
                 is_showing_arguments = !is_showing_arguments;
                 first_line = 0;
             }
@@ -431,16 +435,15 @@ fn format_argument_rows(request: &Request) -> Vec<(String, String)> {
 /// Return the details screen's header: the description's title, or the CLI
 /// and the action above the arguments.
 fn format_header(request: &Request, is_showing_arguments: bool) -> String {
-    match &request.description {
-        // What describe prints could move the cursor or hide text, like the
-        // fields
-        Some(Description { title, .. }) if !is_showing_arguments => format!(
-            "{BOLD}{}{RESET}  {DIM}{}{RESET}",
-            show_controls(title),
-            request.cli
-        ),
-        _ => format!("{BOLD}{} {}{RESET}", request.cli, request.action),
+    if is_showing_arguments {
+        return format!("{BOLD}{} {}{RESET}", request.cli, request.action);
     }
+    // What describe prints could move the cursor or hide text, like the fields
+    format!(
+        "{BOLD}{}{RESET}  {DIM}{}{RESET}",
+        show_controls(&request.description.title),
+        request.cli
+    )
 }
 
 /// Lay out the rows as a table, and the outcome, if any, below them: its word
