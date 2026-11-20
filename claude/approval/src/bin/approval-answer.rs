@@ -10,8 +10,8 @@ use std::path::Path;
 use std::process::{self, ExitCode};
 
 use approval::{
-    Actions, Decision, Outcome, Queue, QueuedJob, Request, format_age, get_last_line, get_now_ns,
-    read_queue_directory, read_variable, show_controls,
+    Actions, Decision, Description, Outcome, Queue, QueuedJob, Request, format_age, get_last_line,
+    get_now_ns, read_queue_directory, read_variable, show_controls,
 };
 use serde_json::Value;
 
@@ -295,70 +295,66 @@ fn cut(text: &str, width: usize) -> String {
     format!("{kept}…")
 }
 
-/// Show the job's CLI and action with each argument below, next to its name,
-/// which j and k scroll, until the person presses y or n to decide on the job,
-/// or q to go back without deciding.
+/// Show the job's description: its title, and each field below, next to its
+/// label, which j and k scroll, until the person presses y or n to decide on
+/// the job, or q to go back without deciding. a switches to the arguments the
+/// action gets, each next to its name, and back.
 ///
 /// Once the decisions were carried out, the job's outcome, if it has one, shows
-/// below the arguments, and y and n do nothing.
+/// below the fields, and y and n do nothing.
 ///
 /// The outcome has no name column, and its first line is colored, which no
-/// argument can be, since every argument shows its control characters as
-/// escapes. So no argument, whatever its name or value, can pass for the
-/// outcome.
+/// field or argument can be, since each shows its control characters as
+/// escapes. So no field or argument, whatever its name or value, can pass for
+/// the outcome.
 fn show_details(
     request: &Request,
     decision: Option<Decision>,
     stage: &Stage,
 ) -> Result<Option<Decision>, String> {
-    let rows: Vec<(String, String)> = request
-        .arguments
-        .iter()
-        .map(|(name, value)| {
-            let value = match value {
-                // Without the quotes JSON puts around it, as text reads
-                Value::String(text) => text.clone(),
-                value => value.to_string(),
-            };
-            (name.clone(), value)
-        })
-        .collect();
+    let argument_rows = format_argument_rows(request);
     let outcome = match stage {
         Stage::Answered(outcome) => *outcome,
         Stage::Deciding => None,
     };
     let is_deciding = matches!(stage, Stage::Deciding);
-    let keys = if is_deciding {
-        "j/k scroll   y approve   n refuse   q back"
+    let decision_keys = if is_deciding {
+        "j/k scroll   y approve   n refuse"
     } else {
-        "j/k scroll   q back"
+        "j/k scroll"
+    };
+    // A request logged before CLIs described them has only its arguments
+    let mut is_showing_arguments = request.description.is_none();
+    let rows = |is_showing_arguments: bool| match &request.description {
+        Some(Description { fields, .. }) if !is_showing_arguments => fields
+            .iter()
+            .map(|(label, value)| (label.clone(), value.clone()))
+            .collect(),
+        _ => argument_rows.clone(),
     };
     // The outcome is what the person opened an answered job for, and its
-    // arguments stay a { away
+    // fields stay a { away
     let mut first_line = match outcome {
         Some(_) => {
             let (width, _) = get_terminal_size()?;
-            let (_, field_starts) = format_details(&rows, outcome, width);
-            field_starts[rows.len()]
+            let shown_rows = rows(is_showing_arguments);
+            let (_, field_starts) = format_details(&shown_rows, outcome, width);
+            field_starts[shown_rows.len()]
         }
         None => 0,
     };
     loop {
         // Read on every key press, so the rows fit the terminal after a resize
         let (width, height) = get_terminal_size()?;
-        let (lines, field_starts) = format_details(&rows, outcome, width);
+        let (lines, field_starts) = format_details(&rows(is_showing_arguments), outcome, width);
         // The header, the keys, and a blank line below the header and above the
         // keys take 4 lines
         let line_count = height.saturating_sub(4).max(1);
         first_line = first_line.min(lines.len().saturating_sub(line_count));
         let shown = &lines[first_line..lines.len().min(first_line + line_count)];
         print!("{CLEAR_SCREEN}");
-        println!(
-            "{}  {BOLD}{} {}{RESET}",
-            format_mark(decision),
-            request.cli,
-            request.action
-        );
+        let header = format_header(request, is_showing_arguments);
+        println!("{}  {header}", format_mark(decision));
         println!();
         println!("{}", shown.join("\n"));
         println!();
@@ -374,7 +370,12 @@ fn show_details(
         } else {
             String::new()
         };
-        print_keys(&format!("{keys}{position}"))?;
+        let switch_key = match (&request.description, is_showing_arguments) {
+            (None, _) => "",
+            (Some(_), false) => "   a arguments",
+            (Some(_), true) => "   a description",
+        };
+        print_keys(&format!("{decision_keys}{switch_key}   q back{position}"))?;
         match read_key()? {
             Some(b'j') => first_line += 1,
             Some(b'k') => first_line = first_line.saturating_sub(1),
@@ -398,6 +399,10 @@ fn show_details(
                     .rfind(|&start| start < first_line)
                     .unwrap_or(0);
             }
+            Some(b'a') if request.description.is_some() => {
+                is_showing_arguments = !is_showing_arguments;
+                first_line = 0;
+            }
             Some(b'y') if is_deciding => return Ok(Some(Decision::Approve)),
             Some(b'n') if is_deciding => return Ok(Some(Decision::Refuse)),
             Some(b'q') => return Ok(None),
@@ -407,10 +412,40 @@ fn show_details(
     }
 }
 
-/// Lay out the arguments as a table, and the outcome, if any, below them: its
-/// word in its color, then what the action printed, in full and as wide as the
-/// terminal. Return the lines with the line each argument and the outcome
-/// starts on.
+/// Return each argument next to its name, as the action gets them.
+fn format_argument_rows(request: &Request) -> Vec<(String, String)> {
+    request
+        .arguments
+        .iter()
+        .map(|(name, value)| {
+            let value = match value {
+                // Without the quotes JSON puts around it, as text reads
+                Value::String(text) => text.clone(),
+                value => value.to_string(),
+            };
+            (name.clone(), value)
+        })
+        .collect()
+}
+
+/// Return the details screen's header: the description's title, or the CLI
+/// and the action above the arguments.
+fn format_header(request: &Request, is_showing_arguments: bool) -> String {
+    match &request.description {
+        // What describe prints could move the cursor or hide text, like the
+        // fields
+        Some(Description { title, .. }) if !is_showing_arguments => format!(
+            "{BOLD}{}{RESET}  {DIM}{}{RESET}",
+            show_controls(title),
+            request.cli
+        ),
+        _ => format!("{BOLD}{} {}{RESET}", request.cli, request.action),
+    }
+}
+
+/// Lay out the rows as a table, and the outcome, if any, below them: its word
+/// in its color, then what the action printed, in full and as wide as the
+/// terminal. Return the lines with the line each row and the outcome starts on.
 fn format_details(
     rows: &[(String, String)],
     outcome: Option<&Result<Outcome, String>>,

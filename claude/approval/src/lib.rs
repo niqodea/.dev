@@ -36,6 +36,18 @@ pub struct Request {
     pub cli: String,
     pub action: String,
     pub arguments: IndexMap<String, Value>,
+    // None in the requests logged before CLIs installed a describe executable
+    pub description: Option<Description>,
+}
+
+/// What a CLI's describe executable prints for a request, as a JSON object,
+/// which the person reads to decide: what the request does, and what it acts
+/// on, each value under its label, in the order describe gave them
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Description {
+    pub title: String,
+    pub fields: IndexMap<String, String>,
 }
 
 /// A request that runs without asking: any request for the action whose
@@ -87,16 +99,25 @@ pub struct Queue {
 }
 
 impl Request {
-    /// Write the request on one line: its CLI, its action, and its arguments as
-    /// a JSON object, with every control and format character escaped.
+    /// Write the request on one line: its CLI, then its description's title
+    /// and each field, or its action and its arguments as a JSON object when
+    /// it has none, with every control and format character escaped.
     #[must_use]
     pub fn format(&self) -> String {
-        show_controls(&format!(
-            "{} {} {}",
-            self.cli,
-            self.action,
-            encode(&self.arguments)
-        ))
+        let line = match &self.description {
+            Some(Description { title, fields }) => {
+                let parts = fields
+                    .iter()
+                    .map(|(label, value)| format!("{label} {}", value.replace('\n', " ")));
+                [format!("{} · {title}", self.cli)]
+                    .into_iter()
+                    .chain(parts)
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            }
+            None => format!("{} {} {}", self.cli, self.action, encode(&self.arguments)),
+        };
+        show_controls(&line)
     }
 }
 
@@ -152,17 +173,28 @@ impl Actions {
             .status();
     }
 
-    /// Check that the request names a CLI that installs an action executable.
+    /// Run the CLI's describe executable on the arguments, and return the
+    /// description it printed, which the person reads to decide.
     ///
-    /// The action itself checks the request's arguments when it runs, since it
-    /// alone knows them.
+    /// It checks the arguments, since it alone knows them, and the action runs
+    /// only on arguments it described.
     ///
     /// # Errors
     ///
-    /// When the CLI or the action is not named plainly, or the CLI installs no
-    /// action executable.
-    pub fn check(&self, request: &Request) -> Result<(), String> {
-        self.locate(&request.cli, &request.action).map(|_| ())
+    /// When the CLI or the action is not named plainly, the CLI installs no
+    /// action or describe executable, or describe fails or prints no
+    /// description.
+    pub fn describe(
+        &self,
+        cli: &str,
+        action: &str,
+        arguments: &IndexMap<String, Value>,
+    ) -> Result<Description, String> {
+        self.locate(cli, action, "action")?;
+        let output = self.run_executable(cli, action, "describe", arguments)?;
+        serde_json::from_str(&output).map_err(|error| {
+            format!("The describe of {cli} printed no title and fields for {action}: {error}")
+        })
     }
 
     /// Run the action, and return what it printed.
@@ -171,14 +203,7 @@ impl Actions {
     ///
     /// Why the action failed, like the last line it printed to stderr.
     pub fn run(&self, request: &Request) -> Result<String, String> {
-        let action_path = self.locate(&request.cli, &request.action)?;
-        match self.run_action(&action_path, &request.action, &request.arguments) {
-            Ok(output) if output.status.success() => Ok(output.stdout.trim().to_string()),
-            Ok(output) => Err(get_error(&output)),
-            Err(ActionError::TimedOut) => Err(format!("took over {} s", ACTION_TIMEOUT.as_secs())),
-            // Like an action without its execute bit
-            Err(ActionError::Io(error)) => Err(error.to_string()),
-        }
+        self.run_executable(&request.cli, &request.action, "action", &request.arguments)
     }
 
     /// Whether a rule in the CLI's auto-approved file names the request's
@@ -207,10 +232,29 @@ impl Actions {
         Ok(is_listed)
     }
 
-    /// Return the executable that makes the CLI's changes, which takes the
-    /// action's name as its argument.
-    fn locate(&self, cli: &str, action: &str) -> Result<PathBuf, String> {
-        let path = self.clis_directory.join(cli).join("action");
+    /// Run one of the CLI's executables for the action, and return what it
+    /// printed.
+    fn run_executable(
+        &self,
+        cli: &str,
+        action: &str,
+        executable: &str,
+        arguments: &IndexMap<String, Value>,
+    ) -> Result<String, String> {
+        let path = self.locate(cli, action, executable)?;
+        match self.run_action(&path, action, arguments) {
+            Ok(output) if output.status.success() => Ok(output.stdout.trim().to_string()),
+            Ok(output) => Err(get_error(&output)),
+            Err(ActionError::TimedOut) => Err(format!("took over {} s", ACTION_TIMEOUT.as_secs())),
+            // Like an executable without its execute bit
+            Err(ActionError::Io(error)) => Err(error.to_string()),
+        }
+    }
+
+    /// Return one of the CLI's executables, action or describe, which takes
+    /// the action's name as its argument.
+    fn locate(&self, cli: &str, action: &str, executable: &str) -> Result<PathBuf, String> {
+        let path = self.clis_directory.join(cli).join(executable);
         // The CLI's name becomes part of a path, so it may not climb out of its
         // directory, and the action's is the executable's argument, so it may
         // not pass for an option like --help
@@ -221,8 +265,8 @@ impl Actions {
         Ok(path)
     }
 
-    /// Run the action executable with the action's name, and the arguments as a
-    /// JSON object on its standard input.
+    /// Run the executable with the action's name, and the arguments as a JSON
+    /// object on its standard input.
     fn run_action(
         &self,
         action_path: &Path,
@@ -631,13 +675,22 @@ mod tests {
         fn new(script: &str) -> Home {
             let directory = tempfile::tempdir().unwrap();
             let home = directory.path().to_str().unwrap().to_string();
-            let cli_directory = directory.path().join(".config/approval/clis").join(CLI);
-            fs::create_dir_all(&cli_directory).unwrap();
-            let action_path = cli_directory.join("action");
-            fs::write(&action_path, format!("#!/bin/sh\n{script}\n")).unwrap();
-            fs::set_permissions(&action_path, fs::Permissions::from_mode(0o755)).unwrap();
             let actions = Actions::new(&home, env::var("PATH").unwrap());
-            Home { directory, actions }
+            let home = Home { directory, actions };
+            home.write_executable("action", script);
+            home
+        }
+
+        fn write_executable(&self, name: &str, script: &str) {
+            let cli_directory = self
+                .directory
+                .path()
+                .join(".config/approval/clis")
+                .join(CLI);
+            fs::create_dir_all(&cli_directory).unwrap();
+            let path = cli_directory.join(name);
+            fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         fn write_auto_approved(&self, rules: &str) {
@@ -659,7 +712,16 @@ mod tests {
             cli: cli.to_string(),
             action: action.to_string(),
             arguments: arguments.clone().into_iter().collect(),
+            description: None,
         }
+    }
+
+    fn describe(home: &Home, cli: &str, action: &str) -> Result<Description, String> {
+        home.actions.describe(
+            cli,
+            action,
+            &request(cli, action, &json!({"file": "notes.txt"})).arguments,
+        )
     }
 
     // Prints back what it runs with: the action's name, then the arguments
@@ -688,9 +750,40 @@ mod tests {
         assert_eq!(error, "usage: move\nunknown key: from");
     }
 
+    // Describes only the arguments the tests pass, to show it reads them
+    const DESCRIBE_SCRIPT: &str = r#"grep -q '"file":"notes.txt"' &&
+printf '{"title": "%s a file", "fields": {"File": "notes.txt"}}' "$1""#;
+
     #[test]
-    fn check_rejects_names_that_are_not_plain() {
+    fn describe_gets_the_action_s_name_and_the_arguments_on_its_input() {
         let home = Home::new(ECHO_SCRIPT);
+        home.write_executable("describe", DESCRIBE_SCRIPT);
+        let description = describe(&home, CLI, "tag").unwrap();
+        assert_eq!(description.title, "tag a file");
+        assert_eq!(
+            description.fields,
+            IndexMap::from([("File".to_string(), "notes.txt".to_string())])
+        );
+    }
+
+    #[test]
+    fn describe_rejects_arguments_its_executable_fails_on_or_prints_no_description_for() {
+        let home = Home::new(ECHO_SCRIPT);
+        home.write_executable("describe", "echo 'tag takes tags' >&2; exit 1");
+        assert_eq!(describe(&home, CLI, "tag").err().unwrap(), "tag takes tags");
+        home.write_executable("describe", "echo 'Tag notes.txt'");
+        assert!(
+            describe(&home, CLI, "tag")
+                .err()
+                .unwrap()
+                .starts_with("The describe of test printed no title and fields for tag: ")
+        );
+    }
+
+    #[test]
+    fn describe_rejects_names_that_are_not_plain() {
+        let home = Home::new(ECHO_SCRIPT);
+        home.write_executable("describe", DESCRIBE_SCRIPT);
         for (cli, action) in [
             ("..", "move"),
             ("test/..", "move"),
@@ -699,23 +792,21 @@ mod tests {
             (CLI, "Move"),
         ] {
             assert_eq!(
-                home.actions
-                    .check(&request(cli, action, &json!({})))
-                    .err()
-                    .unwrap(),
+                describe(&home, cli, action).err().unwrap(),
                 format!("No such request: {cli} {action}")
             );
         }
     }
 
     #[test]
-    fn check_rejects_a_cli_without_an_action_executable() {
+    fn describe_rejects_a_cli_without_an_action_or_describe_executable() {
         let home = Home::new(ECHO_SCRIPT);
         assert_eq!(
-            home.actions
-                .check(&request("other", "move", &json!({})))
-                .err()
-                .unwrap(),
+            describe(&home, CLI, "move").err().unwrap(),
+            "No such request: test move"
+        );
+        assert_eq!(
+            describe(&home, "other", "move").err().unwrap(),
             "No such request: other move"
         );
     }
@@ -763,7 +854,23 @@ mod tests {
     }
 
     #[test]
-    fn format_writes_the_arguments_as_json_with_controls_escaped() {
+    fn format_writes_the_title_and_the_fields_on_one_line_with_controls_escaped() {
+        let mut described = request(CLI, "note", &json!({"title": "it's done"}));
+        described.description = Some(Description {
+            title: "Add a note".to_string(),
+            fields: IndexMap::from([
+                ("Title".to_string(), "it's done\u{202e}".to_string()),
+                ("Text".to_string(), "two\nlines".to_string()),
+            ]),
+        });
+        assert_eq!(
+            described.format(),
+            r"test · Add a note · Title it's done\u{202e} · Text two lines"
+        );
+    }
+
+    #[test]
+    fn format_writes_the_arguments_as_json_without_a_description() {
         let arguments = json!({"title": "it's done", "text": "a\u{202e}b", "count": 2});
         assert_eq!(
             request(CLI, "note", &arguments).format(),

@@ -89,10 +89,12 @@ fn run_submit(program: &OsString, action: &str, arguments: &str) -> Result<(), S
     let cli = read_submitting_cli(&actions, Path::new(program))?;
     let arguments = serde_json::from_str(arguments)
         .map_err(|error| format!("Invalid request: the arguments are no JSON object: {error}"))?;
+    let description = actions.describe(&cli, action, &arguments)?;
     let request = Request {
         cli,
         action: action.to_string(),
         arguments,
+        description: Some(description),
     };
     let queue = Queue::new(read_queue_directory(&home)?);
     submit(&actions, &queue, request)
@@ -125,7 +127,6 @@ fn read_submitting_cli(actions: &Actions, program: &Path) -> Result<String, Stri
 }
 
 fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), String> {
-    actions.check(&request)?;
     if actions.is_auto_approved(&request)? {
         return match actions.run(&request) {
             Ok(output) => {
@@ -213,6 +214,7 @@ mod tests {
             cli: "demo".to_string(),
             action: "note".to_string(),
             arguments: IndexMap::from([("title".to_string(), json!("it's done"))]),
+            description: None,
         }
     }
 
