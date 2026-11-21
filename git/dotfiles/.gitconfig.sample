@@ -9,3 +9,5 @@
     rebase = true  # Pulling rebases local commits instead of adding a merge commit
 [push]
     autoSetupRemote = true  # The first push creates a remote branch of the same name
+[init]
+    defaultBranch = main  # New repositories start on main instead of master
