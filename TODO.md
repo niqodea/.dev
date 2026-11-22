@@ -4,7 +4,9 @@
 
 - Explore customizing Claude Code's UI
 
-- tmux: when a narrower screen wraps rows into more, take the extra rows from the empty rows below the cursor first, as a shorter screen already does (`screen_resize_y`), rather than pushing the screen's top into the scrollback. Today `grid_reflow` keeps the last rows that fit, empty ones included, so each narrower screen moves claudio's live rows up a row, since claudio draws its full-width label row on one row again and leaves the row it wrapped onto empty at the bottom, and after a few narrower screens in a row, like a pane narrowed a column at a time, or at once while claudio's conversation does not fill the screen yet, the start of claudio's label row goes into the scrollback, where it stays as a copy (README's Resizing). Unchanged on tmux master as of 2026-11-16, and no tmux issue reports it then. https://github.com/tmux/tmux/issues/516 is the same family: shells' prompts broken by the rewrap on a resize, which claudio's climb already avoids. Its maintainer refuses new options and new meanings for escape sequences, and asks for fixes that work by default, as this one does. It helps shells too: a wide prompt near the top of a mostly empty screen goes to the scrollback the same way. The patch goes in `screen_resize_cursor` in `screen.c`; open an issue and send it upstream, or carry it in the tmux fork planned for word wrapping
+- tmux: when a narrower pane rewraps lines into more rows, tmux pushes the top of the screen into the scrollback even when empty rows sit below the cursor, while a shorter pane uses those empty rows first (`screen_resize_y`). This leaves copies of claudio's label row in the scrollback (claudio's README, Resizing), and does the same to wide shell prompts. Open an issue asking the maintainers whether this is intended before writing a fix: a fix, which drops the empty lines below the cursor after the reflow in `screen_resize_cursor` in `screen.c`, changes the expected results of 4 of tmux's tests that pin where a reflow leaves the cursor and content. Keep it out of the word-wrapping fork unless they agree
+
+- tmux: send upstream the fix on branch `fix-wrapped-edge-space` in `~/oss/tmux`, with its regression test: in plain tmux, vi copy mode sticks on the word before a space in a wrapped line's last column, since `grid_line_length` strips that space. The word-wrapping fork, branch `niqodea`, builds on it
 
 - zsh: show whether vi mode is in insert or normal mode
 
@@ -29,8 +31,6 @@
 - Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
 
 ### Later
-
-- Words are cut where the pane's margin wraps them. No terminal or tmux wraps at words, and other tools either cut words or break lines themselves, which breaks copying and resizing. Plan: fork tmux 3.8 with a private mode the client turns on around each paragraph of Claude's, so tmux wraps that text at spaces, flags its lines to wrap at spaces again on resize, and leaves the empty cells at a row's end out of copies. The client draws its own input box, so nothing else predicts the rows a paragraph takes. Pick an unused mode number against xterm's control sequences and the terminal working group first
 
 - Consider jumping between the user's messages in the full view with less's tags, which a `/` search leaves alone: claudio notes the full view's line of each message it shows, writes a ctags file of them, newest first after a tag where the view opens, and starts less with `-T <file> -t <tag>`, so `t` goes back a message and `T` forward. Tried with less 581: `t` and `T` count from the last tag jumped to, not from the line in view, so after a scroll or a search the next jump can surprise; that limit is why it waits
 
