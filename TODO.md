@@ -32,6 +32,8 @@
 
 ### Later
 
+- Ask Anthropic to add to the answer to `get_usage` when Claude Code fetched its numbers, which its `/usage` already shows, so claudio can stop reading the copy of the usage in Claude Code's config file
+
 - Consider jumping between the user's messages in the full view with less's tags, which a `/` search leaves alone: claudio notes the full view's line of each message it shows, writes a ctags file of them, newest first after a tag where the view opens, and starts less with `-T <file> -t <tag>`, so `t` goes back a message and `T` forward. Tried with less 581: `t` and `T` count from the last tag jumped to, not from the line in view, so after a scroll or a search the next jump can surprise; that limit is why it waits
 
 - Ring the terminal's bell, ASCII 7, when Claude's turn ends and when a request starts waiting, if someone asks for it. The bell takes nothing from the user: tmux marks the window in its status bar with `monitor-bell`, and `bell-action` decides whether the window in view rings too, so claudio rings always and leaves the rest to the terminal. The turn ends where `Output::note_state` goes back to `Status::Idle`, and a request arrives as `Event::Ask` in `read_claude`; a flag in `Output` that the input loop takes and writes, next to `take_text`, rings once for requests that arrive together
