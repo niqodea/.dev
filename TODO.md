@@ -51,5 +51,3 @@
 - Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
 
 - Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
-
-- Make the status on the label row while a request waits for an answer clearer than `running AskUserQuestion`
