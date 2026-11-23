@@ -84,5 +84,5 @@ fi
 # A command in the background reads nothing unless handed its input, so it gets the pane's input through another descriptor
 exec 3<&0
 ssh -S "$socket" -t "$workstation" "$profile,tmux-open-session $(quote "$session")" <&3 3<&- &
-# The script ends with the session's exit status, so the pane stays after a failed session
+# The script exits with the session's exit status, so a failed session fails the script
 wait "$!"

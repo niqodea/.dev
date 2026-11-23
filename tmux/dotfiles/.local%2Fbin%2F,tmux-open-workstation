@@ -46,7 +46,8 @@ for arg in "$workstation" "$workstation_dir/ssh" "$session" "$@"; do
 done
 
 # The connection is the pane's process, so the pane goes away when the connection ends
-# After a failure the pane stays until a key is pressed, so the error stays readable. The option is set in the same tmux call as the split, so it is in place before the program can end
+# After the program fails, the pane stays until a key is pressed, so the program's error stays readable
+# tmux runs the commands of one call back to back, so the option is set before the program can end
 new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' "$pane_command" ';' set-option -p remain-on-exit failed-key)
 tmux set-option -p -t "$new_pane" @pane_type workstation
 tmux set-option -p -t "$new_pane" @ssh_workstation "$workstation"
