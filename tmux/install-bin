@@ -11,17 +11,17 @@ if [ "$os" = 'macos' ]; then
     exit
 fi
 
-tmux_version='v3.7c'
+tmux_version='v3.8'
 
 # Each download's sha256 changes with the version above, and comes from the release's own digest on GitHub
 case "$(uname -m)" in
     'aarch64')
         tmux_platform='linux-arm64'
-        tmux_sha256='29dcb978da2a4b0cf6790f9e004865dac239a3ba03bbf776dddacce23d03831b'
+        tmux_sha256='f399311b1159705e69839eaf4f6f68c8b8540dc3a8538b87c30dedb9c3c7fc23'
         ;;
     'x86_64')
         tmux_platform='linux-x86_64'
-        tmux_sha256='cc56bd1cc873eb6089c615f0496b072385bda8a6d944069f38564a5d49c128aa'
+        tmux_sha256='147849ff18b62a8aa3d5d8f75dd07c3f9fdfad529f932236afdec838fc1d15e1'
         ;;
     *)
         >&2 echo "Unsupported processor: $(uname -m)"
