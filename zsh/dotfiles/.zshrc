@@ -96,6 +96,16 @@ function() {
     # zsh acts on a lone Esc after the shortest wait, 10 ms, since 0 would wait forever
     # The bytes of a key code arrive together, so zsh still reads them as one sequence
     KEYTIMEOUT=1
+    # The cursor is a block in normal mode and a bar in insert mode, which each new prompt starts in
+    # zsh runs zle-keymap-select when the keymap changes, and zle-line-init when a new prompt starts
+    # Ref: https://zsh.sourceforge.io/Doc/Release/Zsh-Line-Editor.html#Special-Widgets
+    # \e[2 q sets a steady block cursor, and \e[6 q a steady bar
+    # Ref: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+    # TODO: remove these lines once zsh 5.10 is out, whose line editor shows a bar in insert mode by default
+    # Ref: https://github.com/zsh-users/zsh/commit/ba008572e
+    zle-keymap-select() { [[ $KEYMAP == vicmd ]] && printf '\e[2 q' || printf '\e[6 q'; }
+    zle -N zle-keymap-select
+    zle -N zle-line-init zle-keymap-select
 
     # LOCAL
     local local_zsh_path="$HOME/.local.zsh"
