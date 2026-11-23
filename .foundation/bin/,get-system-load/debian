@@ -7,6 +7,7 @@ has_nvidia_gpu() {
         case "$(cat "$device/vendor") $(cat "$device/class")" in
             # An NVIDIA display device
             "0x10de 0x03"*) return 0 ;;
+            *) ;;
         esac
     done
     return 1
