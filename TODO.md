@@ -14,8 +14,6 @@
   - ,approval: polls every 10 ms whether an action ended, and stops it after 60 s
   - test-macos-install: retries SSH every 5 s for up to 5 minutes, and waits up to 300 s for the virtual machine's address
 
-- Fix bug where tmux fish would not recognize tokens broken up over multiple lines
-
 ## claudio
 
 ### Before going public

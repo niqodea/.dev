@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tty
+from typing import NamedTuple
 
 # What a URL may hold, which stops at spaces, quotes and brackets
 _URL = r"[^\s\"'`<>()\[\]{},;]"
@@ -48,6 +49,29 @@ LABEL = "\033[0;30;43m"
 PLAIN = "\033[0m"
 
 
+class Row(NamedTuple):
+    """A row in view, as its index among the captured rows and where it starts and ends in its line."""
+
+    index: int
+    start: int
+    end: int
+
+
+class Line(NamedTuple):
+    """A line that shows in view, as its whole text and its rows in view."""
+
+    text: str
+    rows: list[Row]
+
+
+class Match(NamedTuple):
+    """A match, as the index of its line, where it starts in the line, and its text."""
+
+    line: int
+    start: int
+    text: str
+
+
 def main() -> None:
     # Copy mode can show history, scrolled back by scroll_position lines, and is empty outside it
     scroll, width, height = run(
@@ -58,12 +82,22 @@ def main() -> None:
             "#{e|+:0,#{scroll_position}} #{pane_width} #{pane_height}",
         ]
     ).split()
-    top = -int(scroll)
-    bottom = top + int(height) - 1
-    lines = run(
-        ["tmux", "capture-pane", "-p", "-S", str(top), "-E", str(bottom)]
+    # -F starts each row with its flags, where W marks a row that wraps onto the next one
+    # -N keeps the spaces at the end of each row, since a row that wraps can end in a space of
+    # the text
+    # The whole history is captured, so a line that starts above the rows in view or ends below
+    # them comes back whole
+    captured = run(
+        ["tmux", "capture-pane", "-p", "-N", "-F", "-S", "-", "-E", "-"]
     ).splitlines()
-    matches = find_matches(lines)
+    first_in_view = len(captured) - int(height) - int(scroll)
+    lines = join_rows(captured, range(first_in_view, first_in_view + int(height)))
+    # A label has at most two letters, so a match shows only when two of its characters are in view
+    matches = [
+        match
+        for match in find_matches(lines)
+        if count_in_view(match, lines[match.line]) >= 2
+    ]
     if not matches:
         run(["tmux", "display-message", "Nothing to fish on screen"])
         return
@@ -75,7 +109,9 @@ def main() -> None:
 
     # The longest matches, like URLs, are the likeliest to be copied, so they get the easiest labels
     # Among matches of one length, the newest output comes first, since matches are found bottom up
-    texts = sorted(dict.fromkeys(text for _, _, text in matches), key=len, reverse=True)
+    texts = sorted(
+        dict.fromkeys(match.text for match in matches), key=len, reverse=True
+    )
     labels = dict(zip(texts, make_labels(len(texts))))
     draw(lines, matches, labels)
 
@@ -92,15 +128,37 @@ def main() -> None:
         run(["tmux", "display-message", "-l", f"Copied {match}"])
 
 
-def find_matches(lines: list[str]) -> list[tuple[int, int, str]]:
-    """Find each match as its row, its column and its text, from the bottom line up."""
+def join_rows(captured: list[str], in_view: range) -> list[Line]:
+    """Join the captured rows into lines, and keep the lines with rows in view.
+
+    A long match like a URL can wrap across rows, and only the whole line holds all of it.
+    """
+    lines = []
+    text = ""
+    rows = []
+    for index, row in enumerate(captured):
+        flags, _, row_text = row.partition(" ")
+        if index in in_view:
+            rows.append(Row(index, len(text), len(text) + len(row_text)))
+        text += row_text
+        # The last row ends its line, since no row follows it
+        if "W" not in flags or index == len(captured) - 1:
+            if rows:
+                lines.append(Line(text, rows))
+            text = ""
+            rows = []
+    return lines
+
+
+def find_matches(lines: list[Line]) -> list[Match]:
+    """Find the matches in each line, from the bottom line up."""
     matches = []
-    for row in reversed(range(len(lines))):
-        rest = lines[row]
+    for index in reversed(range(len(lines))):
+        rest = lines[index].text
         found = []
         for pattern in PATTERNS:
             for match in pattern.finditer(rest):
-                found.append((row, match.start(), match.group()))
+                found.append(Match(index, match.start(), match.group()))
                 # Spaces in place of a claimed match keep later patterns off it
                 rest = (
                     rest[: match.start()]
@@ -109,6 +167,13 @@ def find_matches(lines: list[str]) -> list[tuple[int, int, str]]:
                 )
         matches.extend(sorted(found))
     return matches
+
+
+def count_in_view(match: Match, line: Line) -> int:
+    """Count the characters of the match on the line's rows in view."""
+    first = max(match.start, line.rows[0].start)
+    end = min(match.start + len(match.text), line.rows[-1].end)
+    return end - first
 
 
 def make_labels(count: int) -> list[str]:
@@ -120,20 +185,34 @@ def make_labels(count: int) -> list[str]:
     return ["".join(pair) for pair in itertools.product(letters, repeat=2)][:count]
 
 
-def draw(
-    lines: list[str], matches: list[tuple[int, int, str]], labels: dict[str, str]
-) -> None:
+def draw(lines: list[Line], matches: list[Match], labels: dict[str, str]) -> None:
     out = []
-    for row, line in enumerate(lines):
-        position = 0
-        drawn = DIM
-        for _, column, text in (match for match in matches if match[0] == row):
-            label = labels[text].upper()
-            drawn += (
-                line[position:column] + LABEL + label + PLAIN + text[len(label) :] + DIM
-            )
-            position = column + len(text)
-        out.append(drawn + line[position:] + PLAIN)
+    for index, line in enumerate(lines):
+        # The characters and their styles are kept for the whole line, so a match keeps its
+        # style on every row it wraps across
+        chars = list(line.text)
+        styles = [DIM] * len(chars)
+        for match in (match for match in matches if match.line == index):
+            label = labels[match.text].upper()
+            # The label goes on the first character of the match in view
+            first = max(match.start, line.rows[0].start)
+            end = match.start + len(match.text)
+            styles[first:end] = [PLAIN] * (end - first)
+            chars[first : first + len(label)] = label
+            styles[first : first + len(label)] = [LABEL] * len(label)
+        for row in line.rows:
+            # A space hung past the edge would wrap the row onto the next row of the popup. No
+            # match holds a space, and a space at the end of a row shows nothing, so the row is
+            # drawn without the spaces at its end
+            row_end = row.start + len("".join(chars[row.start : row.end]).rstrip())
+            drawn = ""
+            style = None
+            for position in range(row.start, row_end):
+                if styles[position] != style:
+                    style = styles[position]
+                    drawn += PLAIN + style
+                drawn += chars[position]
+            out.append(drawn + PLAIN)
     # The cursor is hidden, and a newline after the last line would scroll the popup up by one
     sys.stdout.write("\033[?25l" + "\n".join(out))
     sys.stdout.flush()
