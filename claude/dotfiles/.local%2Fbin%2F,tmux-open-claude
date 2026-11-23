@@ -17,6 +17,7 @@ if [ -n "$existing_pane" ]; then
 fi
 
 # Claude is the pane's process, so the pane and its options go away when Claude exits
+# After a failure the pane stays until a key is pressed, so the error stays readable. The option is set in the same tmux call as the split, so it is in place before the program can end
 # Only this Claude gets the hooks and the mod that report its status to the pane
-new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' "claudio --settings $HOME/.tmux-claude-settings.json --plugin-dir $HOME/.tmux-claude-mod")
+new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' "claudio --settings $HOME/.tmux-claude-settings.json --plugin-dir $HOME/.tmux-claude-mod" ';' set-option -p remain-on-exit failed-key)
 tmux set-option -p -t "$new_pane" @pane_type claude
