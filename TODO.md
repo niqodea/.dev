@@ -8,8 +8,6 @@
 
 - tmux: send upstream the fix on branch `fix-wrapped-edge-space` in `~/oss/tmux`, with its regression test: in plain tmux, vi copy mode sticks on the word before a space in a wrapped line's last column, since `grid_line_length` strips that space. The word-wrapping fork, branch `niqodea`, builds on it
 
-- zsh: show whether vi mode is in insert or normal mode
-
 - Replace logic that guesses a time with waiting for the event it depends on:
   - ,approval: polls every 10 ms whether an action ended, and stops it after 60 s
   - test-macos-install: retries SSH every 5 s for up to 5 minutes, and waits up to 300 s for the virtual machine's address
@@ -29,6 +27,8 @@
 - Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
 
 ### Later
+
+- Let claudio take a first message as its first argument, like `claude "<prompt>"`, so `,claude-loop` in `personal/nicola/claude-loop-cli` can run it with `CLAUDE_LOOP_COMMAND='claudio "/loop 30m"'`. claudio runs `claude -p` with `--input-format stream-json`, which ignores a prompt given as an argument without any error (checked on 2026-11-24 with Claude Code 2.1.331), so claudio has to take the prompt out of the arguments it passes on and send it as the session's first message. The rule: a first argument that does not start with `-` is the prompt, and claudio passes everything after it on unchanged, as `find` takes its paths before the first `-`; so claudio needs no list of which `claude` flags take a value. Say in the README that the prompt comes first: in `claudio --model opus "<prompt>"` the prompt reaches `claude -p`, which drops it, and the session starts empty. Checked on 2026-11-24 in claudio with Claude Code 2.1.322: claudio shows each turn that `/loop`'s cron job starts, as it arrives, while nobody types; such a turn looks like a reply to a message, since no line says the cron job started it
 
 - Ask Anthropic to add to the answer to `get_usage` when Claude Code fetched its numbers, which its `/usage` already shows, so claudio can stop reading the copy of the usage in Claude Code's config file
 
