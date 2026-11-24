@@ -26,6 +26,10 @@
 
 - Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
 
+- Make AGENTS.md hold only what the code and the README already say. Most of its sources, like the NN/g, WCAG and clig.dev links, appear nowhere else: move each one next to the code it justifies, or into the README's Design section
+
+- Go through all of the code, comments above all, and remove what does not belong in a public tool
+
 ### Later
 
 - Ask Anthropic to add to the answer to `get_usage` when Claude Code fetched its numbers, which its `/usage` already shows, so claudio can stop reading the copy of the usage in Claude Code's config file
@@ -49,3 +53,5 @@
 - Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
 
 - Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
+
+- Decide how to show tabs. claudio shows a tab as one space, so the cut at 88 columns counts right, but indentation made of tabs, as in Go code or a Makefile, shows flattened. A terminal moves a tab to its next tab stop, every 8 columns by default, so the tab's width depends on its column. less (`-x`), bat (`--tabs`) and vim (`tabstop`) replace a tab with spaces up to the next tab stop. Emoji sequences, like flags, also take different widths in different terminals
