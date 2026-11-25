@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,7 +32,7 @@ from typing import Any, Literal, NewType, NoReturn, assert_never
 MessageId = NewType("MessageId", str)
 
 # The account's organization and the two apps registered in it, see README.md
-CONFIG_PATH = Path.home() / ".config/outlook-cli/config.json"
+CONFIG_PATH = Path.home() / ".config/outlook-cli/config.toml"
 GRAPH_URL = "https://graph.microsoft.com/v1.0"
 KEYCHAIN_ITEM_NOT_FOUND = 44
 # A loose check that catches a name given for an address, and leaves the rest
@@ -298,11 +299,11 @@ def main() -> None:
 def read_apps() -> Apps:
     """Read the organization and the IDs of its two apps from CONFIG_PATH."""
     try:
-        config = json.loads(CONFIG_PATH.read_text())
+        config = tomllib.loads(CONFIG_PATH.read_text())
     except FileNotFoundError:
         sys.exit(
-            f"{CONFIG_PATH} is missing. Write it as"
-            ' {"tenant": ..., "read_app": ..., "send_app": ...}, see README.md'
+            f"{CONFIG_PATH} is missing. Write tenant, read_app and send_app"
+            " in it, see README.md"
         )
     match config:
         case {

@@ -6,10 +6,12 @@ It reads, and requests a new mail or a reply.
 ## Setup
 
 The CLI signs in as two apps registered in the account's organization, one that reads and one that sends.
-It reads the organization and the apps' IDs from `~/.config/outlook-cli/config.json`:
+It reads the organization and the apps' IDs from `~/.config/outlook-cli/config.toml`:
 
-```json
-{"tenant": "example.com", "read_app": "<appId>", "send_app": "<appId>"}
+```toml
+tenant = "example.com"
+read_app = "<appId>"
+send_app = "<appId>"
 ```
 
 Each app is a public client, so it has no secret.
