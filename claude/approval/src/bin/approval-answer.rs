@@ -17,7 +17,7 @@ use std::process::{self, ExitCode};
 
 use approval::{
     Actions, Decision, Outcome, Queue, QueuedJob, Request, format_age, get_last_line, get_now_ns,
-    read_queue_directory, read_variable, show_controls,
+    print_line, read_queue_directory, read_variable, show_controls,
 };
 use clap::{Parser, Subcommand};
 use serde_json::Value;
@@ -89,8 +89,7 @@ fn main() -> ExitCode {
 
 fn print_count() -> Result<(), String> {
     let queue = Queue::new(read_queue_directory(&read_variable("HOME")?)?);
-    println!("{}", queue.count_pending_jobs()?);
-    Ok(())
+    print_line(&queue.count_pending_jobs()?.to_string())
 }
 
 fn open_answer_screen() -> Result<(), String> {

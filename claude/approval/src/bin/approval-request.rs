@@ -13,8 +13,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use approval::{
-    Actions, Outcome, Queue, Request, format_age, get_last_line, get_now_ns, read_queue_directory,
-    read_variable, show_controls,
+    Actions, Outcome, Queue, Request, format_age, get_last_line, get_now_ns, print_line,
+    read_queue_directory, read_variable, show_controls,
 };
 use clap::{Parser, Subcommand};
 
@@ -125,11 +125,10 @@ fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), Stri
         return match actions.run(&request) {
             Ok(output) => {
                 let answered_job = queue.record(request, Outcome::Succeeded { output })?;
-                println!(
-                    "{}",
-                    format_outcome(&answered_job.request, &answered_job.outcome)
-                );
-                Ok(())
+                print_line(&format_outcome(
+                    &answered_job.request,
+                    &answered_job.outcome,
+                ))
             }
             Err(error) => {
                 let answered_job = queue.record(request, Outcome::Failed { error })?;
@@ -145,40 +144,39 @@ fn submit(actions: &Actions, queue: &Queue, request: Request) -> Result<(), Stri
     queue.add(&request)?;
     queue.signal_answering_screen();
     actions.run_change_hook();
-    println!(
+    print_line(&format!(
         "waiting: {}. Someone with write access will decide whether to do it",
         request.format()
-    );
-    Ok(())
+    ))
 }
 
 fn print_status(queue: &Queue) -> Result<(), String> {
     let now_ns = get_now_ns();
     let queued_jobs = queue.read_queued_jobs()?;
-    println!(
+    let mut lines = vec![format!(
         "waiting ({} of at most {MAX_PENDING_JOBS}):",
         queued_jobs.len()
-    );
+    )];
     for queued_job in &queued_jobs {
         let age = format_age(now_ns.saturating_sub(queued_job.queued_at_ns));
-        println!("  {age}  {}", queued_job.request.format());
+        lines.push(format!("  {age}  {}", queued_job.request.format()));
     }
     let answered_jobs = queue.read_answered_jobs()?;
     let shown = &answered_jobs[answered_jobs.len().saturating_sub(STATUS_ANSWERED_COUNT)..];
-    println!(
+    lines.push(format!(
         "answered (last {} of {}):",
         shown.len(),
         answered_jobs.len()
-    );
+    ));
     for answered_job in shown {
         let age = format_age(now_ns.saturating_sub(answered_job.answered_at_ns));
         // Indented past the age, so an output's later lines stay under their
         // row instead of reading as rows of their own
         let outcome =
             format_outcome(&answered_job.request, &answered_job.outcome).replace('\n', "\n       ");
-        println!("  {age}  {outcome}");
+        lines.push(format!("  {age}  {outcome}"));
     }
-    Ok(())
+    print_line(&lines.join("\n"))
 }
 
 /// Write the outcome after the request, with all an action printed when it

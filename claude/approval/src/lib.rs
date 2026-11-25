@@ -519,6 +519,27 @@ pub fn read_queue_directory(home: &str) -> Result<PathBuf, String> {
     Ok(Path::new(home).join(project).join(atdir).join("approval"))
 }
 
+/// Print the text and a newline to standard output, like `println!`, but end
+/// quietly when the reader closed the pipe, like `head` does once it has its
+/// lines, since the reader already has all it wanted.
+///
+/// Rust ignores `SIGPIPE`, so such a write fails instead of ending the program,
+/// and `println!` panics on the failure. Turning `SIGPIPE` back on would also
+/// end the program when an action exits without reading the request this
+/// program writes to it.
+/// Ref: <https://doc.rust-lang.org/unstable-book/compiler-flags/on-broken-pipe.html>
+///
+/// # Errors
+///
+/// When standard output fails for any other reason.
+pub fn print_line(text: &str) -> Result<(), String> {
+    let mut stdout = io::stdout().lock();
+    match writeln!(stdout, "{text}").and_then(|()| stdout.flush()) {
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => result.map_err(|error| format!("Cannot print: {error}")),
+    }
+}
+
 /// Return the environment variable's value.
 ///
 /// # Errors

@@ -14,6 +14,7 @@ import argparse
 import getpass
 import itertools
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1106,4 +1107,17 @@ def format_address(address: Address) -> str:
 
 
 if __name__ == "__main__":
-    main()
+    # A reader like head closes the pipe once it has its lines, and Python
+    # ignores SIGPIPE, so the next write fails instead of ending the CLI. The
+    # reader already has what it wanted, so the CLI ends quietly
+    # Ref: https://docs.python.org/3/library/signal.html#note-on-sigpipe
+    try:
+        try:
+            main()
+        finally:
+            # Also when main ends through sys.exit, as argparse does after --help
+            sys.stdout.flush()
+    except BrokenPipeError:
+        # Python flushes standard output again on exit, which would fail again
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
