@@ -31,7 +31,8 @@ if [ -n "${width-}" ]; then
 elif [ -n "${TMUX-}" ]; then
     # "=" for the exact name, since tmux otherwise matches a prefix of another one, and reads a bare "~" as the marked pane
     if ! tmux has-session -t "=$session" 2> /dev/null; then
-        tmux new-session -d -n "" "$@"
+        # Created at the size of the window it replaces, since a shell started at another size draws its first prompt for that width
+        tmux new-session -d -n "" -x "$(tmux display-message -p '#{window_width}')" -y "$(tmux display-message -p '#{window_height}')" "$@"
     fi
     tmux switch-client -t "=$session"
 elif tmux has-session -t "=$session" 2> /dev/null; then
