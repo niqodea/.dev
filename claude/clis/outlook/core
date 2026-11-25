@@ -2,7 +2,7 @@
 """Outlook CLI, for the mail and calendar of a Microsoft 365 account.
 
 The same file is installed under three names. As command, it only reads, and
-asks ,claude-approval to send mail. As describe and action, which only ,claude-approval runs,
+asks for approval to send mail. As describe and action, which Claude never runs,
 it says what a mail asks for, and sends it.
 
 command and describe read as one app, and action sends as another, which can
@@ -84,7 +84,7 @@ class Apps:
 
 @dataclass(frozen=True)
 class Description:
-    """What describe prints, as JSON, for ,claude-approval to show the person deciding:
+    """What describe prints, as JSON, to show the person deciding:
     what the request does, and what it acts on, each value under its label.
     """
 
@@ -94,7 +94,7 @@ class Description:
 
 @dataclass(frozen=True)
 class SendMail:
-    """A new mail command asks ,claude-approval to send."""
+    """A new mail command asks for approval to send."""
 
     to: tuple[str, ...]
     cc: tuple[str, ...]
@@ -104,7 +104,7 @@ class SendMail:
 
 @dataclass(frozen=True)
 class ReplyToMail:
-    """A reply to the sender of a mail command asks ,claude-approval to send."""
+    """A reply to the sender of a mail command asks for approval to send."""
 
     message_id: MessageId
     body: str
@@ -335,7 +335,7 @@ def read_apps() -> Apps:
 
 def run_command(read_app: App) -> None:
     parser = argparse.ArgumentParser(
-        description="Outlook CLI. It reads, and asks ,claude-approval to send mail.",
+        description="Outlook CLI. It reads, and asks for approval to send mail.",
         epilog="""\
 examples:
   command unread                                  inbox messages you have not read
@@ -415,7 +415,7 @@ examples:
 
     send_parser = commands.add_parser(
         "send",
-        help="request a new mail, which ,claude-approval sends once a person approves it",
+        help="request a new mail, which is sent once a person approves it",
     )
     send_parser.add_argument(
         "--to", type=parse_email_address, action="append", required=True
@@ -428,7 +428,7 @@ examples:
 
     reply_parser = commands.add_parser(
         "reply",
-        help="request a reply to the sender of a mail, which ,claude-approval sends once a"
+        help="request a reply to the sender of a mail, which is sent once a"
         " person approves it",
     )
     reply_parser.add_argument(
@@ -516,7 +516,7 @@ examples:
 
 
 def submit_mail_request(request: MailRequest) -> NoReturn:
-    """Ask ,claude-approval to send the mail, and exit as it does."""
+    """Ask for approval to send the mail, and exit as it does."""
     match request:
         case SendMail(to, cc, subject, body):
             action = "send-mail"
@@ -532,15 +532,15 @@ def submit_mail_request(request: MailRequest) -> NoReturn:
         case _:
             assert_never(request)
     # The submit link next to this file, which command is a link to, tells
-    # ,claude-approval which CLI asks
+    # claude-approval-request which CLI asks
     submit_path = Path(sys.argv[0]).resolve().with_name("submit")
     result = subprocess.run([submit_path, action, json.dumps(arguments)], check=False)
     sys.exit(result.returncode)
 
 
 def read_mail_request() -> MailRequest:
-    """Return the mail command asked ,claude-approval for, from the action's name
-    ,claude-approval gives as the argument, and the arguments as a JSON object on
+    """Return the mail command asked for, from the action's name given
+    as the argument, and the arguments as a JSON object on
     standard input.
     """
     action = " ".join(sys.argv[1:])
@@ -603,8 +603,8 @@ def describe_mail_request(request: MailRequest, read_app: App) -> Description:
 
 def run_action(send_app: App) -> None:
     match sys.argv[1:]:
-        # A person runs this once in a terminal, since ,claude-approval runs the action
-        # without one, and a sign-in needs a person
+        # A person runs this once in a terminal, since the action runs without
+        # one, and a sign-in needs a person
         case ["sign-in"]:
             try:
                 get_access_token(send_app, getpass.getuser())

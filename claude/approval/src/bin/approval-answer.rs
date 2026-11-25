@@ -1,6 +1,6 @@
-//! Answers the requests waiting in an approval queue, in the terminal: y or n
-//! stages a decision on each, from the list or from a request's details, and
-//! Enter carries the staged ones out.
+//! Our side of approval: answers the requests waiting in an approval queue, in
+//! the terminal: y or n stages a decision on each, from the list or from a
+//! request's details, and Enter carries the staged ones out.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, TryLockError};
@@ -13,6 +13,7 @@ use approval::{
     Actions, Decision, Outcome, Queue, QueuedJob, Request, format_age, get_last_line, get_now_ns,
     read_queue_directory, read_variable, show_controls,
 };
+use clap::{Parser, Subcommand};
 use serde_json::Value;
 
 const GREEN: &str = "\x1b[32m";
@@ -33,6 +34,22 @@ const LEAVE_ALTERNATE_SCREEN: &str = "\x1b[?1049l";
 // The width the terminal gives a tab
 const TAB_WIDTH: usize = 8;
 
+/// Answer the requests waiting in this project's approval queue.
+#[derive(Parser)]
+#[command(name = ",claude-approval")]
+struct Arguments {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Clone, Copy, Subcommand)]
+enum Command {
+    /// Open the screen that approves or refuses what waits
+    Answer,
+    /// Print how many requests wait
+    Count,
+}
+
 /// Draws on the terminal's alternate screen, with the cursor hidden, until it is
 /// dropped. The > mark shows the selected job, and the cursor would only point
 /// somewhere else.
@@ -45,7 +62,11 @@ struct CbreakMode {
 }
 
 fn main() -> ExitCode {
-    match run() {
+    let result = match Arguments::parse().command {
+        Command::Answer => open_answer_screen(),
+        Command::Count => print_count(),
+    };
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("{error}");
@@ -54,7 +75,13 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<(), String> {
+fn print_count() -> Result<(), String> {
+    let queue = Queue::new(read_queue_directory(&read_variable("HOME")?)?);
+    println!("{}", queue.count_pending_jobs()?);
+    Ok(())
+}
+
+fn open_answer_screen() -> Result<(), String> {
     let home = read_variable("HOME")?;
     let queue = Queue::new(read_queue_directory(&home)?);
     let actions = Actions::new(&home, read_variable("PATH")?);
@@ -76,7 +103,7 @@ fn run() -> Result<(), String> {
     // lock when the process ends, however it ends
     match lock.try_lock() {
         Ok(()) => {
-            // Before the jobs are read, so a job queued before ,claude-approval can
+            // Before the jobs are read, so a job queued before claude-approval-request can
             // read the ID is among them
             write_process_id(&lock, &lock_path)?;
             answer(&queue, &actions)
@@ -92,7 +119,7 @@ fn run() -> Result<(), String> {
     }
 }
 
-/// Write this process's ID in the lock file, so ,claude-approval can tell the screen
+/// Write this process's ID in the lock file, so claude-approval-request can tell the screen
 /// when it queues a job.
 fn write_process_id(lock: &File, lock_path: &Path) -> Result<(), String> {
     let mut file = lock;
@@ -151,7 +178,7 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
             }
             Some(b'q') => return Ok(()),
             // A resize redraws the jobs at the new size, and a job queued
-            // while the screen is open, which ,claude-approval signals, adds one
+            // while the screen is open, which claude-approval-request signals, adds one
             // below. Only this screen takes jobs out, so the list only grows,
             // and every row keeps its place and its decision
             None => {
@@ -602,7 +629,7 @@ fn read_key() -> Result<Option<u8>, String> {
     }
 }
 
-/// Make a resize, or a job ,claude-approval queues, interrupt the wait for a key,
+/// Make a resize, or a job claude-approval-request queues, interrupt the wait for a key,
 /// which `read_key` reports, so the screen is drawn again at once instead of on
 /// the next key press.
 ///

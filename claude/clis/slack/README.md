@@ -28,7 +28,7 @@ Slack limits apps distributed outside its Marketplace to one history call a minu
 
 ### Posting
 
-`post` and `reply` ask [`,claude-approval`](../../README.md#approval) for the message, and it is posted once a person approves it.
+`post` and `reply` ask for [approval](../../README.md#approval) of the message, and it is posted once a person approves it.
 To show the person where the message goes, `describe` looks up the conversation's name with the reading token, from the Keychain.
 A second app, which can only post, holds the token that posts:
 
@@ -43,6 +43,6 @@ security add-generic-password -s slack-write-cli -a "$USER" -w 'xoxp-...'
 
 ## Use
 
-The module's `install-bin` installs `core` in `~/.config/approval/clis/slack/`, as the `describe` and the `action` that `,claude-approval` runs, and as the `command` of the `slack` Claude Code skill.
+The module's `install-bin` installs `core` in `~/.config/approval/clis/slack/`, as the `describe` and the `action` that approval runs, and as the `command` of the `slack` Claude Code skill.
 Run `~/.claude/skills/slack/command --help` for the commands.
 Claude is told only of `command`, which reads and asks, and never of the posts.

@@ -1,5 +1,6 @@
-//! Runs an action a CLI requests right away when the CLI's auto-approved file
-//! lists the request, and otherwise queues it for a person to decide on.
+//! Claude's side of approval: runs an action a CLI requests right away when the
+//! CLI's auto-approved file lists the request, and otherwise queues it for a
+//! person to decide on, and shows Claude what waits and what was decided.
 //!
 //! A CLI requests an action through the submit link in its own folder of the
 //! clis directory, which starts this program under that name, so the folder
@@ -19,8 +20,7 @@ use clap::{Parser, Subcommand};
 
 const EXAMPLES: &str = "\
 Examples:
-  ,claude-approval status         what waits, and what was decided
-  ,claude-approval count          how many requests wait
+  claude-approval-request status  what waits, and what was decided
 
 A CLI requests an action with the submit link in its folder, like
   ~/.config/approval/clis/avatar/submit approve-consent '{\"environment\": \"prod\", ...}'";
@@ -31,7 +31,7 @@ const STATUS_ANSWERED_COUNT: usize = 10;
 
 /// Print what waits in the queue, and what was decided.
 #[derive(Parser)]
-#[command(name = ",claude-approval", after_help = EXAMPLES)]
+#[command(name = "claude-approval-request", after_help = EXAMPLES)]
 struct Arguments {
     #[command(subcommand)]
     command: Command,
@@ -41,8 +41,6 @@ struct Arguments {
 enum Command {
     /// Print what waits, and what was decided
     Status,
-    /// Print how many requests wait
-    Count,
 }
 
 /// Run one of this CLI's actions, or queue it for a person to decide on.
@@ -76,10 +74,6 @@ fn run(command: Command) -> Result<(), String> {
     let queue = Queue::new(read_queue_directory(&home)?);
     match command {
         Command::Status => print_status(&queue),
-        Command::Count => {
-            println!("{}", queue.count_pending_jobs()?);
-            Ok(())
-        }
     }
 }
 

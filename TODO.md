@@ -10,6 +10,10 @@
 
 - Make a warning a field ,claude-approval itself highlights, once two or three CLIs need one, like the replies the slack CLI's `describe` shows when a thread got new ones after the request
 
+- Give `,claude-approval` a `status` too, like Claude's side has, if we want to see what was decided outside the answering screen
+
+- Move the commands no person types from `~/.local/bin` to `~/.local/libexec`, like the `,tmux-*` ones that only tmux key bindings run, as `claude-approval-request` already is
+
 - Give each Claude loop its own interval in a file next to its body, like `claude/loop/bodies/inbox.interval`, once a second loop needs another pace than 30 minutes. `CLAUDE_LOOP_COMMAND` then names only the program, like `claudio`, and `,claude-loop` adds `"/loop <interval>"` itself, since today the interval sits inside the command and so applies to every loop
 
 - tmux: when a narrower pane rewraps lines into more rows, tmux pushes the top of the screen into the scrollback even when empty rows sit below the cursor, while a shorter pane uses those empty rows first (`screen_resize_y`). This leaves copies of claudio's label row in the scrollback (claudio's README, Resizing), and does the same to wide shell prompts. Open an issue asking the maintainers whether this is intended before writing a fix: a fix, which drops the empty lines below the cursor after the reflow in `screen_resize_cursor` in `screen.c`, changes the expected results of 4 of tmux's tests that pin where a reflow leaves the cursor and content. Keep it out of the word-wrapping fork unless they agree
@@ -17,7 +21,7 @@
 - tmux: send upstream the fix on branch `fix-wrapped-edge-space` in `~/oss/tmux`, with its regression test: in plain tmux, vi copy mode sticks on the word before a space in a wrapped line's last column, since `grid_line_length` strips that space. The word-wrapping fork, branch `niqodea`, builds on it
 
 - Replace logic that guesses a time with waiting for the event it depends on:
-  - ,claude-approval: polls every 10 ms whether an action ended, and stops it after 60 s
+  - approval: polls every 10 ms whether an action ended, and stops it after 60 s
 
 ## claudio
 

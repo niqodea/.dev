@@ -35,7 +35,7 @@ The CLI keeps the refresh token in the macOS Keychain, under the service `outloo
 
 ### Sending
 
-`send` and `reply` ask [`,claude-approval`](../../README.md#approval) for the mail, and it is sent once a person approves it.
+`send` and `reply` ask for [approval](../../README.md#approval) of the mail, and it is sent once a person approves it.
 The sending app only has the delegated permission `Mail.Send`, so it can send and reply, and cannot read, move or delete mail.
 Register it, and put its `appId` in `send_app`:
 
@@ -48,7 +48,7 @@ az ad app create \
   --required-resource-accesses @permissions-write.json
 ```
 
-Once installed, sign in once in a terminal, since `,claude-approval` runs the action without one:
+Once installed, sign in once in a terminal, since the action runs without one:
 
 ```sh
 ~/.config/approval/clis/outlook/action sign-in
@@ -59,6 +59,6 @@ To show the person deciding who a reply goes to, `describe` reads the mail with 
 
 ## Use
 
-The module's `install-bin` installs `core` in `~/.config/approval/clis/outlook/`, as the `describe` and the `action` that `,claude-approval` runs, and as the `command` of the `outlook` Claude Code skill.
+The module's `install-bin` installs `core` in `~/.config/approval/clis/outlook/`, as the `describe` and the `action` that approval runs, and as the `command` of the `outlook` Claude Code skill.
 Run `~/.claude/skills/outlook/command --help` for the commands.
 Claude is told only of `command`, which reads and asks, and never of the mail it sends.

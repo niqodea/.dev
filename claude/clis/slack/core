@@ -2,7 +2,7 @@
 """Slack CLI.
 
 The same file is installed under three names. As command, it only reads, and
-asks ,claude-approval to post. As describe and action, which only ,claude-approval runs, it
+asks for approval to post. As describe and action, which Claude never runs, it
 says what a post asks for, and posts.
 
 command reads with SLACK_TOKEN, a user token (xoxp-) from an app created with
@@ -96,7 +96,7 @@ class Thread:
 
 @dataclass(frozen=True)
 class Description:
-    """What describe prints, as JSON, for ,claude-approval to show the person deciding:
+    """What describe prints, as JSON, to show the person deciding:
     what the request does, and what it acts on, each value under its label.
     """
 
@@ -116,7 +116,7 @@ class ReplyPlace:
 
 @dataclass(frozen=True)
 class PostMessage:
-    """A message command asks ,claude-approval to post."""
+    """A message command asks for approval to post."""
 
     conversation_id: ConversationId
     # None outside a thread
@@ -497,7 +497,7 @@ def main() -> None:
 
 def run_command() -> None:
     parser = argparse.ArgumentParser(
-        description="Slack CLI. It reads, and asks ,claude-approval to post.",
+        description="Slack CLI. It reads, and asks for approval to post.",
         epilog="""\
 examples:
   command channels                                      conversations you are in
@@ -572,7 +572,7 @@ examples:
 
     post_parser = commands.add_parser(
         "post",
-        help="request a message in a conversation, which ,claude-approval posts once a"
+        help="request a message in a conversation, which posts once a"
         " person approves it",
     )
     post_parser.add_argument("conversation", help="#channel, @person, or an id")
@@ -582,8 +582,7 @@ examples:
 
     reply_parser = commands.add_parser(
         "reply",
-        help="request a reply in a thread, which ,claude-approval posts once a person"
-        " approves it",
+        help="request a reply in a thread, which posts once a person approves it",
     )
     reply_parser.add_argument(
         "thread",
@@ -751,7 +750,7 @@ examples:
 
 
 def submit_message(message: PostMessage) -> NoReturn:
-    """Ask ,claude-approval to post the message, and exit as it does."""
+    """Ask for approval to post the message, and exit as it does."""
     place = message.reply_place
     arguments = {
         "channel": message.conversation_id,
@@ -760,7 +759,7 @@ def submit_message(message: PostMessage) -> NoReturn:
         "text": message.text,
     }
     # The submit link next to this file, which command is a link to, tells
-    # ,claude-approval which CLI asks
+    # claude-approval-request which CLI asks
     submit_path = Path(sys.argv[0]).resolve().with_name("submit")
     result = subprocess.run(
         [submit_path, "post-message", json.dumps(arguments)], check=False
@@ -769,8 +768,8 @@ def submit_message(message: PostMessage) -> NoReturn:
 
 
 def read_post_message() -> PostMessage:
-    """Return the message command asked ,claude-approval for, from the action's name
-    ,claude-approval gives as the argument, and the arguments as a JSON object on
+    """Return the message command asked for, from the action's name given
+    as the argument, and the arguments as a JSON object on
     standard input.
     """
     action = " ".join(sys.argv[1:])

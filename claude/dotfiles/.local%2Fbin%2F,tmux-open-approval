@@ -26,5 +26,5 @@ fi
 # The queue is the pane's process, so the pane goes away when it closes
 # After the program fails, the pane stays until a key is pressed, so the program's error stays readable
 # tmux runs the commands of one call back to back, so the option is set before the program can end
-new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' ,claude-approval-answer ';' set-option -p remain-on-exit failed-key)
+new_pane=$(,tmux-split -P -F '#{pane_id}' -c '#{session_path}' ,claude-approval answer ';' set-option -p remain-on-exit failed-key)
 tmux set-option -p -t "$new_pane" @pane_type approval

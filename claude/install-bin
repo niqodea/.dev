@@ -7,10 +7,11 @@ backup_path="$1"
 os="$2"
 
 cargo build --manifest-path="$root/approval/Cargo.toml" --release
-,copy-in-home "$backup_path" "$root/approval/target/release/approval" .local/bin/,claude-approval
-,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,claude-approval-answer
+# Claude's side runs only through the CLIs' submit links and the approval-status skill, so it stays off PATH
+,copy-in-home "$backup_path" "$root/approval/target/release/approval-request" .local/libexec/claude-approval-request
+,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,claude-approval
 
-# core is installed once, under three names: describe and action, which ,claude-approval runs, and command in the skill,
+# core is installed once, under three names: describe and action, which approval runs, and command in the skill,
 # which Claude runs. command links to the installed core, since core finds its submit link next to where it really is
 for cli in slack outlook; do
     cli_relpath=".config/approval/clis/$cli"
@@ -19,7 +20,7 @@ for cli in slack outlook; do
     ,copy-in-home "$backup_path" "$root/clis/$cli/auto-approved.json" "$cli_relpath/auto-approved.json"
     ln -sfn core "$HOME/$cli_relpath/describe"
     ln -sfn core "$HOME/$cli_relpath/action"
-    ln -sfn "$HOME/.local/bin/,claude-approval" "$HOME/$cli_relpath/submit"
+    ln -sfn "$HOME/.local/libexec/claude-approval-request" "$HOME/$cli_relpath/submit"
     ,copy-in-home "$backup_path" "$root/clis/$cli/SKILL.md" "$skill_relpath/SKILL.md"
     ln -sfn "$HOME/$cli_relpath/core" "$HOME/$skill_relpath/command"
 done
