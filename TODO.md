@@ -10,7 +10,6 @@
 
 - Replace logic that guesses a time with waiting for the event it depends on:
   - ,approval: polls every 10 ms whether an action ended, and stops it after 60 s
-  - test-macos-install: retries SSH every 5 s for up to 5 minutes, and waits up to 300 s for the virtual machine's address
 
 ## claudio
 

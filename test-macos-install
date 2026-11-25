@@ -33,7 +33,8 @@ vm_ssh() {
     SSH_ASKPASS="$tmp/askpass" SSH_ASKPASS_REQUIRE=force ssh -F /dev/null -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 "admin@$ip" "$@"
 }
 
-# The virtual machine has an address before its SSH server answers
+# The virtual machine gets an address before its SSH server answers, so the script tries SSH until it answers
+# The image runs no program that sends a message when the SSH server starts, which the script could wait for instead
 attempts=0
 until vm_ssh true 2> /dev/null; do
     attempts=$((attempts + 1))
