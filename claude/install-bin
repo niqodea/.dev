@@ -4,10 +4,46 @@ set -eu
 
 root="$(dirname "$(realpath "$0")")"
 backup_path="$1"
+os="$2"
 
 cargo build --manifest-path="$root/approval/Cargo.toml" --release
-,copy-in-home "$backup_path" "$root/approval/target/release/approval" .local/bin/,approval
-,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,approval-answer
+,copy-in-home "$backup_path" "$root/approval/target/release/approval" .local/bin/,claude-approval
+,copy-in-home "$backup_path" "$root/approval/target/release/approval-answer" .local/bin/,claude-approval-answer
+
+# core is installed once, under three names: describe and action, which ,claude-approval runs, and command in the skill,
+# which Claude runs. command links to the installed core, since core finds its submit link next to where it really is
+for cli in slack outlook; do
+    cli_relpath=".config/approval/clis/$cli"
+    skill_relpath=".claude/skills/$cli"
+    ,copy-in-home "$backup_path" "$root/clis/$cli/core" "$cli_relpath/core"
+    ,copy-in-home "$backup_path" "$root/clis/$cli/auto-approved.json" "$cli_relpath/auto-approved.json"
+    ln -sfn core "$HOME/$cli_relpath/describe"
+    ln -sfn core "$HOME/$cli_relpath/action"
+    ln -sfn "$HOME/.local/bin/,claude-approval" "$HOME/$cli_relpath/submit"
+    ,copy-in-home "$backup_path" "$root/clis/$cli/SKILL.md" "$skill_relpath/SKILL.md"
+    ln -sfn "$HOME/$cli_relpath/core" "$HOME/$skill_relpath/command"
+done
+
+,copy-in-home "$backup_path" "$root/clis/discord/command" .claude/skills/discord/command
+,copy-in-home "$backup_path" "$root/clis/discord/SKILL.md" .claude/skills/discord/SKILL.md
+
+case "$os" in
+    debian) ;; # util-linux, which every Debian has, comes with flock
+    macos) ,install-package flock ;;
+    *)
+        >&2 echo "Unsupported system: $os"
+        exit 1
+        ;;
+esac
+flock_path="$(,get-package-path flock)"
+,link-in-local-bin "$backup_path" "$flock_path" flock
+,copy-in-home "$backup_path" "$root/loop/command" .local/bin/,claude-loop
+# A running loop rereads its loop.md when the file changes, so an install reaches the loops already running
+for body_path in "$root/loop/bodies/"*.md; do
+    loop_relpath="$DOTDEV_ATDIR/claude-loops/$(basename "$body_path" .md)"
+    ,copy-in-home "$backup_path" "$body_path" "$loop_relpath/.claude/loop.md"
+    ln -sfn .claude/loop.md "$HOME/$loop_relpath/body.md"
+done
 
 claudio_path="$root/submodules/claudio"
 cargo build --manifest-path="$claudio_path/Cargo.toml" --release

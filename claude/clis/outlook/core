@@ -1,0 +1,1109 @@
+#!/usr/bin/env python3
+"""Outlook CLI, for the mail and calendar of a Microsoft 365 account.
+
+The same file is installed under three names. As command, it only reads, and
+asks ,claude-approval to send mail. As describe and action, which only ,claude-approval runs,
+it says what a mail asks for, and sends it.
+
+command and describe read as one app, and action sends as another, which can
+only send, see README.md. Each signs in through the browser the first time, and
+keeps its refresh token in the macOS Keychain.
+"""
+
+import argparse
+import getpass
+import itertools
+import json
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Literal, NewType, NoReturn, assert_never
+
+MessageId = NewType("MessageId", str)
+
+# The account's organization and the two apps registered in it, see README.md
+CONFIG_PATH = Path.home() / ".config/outlook-cli/config.json"
+GRAPH_URL = "https://graph.microsoft.com/v1.0"
+KEYCHAIN_ITEM_NOT_FOUND = 44
+# A loose check that catches a name given for an address, and leaves the rest
+# to Outlook
+EMAIL_ADDRESS_PATTERN = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+# Someone is waiting at the terminal, and an answer later than this is not worth
+# waiting for
+TIMEOUT_SECONDS = 30
+# Graph returns at most 1000 messages per page
+# Ref: https://learn.microsoft.com/en-us/graph/api/user-list-messages
+PAGE_SIZE = 1000
+# What parse_summary reads
+SUMMARY_FIELDS = "id,receivedDateTime,from,subject,bodyPreview,isRead,hasAttachments"
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M"
+# Enough for the recent part of a mailbox or channel, and few enough to leave
+# room in Claude's context, which a read with neither --days nor --since gets
+DEFAULT_MESSAGE_LIMIT = 50
+DEFAULT_SEARCH_LIMIT = 20
+BODY_INDENT = "  "
+
+type Response = Literal[
+    "none",
+    "organizer",
+    "tentativelyAccepted",
+    "accepted",
+    "declined",
+    "notResponded",
+]
+
+
+@dataclass(frozen=True)
+class App:
+    """An app registered for this CLI, see README.md."""
+
+    # The sign-in address of the organization the app is registered in
+    login_url: str
+    # What the sign-in calls client_id
+    id: str
+    # offline_access is what makes the sign-in return a refresh token
+    scopes: str
+    keychain_service: str
+    # What a person runs in a terminal to sign in, when no refresh token works
+    sign_in_command: str
+
+
+@dataclass(frozen=True)
+class Apps:
+    read: App
+    send: App
+
+
+@dataclass(frozen=True)
+class Description:
+    """What describe prints, as JSON, for ,claude-approval to show the person deciding:
+    what the request does, and what it acts on, each value under its label.
+    """
+
+    title: str
+    fields: dict[str, str]
+
+
+@dataclass(frozen=True)
+class SendMail:
+    """A new mail command asks ,claude-approval to send."""
+
+    to: tuple[str, ...]
+    cc: tuple[str, ...]
+    subject: str
+    body: str
+
+
+@dataclass(frozen=True)
+class ReplyToMail:
+    """A reply to the sender of a mail command asks ,claude-approval to send."""
+
+    message_id: MessageId
+    body: str
+
+
+type MailRequest = SendMail | ReplyToMail
+
+
+@dataclass(frozen=True)
+class Window:
+    """The time to read from, open at an end that is None."""
+
+    oldest: datetime | None
+    latest: datetime | None
+
+
+@dataclass(frozen=True)
+class Tokens:
+    access_token: str
+    refresh_token: str
+
+
+@dataclass(frozen=True)
+class Address:
+    name: str
+    email: str
+
+
+@dataclass(frozen=True)
+class MessageSummary:
+    id: MessageId
+    received_at: datetime
+    # A draft has no sender yet
+    sender: Address | None
+    subject: str
+    preview: str
+    is_read: bool
+    has_attachments: bool
+
+
+@dataclass(frozen=True)
+class Message:
+    summary: MessageSummary
+    to: tuple[Address, ...]
+    cc: tuple[Address, ...]
+    body: str
+    attachment_names: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Listing:
+    # Oldest first
+    summaries: tuple[MessageSummary, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class AllDay:
+    """The days an all-day event takes, which are the same days in every timezone."""
+
+    first_day: date
+    last_day: date
+
+
+@dataclass(frozen=True)
+class TimeRange:
+    starts_at: datetime
+    ends_at: datetime
+
+
+type EventTime = AllDay | TimeRange
+
+
+@dataclass(frozen=True)
+class Event:
+    subject: str
+    time: EventTime
+    is_cancelled: bool
+    organizer: Address
+    response: Response
+    location: str
+
+
+class GraphError(Exception):
+    """An error Microsoft Graph answered a call with."""
+
+
+class TokenError(Exception):
+    """An error the Microsoft sign-in answered a token request with."""
+
+    def __init__(self, code: str, description: str) -> None:
+        super().__init__(f"{code}: {description}")
+        self.code = code
+
+
+class SignInRequired(Exception):
+    """A sign-in needed while nobody is at a terminal to do it."""
+
+
+class AttachmentNameError(Exception):
+    """An attachment name that matches none of a message's attachments, or several."""
+
+
+class Graph:
+    def __init__(self, access_token: str) -> None:
+        self._access_token = access_token
+
+    def paginate(
+        self, path: str, params: Mapping[str, str]
+    ) -> Iterator[Mapping[str, Any]]:
+        """Yield every item, fetching the next page only when it is reached."""
+        url = f"{GRAPH_URL}{path}?{urllib.parse.urlencode(params)}"
+        while True:
+            body = self._get_json(url)
+            yield from body["value"]
+            match body:
+                case {"@odata.nextLink": next_url}:
+                    url = next_url
+                case _:
+                    return
+
+    def get(self, path: str, params: Mapping[str, str]) -> Mapping[str, Any]:
+        return self._get_json(f"{GRAPH_URL}{path}?{urllib.parse.urlencode(params)}")
+
+    def download(self, path: str) -> bytes:
+        """Return the raw content at a path."""
+        return self._get(f"{GRAPH_URL}{path}")
+
+    def post(self, path: str, body: Mapping[str, Any]) -> None:
+        """Send a JSON body to a path that answers with no content."""
+        request = urllib.request.Request(
+            f"{GRAPH_URL}{path}",
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {self._access_token}",
+                "Content-Type": "application/json",
+            },
+        )
+        self._send(request)
+
+    def _get_json(self, url: str) -> Mapping[str, Any]:
+        body: Mapping[str, Any] = json.loads(self._get(url))
+        return body
+
+    def _get(self, url: str) -> bytes:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {self._access_token}",
+                # Graph returns message bodies as HTML unless asked for text
+                "Prefer": 'outlook.body-content-type="text"',
+            },
+        )
+        return self._send(request)
+
+    def _send(self, request: urllib.request.Request) -> bytes:
+        while True:
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=TIMEOUT_SECONDS
+                ) as response:
+                    content: bytes = response.read()
+                    return content
+            except urllib.error.HTTPError as error:
+                if error.code == 429:
+                    time.sleep(int(error.headers["Retry-After"]))
+                    continue
+                error_body = json.load(error)
+                raise GraphError(
+                    f"{error_body['error']['code']}: {error_body['error']['message']}"
+                ) from error
+
+
+def main() -> None:
+    apps = read_apps()
+    # Claude is told only of command, so it reads and asks, and never sees the
+    # mail action sends
+    match Path(sys.argv[0]).name:
+        case "command":
+            run_command(apps.read)
+        case "describe":
+            request = read_mail_request()
+            print(json.dumps(asdict(describe_mail_request(request, apps.read))))
+        case "action":
+            run_action(apps.send)
+        case name:
+            sys.exit(f"Run this as command, describe or action, not as {name}")
+
+
+def read_apps() -> Apps:
+    """Read the organization and the IDs of its two apps from CONFIG_PATH."""
+    try:
+        config = json.loads(CONFIG_PATH.read_text())
+    except FileNotFoundError:
+        sys.exit(
+            f"{CONFIG_PATH} is missing. Write it as"
+            ' {"tenant": ..., "read_app": ..., "send_app": ...}, see README.md'
+        )
+    match config:
+        case {
+            "tenant": str(tenant),
+            "read_app": str(read_id),
+            "send_app": str(send_id),
+        }:
+            login_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0"
+        case _:
+            sys.exit(
+                f"{CONFIG_PATH} must hold the strings tenant, read_app and"
+                " send_app, see README.md"
+            )
+    return Apps(
+        read=App(
+            login_url=login_url,
+            id=read_id,
+            scopes="offline_access Mail.Read Calendars.Read",
+            keychain_service="outlook-cli",
+            sign_in_command="~/.claude/skills/outlook/command unread",
+        ),
+        send=App(
+            login_url=login_url,
+            id=send_id,
+            scopes="offline_access Mail.Send",
+            keychain_service="outlook-write-cli",
+            sign_in_command="~/.config/approval/clis/outlook/action sign-in",
+        ),
+    )
+
+
+def run_command(read_app: App) -> None:
+    parser = argparse.ArgumentParser(
+        description="Outlook CLI. It reads, and asks ,claude-approval to send mail.",
+        epilog="""\
+examples:
+  command unread                                  inbox messages you have not read
+  command read --days 2                           the past two days of the inbox
+  command read --since 2026-09-26 --days 2        the inbox over the weekend of the 26th
+  command search 'from:alice subject:invoice' -n 20   Outlook's own search syntax, all folders
+  command message AAMkAG…                         one message in full, by the ID a list prints
+  command download AAMkAG… invoice.pdf ~/Downloads/invoice.pdf
+                                                   save an attachment the message lists
+  command calendar                                today's events
+  command calendar --since 2026-10-20 --days 5    the events of the week of the 20th
+  command send --to alice@example.com --subject 'Invoice' 'Hi Alice, ...'
+                                                   request a new mail
+  command reply AAMkAG… 'Thanks, I will check'     request a reply to the sender
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("unread", help="list the inbox messages you have not read")
+
+    read_parser = commands.add_parser("read", help="list the latest inbox messages")
+    read_parser.add_argument(
+        "-n",
+        "--limit",
+        type=parse_limit,
+        help=f"{DEFAULT_MESSAGE_LIMIT} when neither --days nor --since is given",
+    )
+    read_parser.add_argument(
+        "--days",
+        type=parse_days,
+        help="how many days to read, ending now or starting at --since",
+    )
+    read_parser.add_argument(
+        "--since", type=parse_date, help="the first day to read, as YYYY-MM-DD"
+    )
+
+    search_parser = commands.add_parser(
+        "search", help="search messages in every folder, with Outlook's own syntax"
+    )
+    search_parser.add_argument(
+        "query", nargs="+", help='e.g. "from:alice subject:invoice"'
+    )
+    search_parser.add_argument(
+        "-n", "--limit", type=parse_limit, default=DEFAULT_SEARCH_LIMIT
+    )
+
+    message_parser = commands.add_parser("message", help="print one message in full")
+    message_parser.add_argument(
+        "id", type=MessageId, help="the message's ID, as a list prints it"
+    )
+
+    download_parser = commands.add_parser(
+        "download", help="save one attachment of a message to a file"
+    )
+    download_parser.add_argument(
+        "message_id", type=MessageId, help="the message's ID, as a list prints it"
+    )
+    download_parser.add_argument(
+        "name", help="the attachment's name, as `command message` prints it"
+    )
+    download_parser.add_argument(
+        "path",
+        type=parse_new_file_path,
+        help="the file to save it to, which must not exist yet",
+    )
+
+    calendar_parser = commands.add_parser("calendar", help="list your events")
+    calendar_parser.add_argument(
+        "--days", type=parse_days, default=1, help="how many days to list"
+    )
+    calendar_parser.add_argument(
+        "--since",
+        type=parse_date,
+        help="the first day to list, as YYYY-MM-DD, today if left out",
+    )
+
+    send_parser = commands.add_parser(
+        "send",
+        help="request a new mail, which ,claude-approval sends once a person approves it",
+    )
+    send_parser.add_argument(
+        "--to", type=parse_email_address, action="append", required=True
+    )
+    send_parser.add_argument(
+        "--cc", type=parse_email_address, action="append", default=[]
+    )
+    send_parser.add_argument("--subject", required=True)
+    send_parser.add_argument("body", help="the mail, as plain text")
+
+    reply_parser = commands.add_parser(
+        "reply",
+        help="request a reply to the sender of a mail, which ,claude-approval sends once a"
+        " person approves it",
+    )
+    reply_parser.add_argument(
+        "message_id", type=MessageId, help="the mail's ID, as a list prints it"
+    )
+    reply_parser.add_argument(
+        "body", help="the reply, as plain text, above the quoted mail"
+    )
+
+    args = parser.parse_args()
+    try:
+        access_token = get_access_token(read_app, getpass.getuser())
+        graph = Graph(access_token)
+        match args.command:
+            case "unread":
+                listing = list_inbox_messages(
+                    graph, Window(oldest=None, latest=None), ["isRead eq false"], None
+                )
+                if not listing.summaries:
+                    print("No unread messages")
+                for summary in listing.summaries:
+                    print(format_summary(summary))
+            case "read":
+                limit = get_limit(args.limit, args.days, args.since)
+                window = get_window(args.days, args.since)
+                listing = list_inbox_messages(graph, window, [], limit)
+                if listing.has_more:
+                    print(
+                        f"Older messages left out after the latest {limit}."
+                        " Raise --limit, or use --days or --since",
+                        file=sys.stderr,
+                    )
+                for summary in listing.summaries:
+                    print(format_summary(summary))
+            case "search":
+                listing = search_messages(graph, " ".join(args.query), args.limit)
+                if listing.has_more:
+                    print(
+                        f"More matches than the {args.limit} below."
+                        " Raise --limit, or narrow the query",
+                        file=sys.stderr,
+                    )
+                for summary in listing.summaries:
+                    print(format_summary(summary))
+            case "message":
+                message = get_message(graph, args.id)
+                print(format_message(message))
+            case "download":
+                content = download_attachment(graph, args.message_id, args.name)
+                # Exclusive, so a file already there is never overwritten
+                with args.path.open("xb") as file:
+                    file.write(content)
+            case "calendar":
+                since = (
+                    args.since
+                    if args.since is not None
+                    else datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    )
+                )
+                events = list_events(graph, since, since + timedelta(days=args.days))
+                if not events:
+                    print("No events")
+                for output in format_events(events):
+                    print(output)
+            case "send":
+                submit_mail_request(
+                    SendMail(tuple(args.to), tuple(args.cc), args.subject, args.body)
+                )
+            case "reply":
+                # Fails for a mail that does not exist, before anyone is asked to
+                # approve a reply that cannot be sent
+                get_message(graph, args.message_id)
+                submit_mail_request(ReplyToMail(args.message_id, args.body))
+            case _:
+                raise ValueError(f"Unknown command {args.command}")
+    except (
+        GraphError,
+        TokenError,
+        SignInRequired,
+        AttachmentNameError,
+        FileExistsError,
+    ) as error:
+        sys.exit(str(error))
+
+
+def submit_mail_request(request: MailRequest) -> NoReturn:
+    """Ask ,claude-approval to send the mail, and exit as it does."""
+    match request:
+        case SendMail(to, cc, subject, body):
+            action = "send-mail"
+            arguments: dict[str, Any] = {
+                "to": to,
+                "cc": cc,
+                "subject": subject,
+                "body": body,
+            }
+        case ReplyToMail(message_id, body):
+            action = "reply"
+            arguments = {"message": message_id, "body": body}
+        case _:
+            assert_never(request)
+    # The submit link next to this file, which command is a link to, tells
+    # ,claude-approval which CLI asks
+    submit_path = Path(sys.argv[0]).resolve().with_name("submit")
+    result = subprocess.run([submit_path, action, json.dumps(arguments)], check=False)
+    sys.exit(result.returncode)
+
+
+def read_mail_request() -> MailRequest:
+    """Return the mail command asked ,claude-approval for, from the action's name
+    ,claude-approval gives as the argument, and the arguments as a JSON object on
+    standard input.
+    """
+    action = " ".join(sys.argv[1:])
+    match action, json.load(sys.stdin):
+        case (
+            "send-mail",
+            {
+                "to": [str(), *_] as to,
+                "cc": list(cc),
+                "subject": str(subject),
+                "body": str(body),
+                **rest,
+            },
+        ) if not rest and all(
+            isinstance(address, str) and EMAIL_ADDRESS_PATTERN.fullmatch(address)
+            for address in [*to, *cc]
+        ):
+            return SendMail(tuple(to), tuple(cc), subject, body)
+        case (
+            "reply",
+            {"message": str(message_id), "body": str(body), **rest},
+        ) if not rest:
+            return ReplyToMail(MessageId(message_id), body)
+        case "send-mail", arguments:
+            sys.exit(
+                "send-mail takes to, a list of at least one email address, cc, a list"
+                f" of email addresses, subject and body, not {json.dumps(arguments)}"
+            )
+        case "reply", arguments:
+            sys.exit(f"reply takes message and body, not {json.dumps(arguments)}")
+        case _:
+            sys.exit(f"Unknown action: {action}")
+
+
+def describe_mail_request(request: MailRequest, read_app: App) -> Description:
+    match request:
+        case SendMail(to, cc, subject, body):
+            fields = {"To": ", ".join(to)}
+            if cc:
+                fields["Cc"] = ", ".join(cc)
+            return Description(
+                "Send an email", {**fields, "Subject": subject, "Body": body}
+            )
+        case ReplyToMail(message_id, body):
+            try:
+                graph = Graph(get_access_token(read_app, getpass.getuser()))
+                summary = get_message(graph, message_id).summary
+            except (GraphError, TokenError, SignInRequired) as error:
+                sys.exit(str(error))
+            sender = (
+                format_address(summary.sender) if summary.sender is not None else "?"
+            )
+            return Description(
+                "Reply to an email",
+                {"To": sender, "Subject": summary.subject, "Body": body},
+            )
+        case _:
+            assert_never(request)
+
+
+def run_action(send_app: App) -> None:
+    match sys.argv[1:]:
+        # A person runs this once in a terminal, since ,claude-approval runs the action
+        # without one, and a sign-in needs a person
+        case ["sign-in"]:
+            try:
+                get_access_token(send_app, getpass.getuser())
+            except (TokenError, SignInRequired) as error:
+                sys.exit(str(error))
+            print("Signed in to send mail")
+        case _:
+            send_mail(read_mail_request(), send_app)
+
+
+def send_mail(request: MailRequest, send_app: App) -> None:
+    try:
+        graph = Graph(get_access_token(send_app, getpass.getuser()))
+        match request:
+            case SendMail(to, cc, subject, body):
+                # Ref: https://learn.microsoft.com/en-us/graph/api/user-sendmail
+                graph.post(
+                    "/me/sendMail",
+                    {
+                        "message": {
+                            "subject": subject,
+                            "body": {"contentType": "Text", "content": body},
+                            "toRecipients": format_recipients(to),
+                            "ccRecipients": format_recipients(cc),
+                        }
+                    },
+                )
+                print(f"Sent to {', '.join(to)}")
+            case ReplyToMail(message_id, body):
+                # Ref: https://learn.microsoft.com/en-us/graph/api/message-reply
+                graph.post(
+                    f"/me/messages/{urllib.parse.quote(message_id, safe='')}/reply",
+                    {"comment": body},
+                )
+                print("Replied")
+            case _:
+                assert_never(request)
+    except (GraphError, TokenError, SignInRequired) as error:
+        sys.exit(str(error))
+
+
+def format_recipients(addresses: Sequence[str]) -> list[dict[str, dict[str, str]]]:
+    return [{"emailAddress": {"address": address}} for address in addresses]
+
+
+def parse_email_address(value: str) -> str:
+    if EMAIL_ADDRESS_PATTERN.fullmatch(value) is None:
+        raise argparse.ArgumentTypeError(f"{value} is not an email address")
+    return value
+
+
+def parse_new_file_path(value: str) -> Path:
+    # Checked before the download, which can take minutes. A missing folder is
+    # not created, since a mistyped one would save the file somewhere unexpected
+    path = Path(value)
+    if not path.parent.is_dir():
+        raise argparse.ArgumentTypeError(f"No folder {path.parent}")
+    if path.exists():
+        raise argparse.ArgumentTypeError(f"{path} already exists")
+    return path
+
+
+def parse_limit(value: str) -> int:
+    limit = int(value)
+    if limit < 1:
+        raise argparse.ArgumentTypeError(f"{value} is not a positive number")
+    return limit
+
+
+def parse_days(value: str) -> float:
+    days = float(value)
+    if days <= 0:
+        raise argparse.ArgumentTypeError(f"{value} is not a positive number of days")
+    return days
+
+
+def parse_date(value: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not a date like 2026-09-25")
+
+
+def get_limit(
+    limit: int | None, days: float | None, since: datetime | None
+) -> int | None:
+    """Return the --limit given, or the default when no window bounds the read."""
+    if limit is None and days is None and since is None:
+        return DEFAULT_MESSAGE_LIMIT
+    return limit
+
+
+def get_window(days: float | None, since: datetime | None) -> Window:
+    duration = timedelta(days=days) if days is not None else None
+    if since is None:
+        oldest = datetime.now() - duration if duration is not None else None
+        return Window(oldest=oldest, latest=None)
+    latest = since + duration if duration is not None else None
+    return Window(oldest=since, latest=latest)
+
+
+def get_access_token(app: App, keychain_account: str) -> str:
+    """Return an access token, signing in through the browser when no saved refresh token works.
+
+    Microsoft hands out a new refresh token with every access token, and saving
+    it keeps the sign-in alive for 90 days after the last use.
+    """
+    refresh_token = read_refresh_token(app, keychain_account)
+    if refresh_token is None:
+        tokens = sign_in_with_device_code(app)
+    else:
+        try:
+            tokens = request_tokens(
+                app.login_url,
+                {
+                    "grant_type": "refresh_token",
+                    "client_id": app.id,
+                    "refresh_token": refresh_token,
+                    "scope": app.scopes,
+                },
+            )
+        except TokenError as error:
+            # The refresh token expired, or a password change revoked it
+            if error.code != "invalid_grant":
+                raise
+            tokens = sign_in_with_device_code(app)
+    save_refresh_token(app, keychain_account, tokens.refresh_token)
+    return tokens.access_token
+
+
+def sign_in_with_device_code(app: App) -> Tokens:
+    """Ask the person to sign in on a web page, and wait until they have.
+
+    Ref: https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code
+    """
+    # Without a person to enter the code, the CLI would wait for 15 minutes and
+    # then fail
+    if not sys.stderr.isatty():
+        raise SignInRequired(
+            f"Not signed in to Outlook. Run `{app.sign_in_command}` in a terminal"
+            " and sign in"
+        )
+    body = post_login_form(
+        app.login_url, "devicecode", {"client_id": app.id, "scope": app.scopes}
+    )
+    # On stderr, so the prompt shows even when the output goes to a pipe
+    print(body["message"], file=sys.stderr)
+    interval_seconds = body["interval"]
+    while True:
+        time.sleep(interval_seconds)
+        try:
+            return request_tokens(
+                app.login_url,
+                {
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                    "client_id": app.id,
+                    "device_code": body["device_code"],
+                },
+            )
+        except TokenError as error:
+            match error.code:
+                case "authorization_pending":
+                    pass
+                # The interval grows by 5 s each time
+                # Ref: https://www.rfc-editor.org/rfc/rfc8628#section-3.5
+                case "slow_down":
+                    interval_seconds += 5
+                case _:
+                    raise
+
+
+def request_tokens(login_url: str, params: Mapping[str, str]) -> Tokens:
+    body = post_login_form(login_url, "token", params)
+    return Tokens(
+        access_token=body["access_token"], refresh_token=body["refresh_token"]
+    )
+
+
+def post_login_form(
+    login_url: str, endpoint: Literal["devicecode", "token"], params: Mapping[str, str]
+) -> Mapping[str, Any]:
+    request = urllib.request.Request(
+        f"{login_url}/{endpoint}", data=urllib.parse.urlencode(params).encode()
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            body: Mapping[str, Any] = json.load(response)
+            return body
+    except urllib.error.HTTPError as error:
+        error_body = json.load(error)
+        raise TokenError(
+            error_body["error"], error_body["error_description"]
+        ) from error
+
+
+def read_refresh_token(app: App, keychain_account: str) -> str | None:
+    result = subprocess.run(
+        [
+            "security",
+            "find-generic-password",
+            "-s",
+            app.keychain_service,
+            "-a",
+            keychain_account,
+            "-w",
+        ],
+        capture_output=True,
+        text=True,
+        # A missing item is an answer, checked below
+        check=False,
+    )
+    if result.returncode == KEYCHAIN_ITEM_NOT_FOUND:
+        return None
+    result.check_returncode()
+    return result.stdout.strip()
+
+
+def save_refresh_token(app: App, keychain_account: str, refresh_token: str) -> None:
+    # Through stdin, because any process can read the token from the arguments
+    command = (
+        f'add-generic-password -U -s {app.keychain_service} -a "{keychain_account}"'
+        f' -w "{refresh_token}"\n'
+    )
+    subprocess.run(
+        ["security", "-i"], input=command, text=True, check=True, capture_output=True
+    )
+
+
+def list_inbox_messages(
+    graph: Graph, window: Window, filters: Sequence[str], limit: int | None
+) -> Listing:
+    """Return the inbox's latest messages that match every filter, up to the limit if there is one."""
+    # Graph sorts by receivedDateTime only when the filter starts with it, so a
+    # window open at the start starts at 1970
+    # Ref: https://learn.microsoft.com/en-us/graph/api/user-list-messages#using-filter-and-orderby-in-the-same-query
+    oldest = (
+        window.oldest if window.oldest is not None else datetime.fromtimestamp(0, UTC)
+    )
+    window_filters = [f"receivedDateTime ge {format_graph_time(oldest)}"]
+    if window.latest is not None:
+        window_filters.append(f"receivedDateTime lt {format_graph_time(window.latest)}")
+    params = {
+        "$filter": " and ".join([*window_filters, *filters]),
+        "$orderby": "receivedDateTime desc",
+        "$select": SUMMARY_FIELDS,
+        "$top": str(PAGE_SIZE if limit is None else min(limit + 1, PAGE_SIZE)),
+    }
+    return fetch_listing(
+        graph.paginate("/me/mailFolders/inbox/messages", params), limit
+    )
+
+
+def search_messages(graph: Graph, query: str, limit: int) -> Listing:
+    """Return the latest messages in every folder that match the query, oldest first.
+
+    Ref: https://learn.microsoft.com/en-us/graph/search-query-parameter#using-search-on-message-collections
+    """
+    params = {
+        "$search": '"' + query.replace("\\", "\\\\").replace('"', '\\"') + '"',
+        "$select": SUMMARY_FIELDS,
+        "$top": str(min(limit + 1, PAGE_SIZE)),
+    }
+    return fetch_listing(graph.paginate("/me/messages", params), limit)
+
+
+def fetch_listing(items: Iterator[Mapping[str, Any]], limit: int | None) -> Listing:
+    """Fetch the newest items, up to the limit if there is one."""
+    # One past the limit, to tell whether there are more
+    fetched = list(itertools.islice(items, None if limit is None else limit + 1))
+    kept = fetched[:limit]
+    return Listing(
+        # Graph returns the newest first, and the newest reads best next to the prompt
+        summaries=tuple(parse_summary(item) for item in kept[::-1]),
+        has_more=len(fetched) > len(kept),
+    )
+
+
+def get_message(graph: Graph, id_: MessageId) -> Message:
+    path = f"/me/messages/{urllib.parse.quote(id_, safe='')}"
+    item = graph.get(
+        path,
+        {"$select": f"{SUMMARY_FIELDS},toRecipients,ccRecipients,body"},
+    )
+    attachments = (
+        list(graph.paginate(f"{path}/attachments", {"$select": "name"}))
+        if item["hasAttachments"]
+        else []
+    )
+    return Message(
+        summary=parse_summary(item),
+        to=tuple(parse_address(recipient) for recipient in item["toRecipients"]),
+        cc=tuple(parse_address(recipient) for recipient in item["ccRecipients"]),
+        body=item["body"]["content"],
+        attachment_names=tuple(attachment["name"] for attachment in attachments),
+    )
+
+
+def download_attachment(graph: Graph, message_id: MessageId, name: str) -> bytes:
+    """Return the content of the message's attachment with this name.
+
+    An attached message, event or contact comes back in MIME format, and a link
+    to a file in the cloud fails.
+    Ref: https://learn.microsoft.com/en-us/graph/api/attachment-get#get-the-raw-contents-of-a-file-or-item-attachment
+    """
+    path = f"/me/messages/{urllib.parse.quote(message_id, safe='')}/attachments"
+    attachments = list(graph.paginate(path, {"$select": "id,name"}))
+    ids = [attachment["id"] for attachment in attachments if attachment["name"] == name]
+    if len(ids) != 1:
+        names = ", ".join(attachment["name"] for attachment in attachments)
+        raise AttachmentNameError(
+            f"{len(ids)} attachments named {name}, among: {names}"
+        )
+    return graph.download(f"{path}/{urllib.parse.quote(ids[0], safe='')}/$value")
+
+
+def list_events(
+    graph: Graph, starts_at: datetime, ends_at: datetime
+) -> tuple[Event, ...]:
+    """Return the events between two local times, by start, with each repeat of a series on its own."""
+    params = {
+        "startDateTime": format_graph_time(starts_at),
+        "endDateTime": format_graph_time(ends_at),
+        "$select": "subject,start,end,isAllDay,isCancelled,organizer,responseStatus,location",
+    }
+    items = list(graph.paginate("/me/calendarView", params))
+    events = [parse_event(item) for item in items]
+    # Graph matches an all-day event by its days in UTC, so it also returns the
+    # ones on the day before or after the local days asked for
+    in_window = [
+        event
+        for event in events
+        if get_start(event.time) < ends_at.astimezone()
+        and get_end(event.time) > starts_at.astimezone()
+    ]
+    return tuple(sorted(in_window, key=lambda event: get_start(event.time)))
+
+
+def get_start(event_time: EventTime) -> datetime:
+    match event_time:
+        case AllDay(first_day=first_day):
+            return datetime.combine(first_day, datetime.min.time()).astimezone()
+        case TimeRange(starts_at=starts_at):
+            return starts_at
+        case _:
+            assert_never(event_time)
+
+
+def get_end(event_time: EventTime) -> datetime:
+    match event_time:
+        case AllDay(last_day=last_day):
+            return datetime.combine(
+                last_day + timedelta(days=1), datetime.min.time()
+            ).astimezone()
+        case TimeRange(ends_at=ends_at):
+            return ends_at
+        case _:
+            assert_never(event_time)
+
+
+def format_graph_time(at: datetime) -> str:
+    return at.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def parse_graph_time(value: str) -> datetime:
+    """Return the local time of a time Graph gives in UTC, with or without the Z."""
+    return datetime.fromisoformat(value).replace(tzinfo=UTC).astimezone()
+
+
+def parse_summary(item: Mapping[str, Any]) -> MessageSummary:
+    return MessageSummary(
+        id=MessageId(item["id"]),
+        received_at=parse_graph_time(item["receivedDateTime"]),
+        sender=parse_address(item["from"]) if "from" in item else None,
+        subject=item["subject"],
+        preview=item["bodyPreview"],
+        is_read=item["isRead"],
+        has_attachments=item["hasAttachments"],
+    )
+
+
+def parse_address(recipient: Mapping[str, Any]) -> Address:
+    return Address(
+        name=recipient["emailAddress"]["name"],
+        email=recipient["emailAddress"]["address"],
+    )
+
+
+def parse_event(item: Mapping[str, Any]) -> Event:
+    return Event(
+        subject=item["subject"],
+        time=parse_event_time(item),
+        is_cancelled=item["isCancelled"],
+        organizer=parse_address(item["organizer"]),
+        response=item["responseStatus"]["response"],
+        location=item["location"]["displayName"],
+    )
+
+
+def parse_event_time(item: Mapping[str, Any]) -> EventTime:
+    if item["isAllDay"]:
+        # Graph gives an all-day event as midnight to midnight, and the end is
+        # the day after the last
+        return AllDay(
+            first_day=date.fromisoformat(item["start"]["dateTime"][:10]),
+            last_day=date.fromisoformat(item["end"]["dateTime"][:10])
+            - timedelta(days=1),
+        )
+    return TimeRange(
+        starts_at=parse_graph_time(item["start"]["dateTime"]),
+        ends_at=parse_graph_time(item["end"]["dateTime"]),
+    )
+
+
+def format_summary(summary: MessageSummary) -> str:
+    sender = format_address(summary.sender) if summary.sender is not None else "?"
+    flags = "".join(
+        (
+            "" if summary.is_read else " [unread]",
+            " [attachments]" if summary.has_attachments else "",
+        )
+    )
+    lines = [
+        f"{summary.received_at:{TIMESTAMP_FORMAT}} {sender}{flags}",
+        BODY_INDENT + summary.subject,
+        BODY_INDENT + " ".join(summary.preview.split()),
+        f"{BODY_INDENT}command message {summary.id}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def format_message(message: Message) -> str:
+    summary = message.summary
+    sender = format_address(summary.sender) if summary.sender is not None else "?"
+    lines = [
+        f"From: {sender}",
+        f"To: {', '.join(format_address(address) for address in message.to)}",
+    ]
+    if message.cc:
+        lines.append(
+            f"Cc: {', '.join(format_address(address) for address in message.cc)}"
+        )
+    lines += [
+        f"Date: {summary.received_at:{TIMESTAMP_FORMAT}}",
+        f"Subject: {summary.subject}",
+    ]
+    if message.attachment_names:
+        lines.append(f"Attachments: {', '.join(message.attachment_names)}")
+    # Outlook's text version of an HTML message keeps the blank lines of its layout
+    body = re.sub(r"\n\s*\n(\s*\n)+", "\n\n", message.body.replace("\r\n", "\n"))
+    return "\n".join(lines) + "\n\n" + body.strip()
+
+
+def format_events(events: Sequence[Event]) -> Iterator[str]:
+    day = None
+    for event in events:
+        start = get_start(event.time)
+        if start.date() != day:
+            day = start.date()
+            yield f"-- {start:%A, %d %B %Y} --"
+        match event.time:
+            case AllDay():
+                times = "all day    "
+            case TimeRange(starts_at=starts_at, ends_at=ends_at):
+                times = f"{starts_at:%H:%M}-{ends_at:%H:%M}"
+            case _:
+                assert_never(event.time)
+        cancelled = "[cancelled] " if event.is_cancelled else ""
+        details = [
+            format_response(event.response),
+            f"organizer: {event.organizer.name}",
+        ]
+        if event.location != "":
+            details.append(event.location)
+        yield f"{times}  {cancelled}{event.subject}  ({', '.join(details)})"
+
+
+def format_response(response: Response) -> str:
+    match response:
+        case "organizer":
+            return "you organize it"
+        case "accepted":
+            return "accepted"
+        case "tentativelyAccepted":
+            return "tentative"
+        case "declined":
+            return "declined"
+        case "notResponded":
+            return "not answered"
+        case "none":
+            return "no response"
+        case _:
+            assert_never(response)
+
+
+def format_address(address: Address) -> str:
+    if address.name in ("", address.email):
+        return address.email
+    return f"{address.name} <{address.email}>"
+
+
+if __name__ == "__main__":
+    main()

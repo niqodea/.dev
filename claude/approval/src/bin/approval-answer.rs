@@ -76,7 +76,7 @@ fn run() -> Result<(), String> {
     // lock when the process ends, however it ends
     match lock.try_lock() {
         Ok(()) => {
-            // Before the jobs are read, so a job queued before ,approval can
+            // Before the jobs are read, so a job queued before ,claude-approval can
             // read the ID is among them
             write_process_id(&lock, &lock_path)?;
             answer(&queue, &actions)
@@ -92,7 +92,7 @@ fn run() -> Result<(), String> {
     }
 }
 
-/// Write this process's ID in the lock file, so ,approval can tell the screen
+/// Write this process's ID in the lock file, so ,claude-approval can tell the screen
 /// when it queues a job.
 fn write_process_id(lock: &File, lock_path: &Path) -> Result<(), String> {
     let mut file = lock;
@@ -151,7 +151,7 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
             }
             Some(b'q') => return Ok(()),
             // A resize redraws the jobs at the new size, and a job queued
-            // while the screen is open, which ,approval signals, adds one
+            // while the screen is open, which ,claude-approval signals, adds one
             // below. Only this screen takes jobs out, so the list only grows,
             // and every row keeps its place and its decision
             None => {
@@ -602,7 +602,7 @@ fn read_key() -> Result<Option<u8>, String> {
     }
 }
 
-/// Make a resize, or a job ,approval queues, interrupt the wait for a key,
+/// Make a resize, or a job ,claude-approval queues, interrupt the wait for a key,
 /// which `read_key` reports, so the screen is drawn again at once instead of on
 /// the next key press.
 ///

@@ -12,6 +12,7 @@ Each directory at the root of the repository is a module with the following stan
 - `exported-dotfiles/`: dotfiles installed by other modules
 - `submodules/`: git submodules the module installs from
 - `<program>/`: the source of a program of our own that only makes sense in this setup
+- `<kind>/<program>/`: programs of the same kind, grouped in a folder named after the kind, like `claude/clis/`
 - `README.md`: information about the module
 
 ### Dotfiles management

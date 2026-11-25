@@ -1,0 +1,21 @@
+{
+  "display_information": {
+    "name": "Read-only CLI"
+  },
+  "oauth_config": {
+    "scopes": {
+      "user": [
+        "channels:read",
+        "channels:history",
+        "groups:read",
+        "groups:history",
+        "im:read",
+        "im:history",
+        "mpim:read",
+        "mpim:history",
+        "users:read",
+        "search:read"
+      ]
+    }
+  }
+}

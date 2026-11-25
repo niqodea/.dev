@@ -1,0 +1,1104 @@
+#!/usr/bin/env python3
+"""Read-only Discord CLI.
+
+Reads DISCORD_TOKEN, the token of a bot that is a member of one server.
+"""
+
+import argparse
+import dataclasses
+import itertools
+import json
+import os
+import re
+import shutil
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import zlib
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, NewType, Protocol, assert_never
+
+GuildId = NewType("GuildId", str)
+ChannelId = NewType("ChannelId", str)
+MessageId = NewType("MessageId", str)
+UserId = NewType("UserId", str)
+RoleId = NewType("RoleId", str)
+
+API_URL = "https://discord.com/api/v10"
+# Discord rejects requests without a User-Agent in this form
+# Ref: https://discord.com/developers/docs/reference#user-agent
+USER_AGENT = "DiscordBot (https://github.com/niqodea/.dev, 1)"
+# Someone is waiting at the terminal, and an answer later than this is not worth
+# waiting for
+TIMEOUT_SECONDS = 30
+# Discord returns at most 100 messages per call
+# Ref: https://discord.com/developers/docs/resources/message#get-channel-messages
+PAGE_SIZE = 100
+# Snowflakes count milliseconds from the start of 2015
+# Ref: https://discord.com/developers/docs/reference#snowflakes
+DISCORD_EPOCH_MILLISECONDS = 1_420_070_400_000
+# Ref: https://discord.com/developers/docs/resources/channel#channel-object-channel-types
+CATEGORY_TYPE = 4
+THREAD_TYPES = (10, 11, 12)
+# Forum and media channels hold only threads, one per post
+THREADS_ONLY_TYPES = (15, 16)
+# Ref: https://discord.com/developers/docs/resources/message#message-object-message-types
+MEMBER_JOIN_TYPE = 7
+THREAD_STARTER_TYPE = 21
+# Ref: https://discord.com/developers/docs/topics/opcodes-and-status-codes#json-json-error-codes
+MISSING_ACCESS_CODE = 50001
+# Discord limits calls per channel, and to 50 a second for the whole bot
+# Ref: https://discord.com/developers/docs/topics/rate-limits
+PARALLEL_CALLS = 8
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M"
+# Enough for the recent part of a channel, and few enough to leave
+# room in Claude's context, which a read with neither --days nor --since gets
+DEFAULT_MESSAGE_LIMIT = 50
+DEFAULT_AROUND_LIMIT = 20
+# What recent reads with neither --days nor --since
+DEFAULT_RECENT_DAYS = 1.0
+# Continuation lines start under the text, after a timestamp and a space
+CONTINUATION_INDENT = " " * len(datetime(2000, 1, 1).strftime(TIMESTAMP_FORMAT) + " ")
+CHANNEL_LINK_PATTERN = (
+    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/channels/\d+/(\d+)/?"
+)
+MESSAGE_LINK_PATTERN = (
+    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/channels/\d+/(\d+)/(\d+)/?"
+)
+
+
+@dataclass(frozen=True)
+class Window:
+    """The time to read messages from, open at an end that is None."""
+
+    oldest: datetime | None
+    latest: datetime | None
+
+    def contains(self, at: datetime) -> bool:
+        is_after_oldest = self.oldest is None or self.oldest <= at
+        is_before_latest = self.latest is None or at < self.latest
+        return is_after_oldest and is_before_latest
+
+
+@dataclass(frozen=True)
+class MessageLink:
+    channel_id: ChannelId
+    message_id: MessageId
+
+
+@dataclass(frozen=True)
+class Category:
+    name: str
+    position: int
+
+
+@dataclass(frozen=True)
+class Channel:
+    name: str
+    category_id: ChannelId | None
+    position: int
+    is_threads_only: bool
+
+
+@dataclass(frozen=True)
+class Thread:
+    """A thread or a forum post, each of which Discord treats as a channel."""
+
+    name: str
+    parent_id: ChannelId
+
+
+type Place = Category | Channel | Thread
+
+
+@dataclass(frozen=True)
+class ChannelGroup:
+    # None for the channels outside every category
+    category_name: str | None
+    channel_ids: tuple[ChannelId, ...]
+
+
+@dataclass(frozen=True)
+class Author:
+    id: UserId
+    name: str
+
+
+@dataclass(frozen=True)
+class Post:
+    """What a message says, wherever Discord shows it."""
+
+    at: datetime
+    # Discord keeps no author with a forwarded message
+    author: Author | None
+    text: str
+    file_names: tuple[str, ...]
+    # The text mentions people by id, and Discord sends their names in a separate list
+    mentions: tuple[Author, ...]
+
+
+@dataclass(frozen=True)
+class Reaction:
+    emoji_name: str
+    count: int
+
+
+@dataclass(frozen=True)
+class ThreadSummary:
+    id: ChannelId
+    name: str
+    # Threads from before 2022 have no count
+    message_count: int | None
+
+
+@dataclass(frozen=True)
+class Message:
+    post: Post
+    # None for a message that replies to nothing, or to a deleted one
+    reply_to: Post | None
+    thread: ThreadSummary | None
+    reactions: tuple[Reaction, ...]
+    forwarded: tuple[Post, ...]
+
+
+@dataclass(frozen=True)
+class History:
+    # Newest first
+    messages: tuple[Message, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class RecentMessages:
+    # Newest first, for each channel with messages in the window
+    messages_by_channel: Mapping[ChannelId, tuple[Message, ...]]
+    unreadable_ids: tuple[ChannelId, ...]
+
+
+@dataclass(frozen=True)
+class Unreadable:
+    """A channel the bot is not allowed to see."""
+
+
+class DiscordError(Exception):
+    """An error Discord answered a call with."""
+
+
+class MissingAccess(DiscordError):
+    """A channel the bot is not allowed to see."""
+
+
+class UsageError(Exception):
+    """An argument that points at nothing in Discord."""
+
+
+class Discord:
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def get(self, path: str, params: Mapping[str, str]) -> Any:
+        """Send a GET request.
+
+        The CLI sends no other kind of request, so it cannot change the server,
+        whatever permissions the bot has.
+        """
+        query = f"?{urllib.parse.urlencode(params)}" if params else ""
+        request = urllib.request.Request(
+            f"{API_URL}{path}{query}",
+            headers={"Authorization": f"Bot {self._token}", "User-Agent": USER_AGENT},
+        )
+        while True:
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=TIMEOUT_SECONDS
+                ) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as error:
+                body = json.load(error)
+                if error.code == 429:
+                    time.sleep(body["retry_after"])
+                    continue
+                if body["code"] == MISSING_ACCESS_CODE:
+                    raise MissingAccess(f"{path}: {body['message']}")
+                raise DiscordError(f"{path}: {body['message']}")
+
+
+class Directory:
+    """The server's channels, threads and roles, looked up by id or name."""
+
+    def __init__(
+        self,
+        places: Mapping[ChannelId, Place],
+        role_names: Mapping[RoleId, str],
+    ) -> None:
+        self._places = places
+        self._role_names = role_names
+
+    @staticmethod
+    def load(discord: Discord) -> "Directory":
+        guild_id = get_guild_id(discord)
+        channels = discord.get(f"/guilds/{guild_id}/channels", {})
+        # TODO: Also load the archived threads, a call per channel, once old forum
+        # posts need finding by name
+        active_threads = discord.get(f"/guilds/{guild_id}/threads/active", {})
+        roles = discord.get(f"/guilds/{guild_id}/roles", {})
+        return Directory(
+            places={
+                ChannelId(channel["id"]): parse_place(channel)
+                for channel in [*channels, *active_threads["threads"]]
+            },
+            role_names={RoleId(role["id"]): role["name"] for role in roles},
+        )
+
+    def list_channel_groups(self) -> tuple[ChannelGroup, ...]:
+        """Return the channels in the order Discord shows them, each followed by its threads.
+
+        TODO: Leave out the channels the bot cannot read, by working out its
+        permissions from its roles and each channel's overwrites
+        """
+        categories = sorted(
+            (
+                (channel_id, place)
+                for channel_id, place in self._places.items()
+                if isinstance(place, Category)
+            ),
+            key=lambda item: item[1].position,
+        )
+        groups = [
+            ChannelGroup(category_name=None, channel_ids=self._list_category(None)),
+            *(
+                ChannelGroup(
+                    category_name=category.name,
+                    channel_ids=self._list_category(category_id),
+                )
+                for category_id, category in categories
+            ),
+        ]
+        return tuple(group for group in groups if group.channel_ids)
+
+    def list_readable_channel_ids(self) -> tuple[ChannelId, ...]:
+        """Return the channels and threads that hold messages, in the order Discord shows them."""
+        return tuple(
+            channel_id
+            for group in self.list_channel_groups()
+            for channel_id in group.channel_ids
+            if not self._is_threads_only(channel_id)
+        )
+
+    def find_channel_id(self, name_or_id: str) -> ChannelId:
+        if (link := re.fullmatch(CHANNEL_LINK_PATTERN, name_or_id)) is not None:
+            return ChannelId(link[1])
+        # Names are not unique, so a name several channels share fails instead of
+        # picking one
+        wanted = name_or_id.removeprefix("#").casefold()
+        named = [
+            channel_id
+            for channel_id, place in self._places.items()
+            if isinstance(place, Channel | Thread) and place.name.casefold() == wanted
+        ]
+        match named:
+            case []:
+                pass
+            case [channel_id]:
+                if self._is_threads_only(channel_id):
+                    raise UsageError(
+                        f"{name_or_id} is a forum, so read one of its posts, listed by `command channels`"
+                    )
+                return channel_id
+            case _:
+                channels = ", ".join(
+                    f"{channel_id} ({self.format_channel_id(channel_id)})"
+                    for channel_id in named
+                )
+                raise UsageError(f"{name_or_id} names several channels: {channels}")
+        # After the names, so a channel named with digits is not taken for an id
+        if re.fullmatch(r"\d{17,20}", name_or_id) is not None:
+            return ChannelId(name_or_id)
+        raise UsageError(
+            f"The server has no channel named {name_or_id}. `command channels` lists them"
+        )
+
+    def format_channel_id(self, channel_id: ChannelId) -> str:
+        place = self._places.get(channel_id)
+        # Archived threads are missing from the active ones
+        if place is None:
+            return f"#{channel_id}"
+        match place:
+            case Category(name=name):
+                return name
+            case Channel(name=name):
+                return f"#{name}"
+            case Thread(name=name, parent_id=parent_id):
+                return f"{self.format_channel_id(parent_id)} > {name}"
+            case _:
+                assert_never(place)
+
+    def format_role(self, role_id: RoleId) -> str:
+        return self._role_names.get(role_id, role_id)
+
+    def _list_category(self, category_id: ChannelId | None) -> tuple[ChannelId, ...]:
+        channels = sorted(
+            (
+                (channel_id, place)
+                for channel_id, place in self._places.items()
+                if isinstance(place, Channel) and place.category_id == category_id
+            ),
+            key=lambda item: item[1].position,
+        )
+        return tuple(
+            listed_id
+            for channel_id, _ in channels
+            for listed_id in (channel_id, *self._list_threads(channel_id))
+        )
+
+    def _list_threads(self, parent_id: ChannelId) -> tuple[ChannelId, ...]:
+        threads = [
+            (channel_id, place)
+            for channel_id, place in self._places.items()
+            if isinstance(place, Thread) and place.parent_id == parent_id
+        ]
+        return tuple(
+            channel_id
+            for channel_id, _ in sorted(threads, key=lambda item: item[1].name)
+        )
+
+    def _is_threads_only(self, channel_id: ChannelId) -> bool:
+        place = self._places[channel_id]
+        return isinstance(place, Channel) and place.is_threads_only
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Read-only Discord CLI, for the one server its bot is in.",
+        epilog="""\
+examples:
+  command channels                                     channels, and their active threads
+  command read general --limit 100                     latest 100 messages in #general
+  command read general --days 7                        the past week of #general
+  command read general --since 2026-09-26 --days 2     the weekend of the 26th
+  command read 1288000000000000000 -n 100              a thread, by the ID `read` prints
+  command read 'https://discord.com/channels/…/…' -n 100    a channel or thread, from a copied link
+  command around 'https://discord.com/channels/…/…/…' -n 20    the 20 messages around a copied message link
+  command recent --days 3                              every message of the past 3 days, by channel
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("channels", help="list the channels and their active threads")
+
+    read_parser = commands.add_parser(
+        "read", help="print the latest messages in a channel or thread"
+    )
+    read_parser.add_argument("channel", help="#channel, thread name, id, or link")
+    read_parser.add_argument(
+        "-n",
+        "--limit",
+        type=parse_limit,
+        help=f"{DEFAULT_MESSAGE_LIMIT} when neither --days nor --since is given",
+    )
+    add_window_arguments(read_parser)
+
+    around_parser = commands.add_parser(
+        "around", help="print a message and the ones around it"
+    )
+    around_parser.add_argument(
+        "link",
+        type=parse_message_link,
+        help="the message's link, from Copy Message Link",
+    )
+    around_parser.add_argument(
+        "-n",
+        "--limit",
+        type=parse_limit,
+        default=DEFAULT_AROUND_LIMIT,
+        help=f"how many messages to print, at most {PAGE_SIZE}",
+    )
+
+    recent_parser = commands.add_parser(
+        "recent",
+        help="print the messages of every channel and thread over --days or since"
+        " --since, the past day by default",
+    )
+    add_window_arguments(recent_parser)
+
+    args = parser.parse_args()
+    token = os.environ.get("DISCORD_TOKEN")
+    # An empty token is what the README's export leaves when the Keychain has none
+    if token is None or token == "":
+        sys.exit("Set DISCORD_TOKEN to the bot's token, see README.md")
+    discord = Discord(token)
+
+    try:
+        match args.command:
+            case "channels":
+                directory = Directory.load(discord)
+                formatter = make_formatter(directory)
+                for group in directory.list_channel_groups():
+                    if group.category_name is not None:
+                        print(formatter.format_category(group.category_name))
+                    for channel_id in group.channel_ids:
+                        print(formatter.format_channel(channel_id))
+            case "read":
+                limit = get_limit(args.limit, args.days, args.since)
+                directory = Directory.load(discord)
+                channel_id = directory.find_channel_id(args.channel)
+                window = get_window(args.days, args.since)
+                history = list_messages(discord, channel_id, limit, window)
+                if history.has_more:
+                    print(
+                        f"Older messages left out after the latest {limit}."
+                        " Raise --limit, or use --days or --since",
+                        file=sys.stderr,
+                    )
+                formatter = make_formatter(directory)
+                # Discord returns the newest first, and a channel reads oldest first
+                for output in formatter.format_history(history.messages[::-1]):
+                    print(output)
+            case "around":
+                if args.limit > PAGE_SIZE:
+                    raise UsageError(
+                        f"around prints at most {PAGE_SIZE} messages, not {args.limit}"
+                    )
+                directory = Directory.load(discord)
+                params = {"around": args.link.message_id, "limit": str(args.limit)}
+                items = discord.get(
+                    f"/channels/{args.link.channel_id}/messages", params
+                )
+                formatter = make_formatter(directory)
+                around = tuple(parse_message(item) for item in items)
+                for output in formatter.format_history(around[::-1]):
+                    print(output)
+            case "recent":
+                days = (
+                    DEFAULT_RECENT_DAYS
+                    if args.days is None and args.since is None
+                    else args.days
+                )
+                directory = Directory.load(discord)
+                window = get_window(days, args.since)
+                recent = list_recent_messages(
+                    discord, directory.list_readable_channel_ids(), window
+                )
+                if recent.unreadable_ids:
+                    names = ", ".join(
+                        directory.format_channel_id(channel_id)
+                        for channel_id in recent.unreadable_ids
+                    )
+                    print(
+                        f"Left out what the bot cannot read: {names}", file=sys.stderr
+                    )
+                formatter = make_formatter(directory)
+                if not recent.messages_by_channel:
+                    print("No messages")
+                for channel_id, messages in recent.messages_by_channel.items():
+                    print(formatter.format_channel_header(channel_id, len(messages)))
+                    for output in formatter.format_history(messages[::-1]):
+                        print(output)
+            case _:
+                raise ValueError(f"Unknown command {args.command}")
+    except (DiscordError, UsageError) as error:
+        sys.exit(str(error))
+
+
+def parse_limit(value: str) -> int:
+    limit = int(value)
+    if limit < 1:
+        raise argparse.ArgumentTypeError(
+            f"{value} is not a positive number of messages"
+        )
+    return limit
+
+
+def parse_days(value: str) -> float:
+    days = float(value)
+    if days <= 0:
+        raise argparse.ArgumentTypeError(f"{value} is not a positive number of days")
+    return days
+
+
+def parse_date(value: str) -> datetime:
+    try:
+        # Read in the local timezone, which is what the user means by a day
+        return datetime.strptime(value, "%Y-%m-%d").astimezone()
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not a date like 2026-09-25")
+
+
+def parse_message_link(value: str) -> MessageLink:
+    match = re.fullmatch(MESSAGE_LINK_PATTERN, value)
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            f"{value} is not a message link like https://discord.com/channels/1/2/3"
+        )
+    return MessageLink(channel_id=ChannelId(match[1]), message_id=MessageId(match[2]))
+
+
+def add_window_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--days",
+        type=parse_days,
+        help="how many days to read, ending now or starting at --since",
+    )
+    parser.add_argument(
+        "--since", type=parse_date, help="the first day to read, as YYYY-MM-DD"
+    )
+
+
+def get_limit(
+    limit: int | None, days: float | None, since: datetime | None
+) -> int | None:
+    """Return the --limit given, or the default when no window bounds the read."""
+    if limit is None and days is None and since is None:
+        return DEFAULT_MESSAGE_LIMIT
+    return limit
+
+
+def get_window(days: float | None, since: datetime | None) -> Window:
+    duration = timedelta(days=days) if days is not None else None
+    if since is None:
+        now = datetime.now().astimezone()
+        oldest = now - duration if duration is not None else None
+        return Window(oldest=oldest, latest=None)
+    latest = since + duration if duration is not None else None
+    return Window(oldest=since, latest=latest)
+
+
+def get_guild_id(discord: Discord) -> GuildId:
+    guilds = discord.get("/users/@me/guilds", {})
+    match guilds:
+        case [{"id": guild_id}]:
+            return GuildId(guild_id)
+        case []:
+            raise UsageError("The bot is in no server yet, see README.md")
+        case _:
+            names = ", ".join(guild["name"] for guild in guilds)
+            raise UsageError(f"The bot is in several servers, and reads one: {names}")
+
+
+def list_recent_messages(
+    discord: Discord, channel_ids: Sequence[ChannelId], window: Window
+) -> RecentMessages:
+    """Return every message in the window, in each channel that has any."""
+    with ThreadPoolExecutor(max_workers=PARALLEL_CALLS) as pool:
+        results = list(
+            pool.map(
+                lambda channel_id: list_window(discord, channel_id, window),
+                channel_ids,
+            )
+        )
+    messages_by_channel = {}
+    unreadable_ids = []
+    for channel_id, result in zip(channel_ids, results, strict=True):
+        match result:
+            case Unreadable():
+                unreadable_ids.append(channel_id)
+            case ():
+                pass
+            case messages:
+                messages_by_channel[channel_id] = messages
+    return RecentMessages(
+        messages_by_channel=messages_by_channel, unreadable_ids=tuple(unreadable_ids)
+    )
+
+
+def list_window(
+    discord: Discord, channel_id: ChannelId, window: Window
+) -> tuple[Message, ...] | Unreadable:
+    try:
+        return list_messages(discord, channel_id, None, window).messages
+    except MissingAccess:
+        return Unreadable()
+
+
+def list_messages(
+    discord: Discord, channel_id: ChannelId, limit: int | None, window: Window
+) -> History:
+    """Return the latest messages in a channel, up to the limit if there is one."""
+    page_size = PAGE_SIZE if limit is None else min(limit + 1, PAGE_SIZE)
+    params = {"limit": str(page_size)}
+    if window.latest is not None:
+        params["before"] = to_snowflake(window.latest)
+    in_window = itertools.takewhile(
+        lambda item: window.contains(parse_time(item)),
+        iterate_messages(discord, channel_id, params),
+    )
+    # One past the limit, to tell whether there are more
+    items = list(itertools.islice(in_window, None if limit is None else limit + 1))
+    kept = items[:limit]
+    return History(
+        messages=tuple(parse_message(item) for item in kept),
+        has_more=len(items) > len(kept),
+    )
+
+
+def iterate_messages(
+    discord: Discord, channel_id: ChannelId, params: Mapping[str, str]
+) -> Iterator[Mapping[str, Any]]:
+    """Yield a channel's messages newest first, fetching the next page only when it is reached."""
+    path = f"/channels/{channel_id}/messages"
+    page = discord.get(path, params)
+    yield from page
+    # A page shorter than asked for is the last one
+    while len(page) == int(params["limit"]):
+        page = discord.get(path, {**params, "before": page[-1]["id"]})
+        yield from page
+
+
+def to_snowflake(at: datetime) -> str:
+    """Return the id a message sent at that time would have, which Discord pages by."""
+    milliseconds = int(at.timestamp() * 1000)
+    return str((milliseconds - DISCORD_EPOCH_MILLISECONDS) << 22)
+
+
+def parse_time(item: Mapping[str, Any]) -> datetime:
+    return datetime.fromisoformat(item["timestamp"]).astimezone()
+
+
+def parse_place(channel: Mapping[str, Any]) -> Place:
+    match channel:
+        case {"type": type_, "name": name, "position": position} if (
+            type_ == CATEGORY_TYPE
+        ):
+            return Category(name=name, position=position)
+        case {"type": type_, "name": name, "parent_id": parent_id} if (
+            type_ in THREAD_TYPES
+        ):
+            return Thread(name=name, parent_id=ChannelId(parent_id))
+        case {"type": type_, "name": name, "position": position}:
+            return Channel(
+                name=name,
+                category_id=ChannelId(channel["parent_id"])
+                if channel.get("parent_id") is not None
+                else None,
+                position=position,
+                is_threads_only=type_ in THREADS_ONLY_TYPES,
+            )
+        case _:
+            raise ValueError(f"Channel {channel['id']} has no name")
+
+
+def parse_message(item: Mapping[str, Any]) -> Message:
+    match item:
+        # The first message of a thread started from a message only points at
+        # that message, which belongs to the parent channel
+        case {"type": type_, "referenced_message": dict() as starter} if (
+            type_ == THREAD_STARTER_TYPE
+        ):
+            return dataclasses.replace(parse_message(starter), thread=None)
+        case {"referenced_message": dict() as replied}:
+            reply_to: Post | None = parse_post(replied)
+        case _:
+            reply_to = None
+    match item.get("thread"):
+        case {"id": thread_id, "name": name, "message_count": int(count)}:
+            thread: ThreadSummary | None = ThreadSummary(
+                ChannelId(thread_id), name, count
+            )
+        case {"id": thread_id, "name": name}:
+            thread = ThreadSummary(ChannelId(thread_id), name, None)
+        case None:
+            thread = None
+        case _:
+            raise ValueError(f"Message {item['id']} has a thread without a name")
+    return Message(
+        post=parse_post(item),
+        reply_to=reply_to,
+        thread=thread,
+        reactions=tuple(
+            Reaction(emoji_name=reaction["emoji"]["name"], count=reaction["count"])
+            for reaction in item.get("reactions", [])
+        ),
+        forwarded=tuple(
+            parse_forwarded_post(snapshot["message"])
+            for snapshot in item.get("message_snapshots", [])
+        ),
+    )
+
+
+def parse_post(item: Mapping[str, Any]) -> Post:
+    return Post(
+        at=parse_time(item),
+        author=parse_author(item["author"]),
+        text=parse_text(item),
+        file_names=tuple(file["filename"] for file in item.get("attachments", [])),
+        mentions=tuple(parse_author(user) for user in item.get("mentions", [])),
+    )
+
+
+def parse_forwarded_post(snapshot: Mapping[str, Any]) -> Post:
+    return Post(
+        at=parse_time(snapshot),
+        author=None,
+        text=parse_text(snapshot),
+        file_names=tuple(file["filename"] for file in snapshot.get("attachments", [])),
+        mentions=tuple(parse_author(user) for user in snapshot.get("mentions", [])),
+    )
+
+
+def parse_author(user: Mapping[str, Any]) -> Author:
+    match user:
+        # Bots and webhooks have no display name
+        case {"id": user_id, "global_name": str(name)}:
+            return Author(id=UserId(user_id), name=name)
+        case {"id": user_id, "username": name}:
+            return Author(id=UserId(user_id), name=name)
+        case _:
+            raise ValueError(f"User {user['id']} has no name")
+
+
+def parse_text(item: Mapping[str, Any]) -> str:
+    match item:
+        case {"type": type_} if type_ == MEMBER_JOIN_TYPE:
+            return "joined the server"
+        case {"content": str(content)} if content != "":
+            return content
+        # Bots often post only embeds, like a GitHub notification
+        case _:
+            return "\n".join(
+                part
+                for embed in item.get("embeds", [])
+                for part in (embed.get("title"), embed.get("description"))
+                if part is not None
+            )
+
+
+def is_read_by_person() -> bool:
+    """Whether output goes to a terminal, rather than to a program or an agent reading a pipe.
+
+    FORCE_COLOR keeps the terminal layout through a pager, like `| less -R`.
+    Ref: https://force-color.org
+    """
+    if os.environ.get("FORCE_COLOR", "") != "":
+        return True
+    return sys.stdout.isatty() and os.environ.get("TERM") != "dumb"
+
+
+def make_formatter(directory: Directory) -> "Formatter":
+    if not is_read_by_person():
+        return PlainFormatter(directory)
+    columns = shutil.get_terminal_size().columns
+    # Ref: https://no-color.org
+    is_colored = os.environ.get("NO_COLOR", "") == ""
+    return TerminalFormatter(directory, columns, is_colored)
+
+
+class Formatter(Protocol):
+    def format_category(self, name: str) -> str: ...
+
+    def format_channel(self, channel_id: ChannelId) -> str: ...
+
+    def format_channel_header(self, channel_id: ChannelId, count: int) -> str: ...
+
+    def format_history(self, messages: Sequence[Message]) -> Iterator[str]:
+        """Yield the channel's messages, given oldest first."""
+        ...
+
+
+class PlainFormatter:
+    """One message per line and every name spelled out, for programs and agents."""
+
+    def __init__(self, directory: Directory) -> None:
+        self._directory = directory
+
+    def format_category(self, name: str) -> str:
+        return f"== {name} =="
+
+    def format_channel(self, channel_id: ChannelId) -> str:
+        return f"{channel_id}  {self._directory.format_channel_id(channel_id)}"
+
+    def format_channel_header(self, channel_id: ChannelId, count: int) -> str:
+        name = self._directory.format_channel_id(channel_id)
+        return f"== {name}: {format_message_count(count)} =="
+
+    def format_history(self, messages: Sequence[Message]) -> Iterator[str]:
+        for message in messages:
+            yield self._format_message(message)
+            if message.thread is not None:
+                command = f"command read {message.thread.id}"
+                yield f"    [{format_thread_summary(message.thread)}: {command}]"
+
+    def _format_message(self, message: Message) -> str:
+        reactions = "".join(
+            f" [:{reaction.emoji_name}: {reaction.count}]"
+            for reaction in message.reactions
+        )
+        output = self._format_post(message.post, message.reply_to) + reactions
+        for forwarded in message.forwarded:
+            quoted = indent_continuation(self._format_post(forwarded, None))
+            output += "\n> " + quoted.replace("\n", "\n> ")
+        return indent_continuation(output)
+
+    def _format_post(self, post: Post, reply_to: Post | None) -> str:
+        at = format_timestamp(post.at)
+        author = format_author(post.author)
+        if reply_to is not None:
+            replied_at = format_timestamp(reply_to.at)
+            author += f" (replying to {format_author(reply_to.author)} at {replied_at})"
+        text = format_text(post, self._directory, lambda name: name)
+        files = "".join(f" [file: {name}]" for name in post.file_names)
+        return f"{at} {author}: {text}{files}"
+
+
+class TerminalFormatter:
+    """A layout like Discord's own, for a person at a terminal.
+
+    Each message starts with its author on a line of its own, a rule marks each
+    new day, long lines wrap under their start, and reactions show as counts.
+    Ref: https://en.wikipedia.org/wiki/ANSI_escape_code#SGR
+    """
+
+    _BOLD = "1"
+    _DIM = "2"
+    _ITALIC = "3"
+    _UNDERLINE = "4"
+    _STRIKETHROUGH = "9"
+    _MENTION = "1;33"
+    _CODE = "36"
+    # Bold red, green, blue and magenta, then their bright versions. These codes
+    # name a color, and the terminal's theme picks the shade, so the colors suit
+    # a dark or a light background. Yellow and cyan are for mentions and code
+    _AUTHOR_STYLES = ("1;31", "1;32", "1;34", "1;35", "1;91", "1;92", "1;94", "1;95")
+    # Longer lines are hard to follow back to their start
+    _MAX_LINE_WIDTH = 100
+    _BODY_INDENT = "  "
+    _QUOTE_BAR = "| "
+    # Longer replied-to text is cut, as Discord cuts it above a reply
+    _REPLY_PREVIEW_LENGTH = 60
+
+    def __init__(self, directory: Directory, columns: int, is_colored: bool) -> None:
+        self._directory = directory
+        self._width = min(columns, self._MAX_LINE_WIDTH)
+        self._is_colored = is_colored
+
+    def format_category(self, name: str) -> str:
+        return "\n" + self._paint(name.upper(), self._BOLD)
+
+    def format_channel(self, channel_id: ChannelId) -> str:
+        name = self._directory.format_channel_id(channel_id)
+        return f"{self._paint(channel_id, self._DIM)}  {name}"
+
+    def format_channel_header(self, channel_id: ChannelId, count: int) -> str:
+        name = self._directory.format_channel_id(channel_id)
+        counted = self._paint(format_message_count(count), self._DIM)
+        return f"{self._paint(name, self._MENTION)}  {counted}\n"
+
+    def format_history(self, messages: Sequence[Message]) -> Iterator[str]:
+        day = None
+        for message in messages:
+            message_day = message.post.at.date()
+            if message_day != day:
+                day = message_day
+                yield self._format_rule(format_day(message.post.at)) + "\n"
+            output = self._format_message(message)
+            if message.thread is not None:
+                command = f"command read {message.thread.id}"
+                hint = f"-> {format_thread_summary(message.thread)}   {command}"
+                output += "\n" + self._BODY_INDENT + self._paint(hint, self._DIM)
+            yield output + "\n"
+
+    def _format_message(self, message: Message) -> str:
+        lines = []
+        if message.reply_to is not None:
+            lines.append(self._format_reply_preview(message.reply_to))
+        at = message.post.at.strftime("%H:%M")
+        lines += [
+            f"{self._format_author(message.post.author)}  {self._paint(at, self._DIM)}",
+            *self._format_body(message.post, self._BODY_INDENT),
+        ]
+        prefix = self._BODY_INDENT + self._paint(self._QUOTE_BAR, self._DIM)
+        for forwarded in message.forwarded:
+            label = f"forwarded from {format_timestamp(forwarded.at)}"
+            lines.append(prefix + self._paint(label, self._DIM))
+            lines += self._format_body(forwarded, prefix)
+        if message.reactions:
+            counts = "  ".join(
+                f":{reaction.emoji_name}: {reaction.count}"
+                for reaction in message.reactions
+            )
+            lines.append(self._BODY_INDENT + self._paint(counts, self._DIM))
+        return "\n".join(lines)
+
+    def _format_reply_preview(self, post: Post) -> str:
+        first_line = format_text(post, self._directory, lambda name: name).split("\n")[
+            0
+        ]
+        preview = (
+            first_line
+            if len(first_line) <= self._REPLY_PREVIEW_LENGTH
+            else first_line[: self._REPLY_PREVIEW_LENGTH] + "…"
+        )
+        return self._paint(f"re: {format_author(post.author)}  {preview}", self._DIM)
+
+    def _format_body(self, post: Post, prefix: str) -> list[str]:
+        text = self._style_markdown(
+            format_text(
+                post, self._directory, lambda name: self._paint(name, self._MENTION)
+            )
+        )
+        width = self._width - count_visible_characters(prefix)
+        # A message that only forwards another, or only holds files, has no text
+        lines = [
+            prefix + wrapped
+            for line in (text.split("\n") if text != "" else [])
+            for wrapped in wrap(line, width)
+        ]
+        for name in post.file_names:
+            lines.append(prefix + self._paint(f"file: {name}", self._DIM))
+        return lines
+
+    def _style_markdown(self, text: str) -> str:
+        """Turn Discord's markdown into styles.
+
+        Ref: https://support.discord.com/hc/en-us/articles/210298617
+        """
+        # Without color, the markers are all that shows the emphasis
+        if not self._is_colored:
+            return text
+        # Styled line by line, so a wrapped code block keeps its style. The first
+        # line names the block's language, if it names one
+        styled = re.sub(
+            r"```(?:\w*\n)?(.*?)```",
+            lambda block: "\n".join(
+                self._paint(line, self._CODE) for line in block[1].split("\n")
+            ),
+            text,
+            flags=re.DOTALL,
+        )
+        styled = re.sub(
+            r"`([^`\n]+)`", lambda code: self._paint(code[1], self._CODE), styled
+        )
+        # The doubled markers first, so ** is not read as two *
+        for marker, style in (
+            ("**", self._BOLD),
+            ("__", self._UNDERLINE),
+            ("~~", self._STRIKETHROUGH),
+            ("*", self._ITALIC),
+            ("_", self._ITALIC),
+        ):
+            escaped = re.escape(marker)
+            styled = re.sub(
+                rf"(?<!\w){escaped}([^\n]+?){escaped}(?!\w)",
+                # re.sub calls it before the loop moves on to the next style
+                lambda match: self._paint(match[1], style),  # noqa: B023
+                styled,
+            )
+        return styled
+
+    def _format_author(self, author: Author | None) -> str:
+        name = format_author(author)
+        # crc32 rather than hash(), which Python seeds differently on every run
+        index = zlib.crc32(name.encode()) % len(self._AUTHOR_STYLES)
+        return self._paint(name, self._AUTHOR_STYLES[index])
+
+    def _format_rule(self, label: str) -> str:
+        return self._paint(f"-- {label} --", self._DIM)
+
+    def _paint(self, text: str, style: str) -> str:
+        if not self._is_colored or text == "":
+            return text
+        return f"\x1b[{style}m{text}\x1b[0m"
+
+
+def count_visible_characters(text: str) -> int:
+    return len(re.sub(r"\x1b\[[0-9;]*m", "", text))
+
+
+def wrap(line: str, width: int) -> list[str]:
+    """Break a line at spaces to fit the width, counting only the characters that show.
+
+    Wrapped lines start under the line's text, and under the text of a list item.
+    """
+    text = line.lstrip(" ")
+    indent = " " * (len(line) - len(text))
+    hanging_indent = indent + "  " if re.match(r"[-*•] ", text) else indent
+    first_word, *other_words = text.split(" ")
+    lines: list[str] = []
+    current = indent + first_word
+    for word in other_words:
+        if count_visible_characters(f"{current} {word}") > width:
+            lines.append(current)
+            current = hanging_indent + word
+        else:
+            current = f"{current} {word}"
+    lines.append(current)
+    return lines
+
+
+def format_message_count(count: int) -> str:
+    return "1 message" if count == 1 else f"{count} messages"
+
+
+def format_thread_summary(thread: ThreadSummary) -> str:
+    match thread.message_count:
+        case None:
+            return f"thread {thread.name}"
+        case 1:
+            return f"1 message in {thread.name}"
+        case count:
+            return f"{count} messages in {thread.name}"
+
+
+def indent_continuation(output: str) -> str:
+    """Start every line after the first under the text, so each message starts at the margin."""
+    return output.replace("\n", "\n" + CONTINUATION_INDENT)
+
+
+def format_day(at: datetime) -> str:
+    return at.strftime("%A, %d %B %Y")
+
+
+def format_timestamp(at: datetime) -> str:
+    return at.strftime(TIMESTAMP_FORMAT)
+
+
+def format_author(author: Author | None) -> str:
+    return author.name if author is not None else "?"
+
+
+def format_text(
+    post: Post, directory: Directory, style_mention: Callable[[str], str]
+) -> str:
+    """Turn Discord's markup for mentions, emoji and times into plain text.
+
+    Ref: https://discord.com/developers/docs/reference#message-formatting
+    """
+    user_names = {author.id: author.name for author in post.mentions}
+    text = re.sub(
+        r"<@!?(\d+)>",
+        lambda mention: style_mention(
+            f"@{user_names.get(UserId(mention[1]), mention[1])}"
+        ),
+        post.text,
+    )
+    text = re.sub(
+        r"<@&(\d+)>",
+        lambda mention: style_mention(f"@{directory.format_role(RoleId(mention[1]))}"),
+        text,
+    )
+    text = re.sub(
+        r"<#(\d+)>",
+        lambda mention: style_mention(
+            directory.format_channel_id(ChannelId(mention[1]))
+        ),
+        text,
+    )
+    text = re.sub(r"<a?(:\w+:)\d+>", r"\1", text)
+    text = re.sub(
+        r"<t:(-?\d+)(?::[tTdDfFR])?>",
+        lambda stamp: format_timestamp(datetime.fromtimestamp(int(stamp[1]))),
+        text,
+    )
+    # Slash commands, like </deploy:123>
+    text = re.sub(r"</([\w -]+):\d+>", r"/\1", text)
+    # A link in angle brackets is one Discord shows without a preview
+    return re.sub(r"<(https?://[^>]+)>", r"\1", text)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Starts Claude in a loop's folder, where /loop without a prompt runs the
+# folder's .claude/loop.md
+
+set -u
+
+loops_directory="$HOME/$DOTDEV_ATDIR/claude-loops"
+
+if [ "$#" -ne 1 ] || [ ! -f "$loops_directory/$1/.claude/loop.md" ]; then
+    echo "Usage: ,claude-loop <name>, where <name> is one of these loops:" >&2
+    ls "$loops_directory" >&2
+    exit 1
+fi
+
+cd "$loops_directory/$1" || exit 1
+
+# The command is shell code, as GIT_SSH_COMMAND is, so it can carry arguments
+command="${CLAUDE_LOOP_COMMAND:-claude \"/loop 30m\"}"
+
+# Claude holds the lock while it runs, so a second start of the same loop fails
+# at once with 75, which sysexits.h names "try again later"
+flock --nonblock --conflict-exit-code 75 .lock sh -c "$command"
+status=$?
+if [ "$status" -eq 75 ]; then
+    echo "The $1 loop is already running" >&2
+fi
+exit "$status"

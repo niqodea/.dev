@@ -1,0 +1,1952 @@
+#!/usr/bin/env python3
+"""Slack CLI.
+
+The same file is installed under three names. As command, it only reads, and
+asks ,claude-approval to post. As describe and action, which only ,claude-approval runs, it
+says what a post asks for, and posts.
+
+command reads with SLACK_TOKEN, a user token (xoxp-) from an app created with
+manifest.json, and describe with the same token, kept in the Keychain as
+slack-cli. action posts with the user token of a second app, which can only
+post, kept in the Keychain as slack-write-cli.
+"""
+
+import argparse
+import itertools
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import zlib
+from collections.abc import Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, Literal, NewType, NoReturn, Protocol, assert_never
+
+UserId = NewType("UserId", str)
+ConversationId = NewType("ConversationId", str)
+MessageTimestamp = NewType("MessageTimestamp", str)
+UserName = NewType("UserName", str)
+
+# SLACK_TOKEN only has read scopes, so a method outside this list would fail
+# Each method needs its scope in manifest.json, and the two have to match,
+# except auth.test, which needs none
+type ReadMethod = Literal[
+    "auth.test",
+    "conversations.history",
+    "conversations.info",
+    "conversations.replies",
+    "search.messages",
+    "users.conversations",
+    "users.info",
+    "users.list",
+]
+# The write token only has chat:write
+type WriteMethod = Literal["chat.postMessage"]
+
+# Someone is waiting at the terminal, and an answer later than this is not worth
+# waiting for
+TIMEOUT_SECONDS = 30
+# Slack recommends at most 200 items per page
+# Ref: https://docs.slack.dev/apis/web-api/pagination
+PAGE_SIZE = 200
+# search.messages returns at most 100 matches per page, and pages by number
+# Ref: https://docs.slack.dev/reference/methods/search.messages
+SEARCH_PAGE_SIZE = 100
+# 110 conversations.info calls took 3.4 s eight at a time, without Slack limiting
+# the rate
+PARALLEL_CALLS = 8
+SLACKBOT_USER_ID = UserId("USLACKBOT")
+# Enough for the recent part of a conversation, and few enough to leave room in
+# Claude's context, which a read with neither --days nor --since gets
+DEFAULT_MESSAGE_LIMIT = 50
+DEFAULT_SEARCH_LIMIT = 20
+# unread checks only the threads you follow with a reply in this many days.
+# Ideally it would check them all, but Slack's API has no list of the threads you
+# follow, so unread finds them by searching recent replies. A week of replies took
+# 5 search calls and a month 28, and Slack allows search about 20 calls a minute
+RECENT_REPLY_DAYS = 7
+READ_TOKEN_KEYCHAIN_SERVICE = "slack-cli"
+WRITE_TOKEN_KEYCHAIN_SERVICE = "slack-write-cli"
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M"
+# Slack's markup for a mention, which notifies the person
+# Ref: https://docs.slack.dev/messaging/formatting-message-text
+MENTION_MARKUP_PATTERN = re.compile(r"<@(\w+)>")
+# A mention in a message to post, with a person's name or id inside
+MENTION_PATTERN = re.compile(r"<@([^>]+)>")
+USER_ID_PATTERN = re.compile(r"U[A-Z0-9]{8,}")
+# Continuation lines start under the text, after a timestamp and a space
+CONTINUATION_INDENT = " " * len(datetime(2000, 1, 1).strftime(TIMESTAMP_FORMAT) + " ")
+
+
+@dataclass(frozen=True)
+class Thread:
+    conversation_id: ConversationId
+    timestamp: MessageTimestamp
+
+
+@dataclass(frozen=True)
+class Description:
+    """What describe prints, as JSON, for ,claude-approval to show the person deciding:
+    what the request does, and what it acts on, each value under its label.
+    """
+
+    title: str
+    fields: dict[str, str]
+
+
+@dataclass(frozen=True)
+class ReplyPlace:
+    """The thread a message replies in."""
+
+    timestamp: MessageTimestamp
+    # The thread's latest message when command read it, so the person deciding
+    # sees the replies posted since, which Slack has no way to refuse a post over
+    seen_timestamp: MessageTimestamp
+
+
+@dataclass(frozen=True)
+class PostMessage:
+    """A message command asks ,claude-approval to post."""
+
+    conversation_id: ConversationId
+    # None outside a thread
+    reply_place: ReplyPlace | None
+    text: str
+
+
+@dataclass(frozen=True)
+class Window:
+    """The time to read messages from, open at an end that is None."""
+
+    oldest: datetime | None
+    latest: datetime | None
+
+    def contains(self, timestamp: MessageTimestamp) -> bool:
+        at = datetime.fromtimestamp(float(timestamp))
+        is_after_oldest = self.oldest is None or self.oldest <= at
+        is_before_latest = self.latest is None or at < self.latest
+        return is_after_oldest and is_before_latest
+
+
+@dataclass(frozen=True)
+class Channel:
+    name: str
+
+
+@dataclass(frozen=True)
+class GroupConversation:
+    """A direct message between several people, named after them."""
+
+    name: str
+
+
+@dataclass(frozen=True)
+class DirectConversation:
+    user_id: UserId
+
+
+type Conversation = Channel | GroupConversation | DirectConversation
+
+
+@dataclass(frozen=True)
+class UserAuthor:
+    id: UserId
+
+
+@dataclass(frozen=True)
+class NamedAuthor:
+    """An author known only by name, like a bot posting under one."""
+
+    name: str
+
+
+# Some system messages have no author
+type Author = UserAuthor | NamedAuthor | None
+
+
+@dataclass(frozen=True)
+class Reaction:
+    emoji_name: str
+    user_ids: tuple[UserId, ...]
+
+
+@dataclass(frozen=True)
+class Post:
+    """What a message says, wherever Slack shows it."""
+
+    timestamp: MessageTimestamp
+    author: Author
+    text: str
+    # None for a file that was deleted, or that you cannot open
+    file_names: tuple[str | None, ...]
+
+
+@dataclass(frozen=True)
+class ThreadStart:
+    """A message with replies in a thread."""
+
+    reply_count: int
+
+
+@dataclass(frozen=True)
+class ThreadReply:
+    """A reply in a thread, which a conversation's history shows only when it
+    was also sent to the conversation.
+    """
+
+    thread_timestamp: MessageTimestamp
+
+
+@dataclass(frozen=True)
+class Message:
+    post: Post
+    # None outside a thread
+    thread: ThreadStart | ThreadReply | None
+    reactions: tuple[Reaction, ...]
+    # Messages forwarded into this one, or linked from it and shown in full
+    shared: tuple[Post, ...]
+
+
+@dataclass(frozen=True)
+class SearchResult:
+    """A message found by search, which Slack returns without its replies or reactions."""
+
+    conversation: Conversation
+    post: Post
+    # Messages forwarded into this one, or linked from it and shown in full
+    shared: tuple[Post, ...]
+    permalink: str
+
+
+@dataclass(frozen=True)
+class History:
+    # Newest first
+    messages: tuple[Message, ...]
+    has_more: bool
+
+
+@dataclass(frozen=True)
+class NewMessage:
+    """A message you have not read."""
+
+    message: Message
+
+
+@dataclass(frozen=True)
+class NewReplies:
+    """The replies you have not read in a thread you follow, under the message
+    that starts the thread.
+    """
+
+    parent: Message
+    is_parent_new: bool
+    # The replies before the new ones, which unread leaves out
+    earlier_count: int
+    # Oldest first
+    replies: tuple[Message, ...]
+
+
+# What unread shows of a conversation. A thread's first message shows with its
+# new replies when it has some, so every message and reply shows once. A reply
+# also sent to the conversation shows in its thread when the thread shows, and as
+# a message otherwise
+type UnreadItem = NewMessage | NewReplies
+
+
+@dataclass(frozen=True)
+class UnreadConversation:
+    conversation_id: ConversationId
+    # Slack counts every message of a conversation you never opened as unread,
+    # so unread leaves them out, and shows only its threads you follow
+    was_opened: bool
+    # In the conversation's order, oldest first
+    items: tuple[UnreadItem, ...]
+
+
+@dataclass(frozen=True)
+class Unread:
+    # Those with unread messages or replies, the most recently active last
+    conversations: tuple[UnreadConversation, ...]
+    never_opened_ids: tuple[ConversationId, ...]
+
+
+class SlackError(Exception):
+    """An error Slack answered a call with."""
+
+
+class UsageError(Exception):
+    """An argument that points at nothing in Slack."""
+
+
+class Slack:
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def paginate(
+        self, method: ReadMethod, params: Mapping[str, str], items_key: str
+    ) -> Iterator[Mapping[str, Any]]:
+        """Yield every item under `items_key`, fetching the next page only when it is reached."""
+        body = self.call(method, params)
+        yield from body[items_key]
+        cursor = body.get("response_metadata", {}).get("next_cursor", "")
+        while cursor != "":
+            body = self.call(method, {**params, "cursor": cursor})
+            yield from body[items_key]
+            cursor = body.get("response_metadata", {}).get("next_cursor", "")
+
+    def call(
+        self, method: ReadMethod | WriteMethod, params: Mapping[str, str]
+    ) -> Mapping[str, Any]:
+        request = urllib.request.Request(
+            f"https://slack.com/api/{method}",
+            data=urllib.parse.urlencode(params).encode(),
+            headers={"Authorization": f"Bearer {self._token}"},
+        )
+        while True:
+            try:
+                with urllib.request.urlopen(
+                    request, timeout=TIMEOUT_SECONDS
+                ) as response:
+                    body: Mapping[str, Any] = json.load(response)
+            except urllib.error.HTTPError as error:
+                if error.code != 429:
+                    raise
+                time.sleep(int(error.headers["Retry-After"]))
+                continue
+            if not body["ok"]:
+                raise SlackError(f"{method}: {body['error']}")
+            return body
+
+
+class Directory:
+    """The workspace's people and the conversations you are in, looked up by id or name."""
+
+    def __init__(
+        self,
+        user_names: Mapping[UserId, UserName],
+        people: Mapping[UserId, UserName],
+        conversations: Mapping[ConversationId, Conversation],
+    ) -> None:
+        self._user_names = user_names
+        # The active people, who a message can mention, without bots and
+        # deactivated accounts
+        self._people = people
+        self._conversations = conversations
+
+    @staticmethod
+    def load(slack: Slack) -> "Directory":
+        # TODO: Cache the people on disk once the workspace needs more than a few pages,
+        # because Slack allows users.list only about 20 calls a minute
+        members = list(
+            slack.paginate("users.list", {"limit": str(PAGE_SIZE)}, "members")
+        )
+        params = {
+            "types": "public_channel,private_channel,mpim,im",
+            "exclude_archived": "true",
+            "limit": str(PAGE_SIZE),
+        }
+        channels = list(slack.paginate("users.conversations", params, "channels"))
+        return Directory(
+            user_names={
+                UserId(member["id"]): parse_user_name(member) for member in members
+            },
+            people={
+                UserId(member["id"]): parse_user_name(member)
+                for member in members
+                if not member["deleted"]
+                and not member["is_bot"]
+                and member["id"] != SLACKBOT_USER_ID
+            },
+            conversations={
+                ConversationId(channel["id"]): parse_conversation(channel)
+                for channel in channels
+            },
+        )
+
+    def format_user(self, user_id: UserId) -> str:
+        # People from other workspaces are missing from users.list
+        return self._user_names.get(user_id, user_id)
+
+    def format_conversation_id(self, conversation_id: ConversationId) -> str:
+        conversation = self._conversations.get(conversation_id)
+        # Channels you are not in are missing from users.conversations
+        if conversation is None:
+            return f"#{conversation_id}"
+        return self.format_conversation(conversation)
+
+    def list_conversation_ids(self) -> tuple[ConversationId, ...]:
+        return tuple(self._conversations)
+
+    def list_readable_conversation_ids(self) -> tuple[ConversationId, ...]:
+        # Slack answers channel_not_found when reading the DM with Slackbot
+        return tuple(
+            conversation_id
+            for conversation_id, conversation in self._conversations.items()
+            if conversation != DirectConversation(SLACKBOT_USER_ID)
+        )
+
+    def find_person_id(self, name: str) -> UserId:
+        # The whole name, in any case, as people type names
+        matches = [
+            user_id
+            for user_id, user_name in self._people.items()
+            if user_name.casefold() == name.casefold()
+        ]
+        match matches:
+            case [user_id]:
+                return user_id
+            case []:
+                people = ", ".join(sorted(self._people.values(), key=str.casefold))
+                raise UsageError(f"Nobody is named {name}. The people are: {people}")
+            case user_ids:
+                mentions = ", ".join(f"<@{user_id}>" for user_id in user_ids)
+                raise UsageError(
+                    f"Several people are named {name}. Write one of {mentions}"
+                )
+
+    def find_conversation_id(self, name_or_id: str) -> ConversationId:
+        # Slack keeps channel names lower case, and people type names in any case.
+        # Names are not unique, so a name several conversations share fails
+        # instead of picking one
+        wanted = name_or_id.casefold()
+        named = [
+            conversation_id
+            for conversation_id, conversation in self._conversations.items()
+            if self.format_conversation(conversation).casefold()
+            in (wanted, f"#{wanted}")
+        ]
+        match named:
+            case []:
+                pass
+            case [named_conversation_id]:
+                return named_conversation_id
+            case _:
+                raise UsageError(
+                    f"{name_or_id} names several conversations: {', '.join(named)}"
+                )
+        # After the names, so a channel typed in capitals is not taken for an id
+        if re.fullmatch(r"[CDG][A-Z0-9]{8,}", name_or_id) is not None:
+            return ConversationId(name_or_id)
+        if name_or_id.startswith("@"):
+            # Whole words only, so @Al does not reach Alice
+            matches = [
+                conversation_id
+                for conversation_id, conversation in self._conversations.items()
+                if isinstance(conversation, DirectConversation)
+                and f" {wanted[1:]} "
+                in f" {self.format_user(conversation.user_id).casefold()} "
+            ]
+            match matches:
+                case []:
+                    pass
+                case [direct_conversation_id]:
+                    return direct_conversation_id
+                case _:
+                    dms = ", ".join(
+                        f"{conversation_id} ({self.format_conversation(self._conversations[conversation_id])})"
+                        for conversation_id in matches
+                    )
+                    raise UsageError(f"{name_or_id} matches several DMs: {dms}")
+        # Bare names only match channels, so point out a DM that would have matched
+        if f"@{wanted}" in (
+            self.format_conversation(conversation).casefold()
+            for conversation in self._conversations.values()
+        ):
+            raise UsageError(
+                f"You are in no channel named {name_or_id}. For the DM, use @{name_or_id}"
+            )
+        raise UsageError(
+            f"You are in no conversation named {name_or_id}. `channels` lists them"
+        )
+
+    def format_conversation(self, conversation: Conversation) -> str:
+        match conversation:
+            case Channel(name=name):
+                return f"#{name}"
+            case GroupConversation(name=name):
+                return name
+            case DirectConversation(user_id=user_id):
+                return f"@{self.format_user(user_id)}"
+            case _:
+                assert_never(conversation)
+
+
+def main() -> None:
+    # Claude is told only of command, so it reads and asks, and never sees the
+    # posts action makes
+    match Path(sys.argv[0]).name:
+        case "command":
+            run_command()
+        case "describe":
+            print(json.dumps(asdict(describe_message(read_post_message()))))
+        case "action":
+            post_message(read_post_message())
+        case name:
+            sys.exit(f"Run this as command, describe or action, not as {name}")
+
+
+def run_command() -> None:
+    parser = argparse.ArgumentParser(
+        description="Slack CLI. It reads, and asks ,claude-approval to post.",
+        epilog="""\
+examples:
+  command channels                                      conversations you are in
+  command read general --limit 100                      latest 100 messages in #general
+  command read @alice --days 7                          the past week of a DM
+  command read general --since 2026-09-26 --days 2      the weekend of the 26th
+  command thread C0988R6JM7S/p1727000000123456         a thread, by the ID `read` prints
+  command thread 'https://x.slack.com/archives/C…/p…'   a thread, from a copied link
+  command search 'in:#general after:2026-09-25' -n 50   Slack's own search syntax
+  command search 'from:@alice in:#eng deploy' --limit 50
+  command mentions --days 7                             the past week's mentions of you
+  command unread                                        everything you have not read
+  command unread @alice                                 what you have not read in a DM
+  command post eng 'Deployed to prod'                   request a message in #eng
+  command reply C0988R6JM7S/p1727000000123456 'Fixed'   request a reply in a thread
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("channels", help="list the conversations you are in")
+
+    read_parser = commands.add_parser(
+        "read", help="print the latest messages in a conversation"
+    )
+    read_parser.add_argument("conversation", help="#channel, @person, or an id")
+    read_parser.add_argument(
+        "-n",
+        "--limit",
+        type=parse_limit,
+        help=f"{DEFAULT_MESSAGE_LIMIT} when neither --days nor --since is given",
+    )
+    add_window_arguments(read_parser)
+
+    thread_parser = commands.add_parser("thread", help="print a thread")
+    thread_parser.add_argument(
+        "thread",
+        type=parse_thread,
+        help="the thread's ID, like C0988R6JM7S/p1727000000123456, or its link",
+    )
+
+    search_parser = commands.add_parser(
+        "search", help="search messages, with Slack's own syntax"
+    )
+    search_parser.add_argument(
+        "query", nargs="+", help='e.g. "from:@alice in:#general after:2026-09-01"'
+    )
+    search_parser.add_argument(
+        "-n", "--limit", type=parse_limit, default=DEFAULT_SEARCH_LIMIT
+    )
+
+    mentions_parser = commands.add_parser(
+        "mentions", help="search messages that mention you"
+    )
+    mentions_parser.add_argument(
+        "-n",
+        "--limit",
+        type=parse_limit,
+        help=f"{DEFAULT_MESSAGE_LIMIT} when neither --days nor --since is given",
+    )
+    add_window_arguments(mentions_parser)
+
+    unread_parser = commands.add_parser(
+        "unread",
+        help="print the messages you have not read, and the replies you have not"
+        " read in threads you follow with a reply in the past"
+        f" {RECENT_REPLY_DAYS} days, everywhere or in one place",
+    )
+    unread_parser.add_argument(
+        "conversation", nargs="?", help="#channel, @person, or an id"
+    )
+
+    post_parser = commands.add_parser(
+        "post",
+        help="request a message in a conversation, which ,claude-approval posts once a"
+        " person approves it",
+    )
+    post_parser.add_argument("conversation", help="#channel, @person, or an id")
+    post_parser.add_argument(
+        "text", help="the message, in Slack's mrkdwn, where <@name> tags a person"
+    )
+
+    reply_parser = commands.add_parser(
+        "reply",
+        help="request a reply in a thread, which ,claude-approval posts once a person"
+        " approves it",
+    )
+    reply_parser.add_argument(
+        "thread",
+        type=parse_thread,
+        help="the thread's ID, like C0988R6JM7S/p1727000000123456, or its link",
+    )
+    reply_parser.add_argument(
+        "text", help="the reply, in Slack's mrkdwn, where <@name> tags a person"
+    )
+
+    args = parser.parse_args()
+    token = os.environ.get("SLACK_TOKEN")
+    # An empty token is what the README's export leaves when the Keychain has none
+    if token is None or token == "":
+        sys.exit("Set SLACK_TOKEN to a user token (xoxp-...), see README.md")
+    slack = Slack(token)
+
+    try:
+        match args.command:
+            case "channels":
+                directory = Directory.load(slack)
+                formatter = make_formatter(directory)
+                conversation_ids = directory.list_conversation_ids()
+                for conversation_id in sorted(
+                    conversation_ids, key=directory.format_conversation_id
+                ):
+                    print(formatter.format_conversation(conversation_id))
+            case "read":
+                limit = get_limit(args.limit, args.days, args.since)
+                directory = Directory.load(slack)
+                conversation_id = directory.find_conversation_id(args.conversation)
+                window = get_window(args.days, args.since)
+                history = list_messages(
+                    slack, conversation_id, limit, window.oldest, window.latest
+                )
+                if history.has_more:
+                    print(
+                        f"Older messages left out after the latest {limit}."
+                        " Raise --limit, or use --days or --since",
+                        file=sys.stderr,
+                    )
+                formatter = make_formatter(directory)
+                # Slack returns the newest first, and a conversation reads oldest first
+                for output in formatter.format_history(
+                    history.messages[::-1], conversation_id
+                ):
+                    print(output)
+            case "thread":
+                directory = Directory.load(slack)
+                parent, *replies = list_replies(slack, args.thread)
+                for output in make_formatter(directory).format_thread(parent, replies):
+                    print(output)
+            case "search":
+                directory = Directory.load(slack)
+                formatter = make_formatter(directory)
+                matches = search_messages(slack, " ".join(args.query))
+                # One past the limit, to tell whether there are more
+                results = list(itertools.islice(matches, args.limit + 1))
+                if len(results) > args.limit:
+                    print(
+                        f"More matches than the {args.limit} below."
+                        " Raise --limit, or narrow the query",
+                        file=sys.stderr,
+                    )
+                for result in results[: args.limit]:
+                    print(formatter.format_search_result(result))
+            case "mentions":
+                limit = get_limit(args.limit, args.days, args.since)
+                directory = Directory.load(slack)
+                identity = slack.call("auth.test", {})
+                user_id = UserId(identity["user_id"])
+                mention = f"<@{user_id}>"
+                window = get_window(args.days, args.since)
+                terms = [mention]
+                # after: and before: leave out the day they name, so 2 days
+                # widens the search by one day on each side, a margin in case
+                # Slack reads the dates in another timezone
+                if window.oldest is not None:
+                    terms.append(f"after:{window.oldest.date() - timedelta(days=2)}")
+                if window.latest is not None:
+                    terms.append(f"before:{window.latest.date() + timedelta(days=2)}")
+                matches = search_messages(slack, " ".join(terms))
+                mentions = (
+                    result
+                    for result in matches
+                    # Search also matches the user's name in link previews,
+                    # which do not mention them
+                    if mention in result.post.text
+                    # Search only narrows by whole days
+                    and window.contains(result.post.timestamp)
+                )
+                formatter = make_formatter(directory)
+                # One past the limit, to tell whether there are more
+                results = list(
+                    itertools.islice(mentions, None if limit is None else limit + 1)
+                )
+                kept = results[:limit]
+                if len(results) > len(kept):
+                    print(
+                        f"Older mentions left out after the latest {limit}."
+                        " Raise --limit, or use --days or --since",
+                        file=sys.stderr,
+                    )
+                for result in kept:
+                    print(formatter.format_search_result(result))
+            case "unread":
+                directory = Directory.load(slack)
+                now = datetime.now()
+                if args.conversation is None:
+                    conversation_ids = directory.list_readable_conversation_ids()
+                else:
+                    conversation_ids = (
+                        directory.find_conversation_id(args.conversation),
+                    )
+                recent_threads = find_recent_threads(
+                    slack, now - timedelta(days=RECENT_REPLY_DAYS)
+                )
+                unread = list_unread_conversations(
+                    slack, conversation_ids, recent_threads
+                )
+                last_full_unread_path = get_last_full_unread_path()
+                warn_of_missed_threads(
+                    read_modification_time(last_full_unread_path), now
+                )
+                if unread.never_opened_ids:
+                    names = ", ".join(
+                        directory.format_conversation_id(conversation_id)
+                        for conversation_id in unread.never_opened_ids
+                    )
+                    print(
+                        "Left out the messages, but not the threads you follow, of"
+                        " the conversations you never opened, where Slack counts"
+                        f" every message as unread: {names}. Read one with"
+                        " `command read <conversation>`",
+                        file=sys.stderr,
+                    )
+                formatter = make_formatter(directory)
+                if not unread.conversations:
+                    print("No unread messages")
+                for conversation in unread.conversations:
+                    for output in formatter.format_unread(conversation):
+                        print(output)
+                if args.conversation is None:
+                    last_full_unread_path.parent.mkdir(parents=True, exist_ok=True)
+                    last_full_unread_path.touch()
+            case "post":
+                directory = Directory.load(slack)
+                conversation_id = directory.find_conversation_id(args.conversation)
+                text = write_mentions(args.text, directory)
+                submit_message(PostMessage(conversation_id, None, text))
+            case "reply":
+                directory = Directory.load(slack)
+                text = write_mentions(args.text, directory)
+                # Fails for a thread that does not exist, before anyone is asked
+                # to approve a reply that cannot be posted
+                thread_messages = list_replies(slack, args.thread)
+                place = ReplyPlace(
+                    args.thread.timestamp, thread_messages[-1].post.timestamp
+                )
+                submit_message(PostMessage(args.thread.conversation_id, place, text))
+            case _:
+                raise ValueError(f"Unknown command {args.command}")
+    except (SlackError, UsageError) as error:
+        sys.exit(str(error))
+
+
+def submit_message(message: PostMessage) -> NoReturn:
+    """Ask ,claude-approval to post the message, and exit as it does."""
+    place = message.reply_place
+    arguments = {
+        "channel": message.conversation_id,
+        "thread": place.timestamp if place is not None else None,
+        "seen": place.seen_timestamp if place is not None else None,
+        "text": message.text,
+    }
+    # The submit link next to this file, which command is a link to, tells
+    # ,claude-approval which CLI asks
+    submit_path = Path(sys.argv[0]).resolve().with_name("submit")
+    result = subprocess.run(
+        [submit_path, "post-message", json.dumps(arguments)], check=False
+    )
+    sys.exit(result.returncode)
+
+
+def read_post_message() -> PostMessage:
+    """Return the message command asked ,claude-approval for, from the action's name
+    ,claude-approval gives as the argument, and the arguments as a JSON object on
+    standard input.
+    """
+    action = " ".join(sys.argv[1:])
+    match action, json.load(sys.stdin):
+        case (
+            "post-message",
+            {
+                "channel": str(conversation_id),
+                "thread": None,
+                "seen": None,
+                "text": str(text),
+                **rest,
+            },
+        ) if not rest:
+            return PostMessage(ConversationId(conversation_id), None, text)
+        case (
+            "post-message",
+            {
+                "channel": str(conversation_id),
+                "thread": str(thread_timestamp),
+                "seen": str(seen_timestamp),
+                "text": str(text),
+                **rest,
+            },
+        ) if not rest:
+            place = ReplyPlace(
+                MessageTimestamp(thread_timestamp), MessageTimestamp(seen_timestamp)
+            )
+            return PostMessage(ConversationId(conversation_id), place, text)
+        case "post-message", arguments:
+            sys.exit(
+                "post-message takes channel, thread and seen (both null outside a"
+                f" thread) and text, not {json.dumps(arguments)}"
+            )
+        case _:
+            sys.exit(f"Unknown action: {action}")
+
+
+def describe_message(message: PostMessage) -> Description:
+    slack = Slack(read_keychain_token(READ_TOKEN_KEYCHAIN_SERVICE))
+    mentioned_user_ids = [
+        UserId(user_id) for user_id in MENTION_MARKUP_PATTERN.findall(message.text)
+    ]
+    place = message.reply_place
+    try:
+        body = slack.call("conversations.info", {"channel": message.conversation_id})
+        conversation = parse_conversation(body["channel"])
+        new_replies = (
+            list_replies_since(slack, message.conversation_id, place)
+            if place is not None
+            else ()
+        )
+        named_user_ids = set(mentioned_user_ids)
+        if isinstance(conversation, DirectConversation):
+            named_user_ids.add(conversation.user_id)
+        named_user_ids.update(
+            reply.post.author.id
+            for reply in new_replies
+            if isinstance(reply.post.author, UserAuthor)
+        )
+        user_names = {
+            user_id: parse_user_name(
+                slack.call("users.info", {"user": user_id})["user"]
+            )
+            for user_id in named_user_ids
+        }
+    except SlackError as error:
+        sys.exit(str(error))
+    directory = Directory(
+        user_names=user_names,
+        people={},
+        conversations={message.conversation_id: conversation},
+    )
+    fields = {"To": directory.format_conversation_id(message.conversation_id)}
+    if place is not None:
+        fields["Thread"] = format_thread_id(
+            Thread(message.conversation_id, place.timestamp)
+        )
+    # TODO: Make this a warning ,claude-approval itself highlights, once a second and
+    # third CLI need one
+    if new_replies:
+        fields["Replies since the request"] = "\n".join(
+            format_message(reply, directory) for reply in new_replies
+        )
+    # The person deciding reads names, and the message posts the markup
+    fields["Text"] = MENTION_MARKUP_PATTERN.sub(
+        lambda mention: f"@{directory.format_user(UserId(mention[1]))}", message.text
+    )
+    if mentioned_user_ids:
+        fields["Notifies"] = ", ".join(
+            f"@{directory.format_user(user_id)}"
+            for user_id in dict.fromkeys(mentioned_user_ids)
+        )
+    title = "Post a message" if place is None else "Reply in a thread"
+    return Description(title, fields)
+
+
+def write_mentions(text: str, directory: Directory) -> str:
+    """Turn each <@name> in a message into Slack's markup for a mention, which
+    notifies the person, and keep each <@id> as it is.
+    """
+    return MENTION_PATTERN.sub(
+        lambda mention: (
+            mention[0]
+            if USER_ID_PATTERN.fullmatch(mention[1]) is not None
+            else f"<@{directory.find_person_id(mention[1])}>"
+        ),
+        text,
+    )
+
+
+def post_message(message: PostMessage) -> None:
+    params = {"channel": message.conversation_id, "text": message.text}
+    if message.reply_place is not None:
+        params["thread_ts"] = message.reply_place.timestamp
+    slack = Slack(read_keychain_token(WRITE_TOKEN_KEYCHAIN_SERVICE))
+    try:
+        body = slack.call("chat.postMessage", params)
+    except SlackError as error:
+        sys.exit(str(error))
+    thread = Thread(
+        conversation_id=ConversationId(body["channel"]),
+        timestamp=MessageTimestamp(body["ts"]),
+    )
+    print(f"Posted: {format_thread_id(thread)}")
+
+
+def read_keychain_token(service: str) -> str:
+    result = subprocess.run(
+        ["security", "find-generic-password", "-s", service, "-w"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        sys.exit(f"The Keychain has no {service} token, see README.md")
+    return result.stdout.strip()
+
+
+def parse_limit(value: str) -> int:
+    limit = int(value)
+    if limit < 1:
+        raise argparse.ArgumentTypeError(
+            f"{value} is not a positive number of messages"
+        )
+    return limit
+
+
+def parse_days(value: str) -> float:
+    days = float(value)
+    if days <= 0:
+        raise argparse.ArgumentTypeError(f"{value} is not a positive number of days")
+    return days
+
+
+def parse_date(value: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value} is not a date like 2026-09-25")
+
+
+def add_window_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--days",
+        type=parse_days,
+        help="how many days to read, ending now or starting at --since",
+    )
+    parser.add_argument(
+        "--since", type=parse_date, help="the first day to read, as YYYY-MM-DD"
+    )
+
+
+def get_limit(
+    limit: int | None, days: float | None, since: datetime | None
+) -> int | None:
+    """Return the --limit given, or the default when no window bounds the read."""
+    if limit is None and days is None and since is None:
+        return DEFAULT_MESSAGE_LIMIT
+    return limit
+
+
+def get_window(days: float | None, since: datetime | None) -> Window:
+    duration = timedelta(days=days) if days is not None else None
+    if since is None:
+        oldest = datetime.now() - duration if duration is not None else None
+        return Window(oldest=oldest, latest=None)
+    latest = since + duration if duration is not None else None
+    return Window(oldest=since, latest=latest)
+
+
+def parse_thread(value: str) -> Thread:
+    """Return the thread an ID names, or a link copied from Slack points into.
+
+    The ID is the end of the thread's link, so a link is accepted as it is.
+    """
+    match = re.fullmatch(
+        r"(?:https://[^/]+/archives/)?(\w+)/p(\d{10})(\d{6})(?:\?.*)?", value
+    )
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            f"{value} is not a thread ID like C0988R6JM7S/p1727000000123456, or a Slack link"
+        )
+    # A link to a reply carries the thread it belongs to in the query
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(value).query)
+    thread_timestamp = query.get("thread_ts", [f"{match[2]}.{match[3]}"])[0]
+    return Thread(
+        conversation_id=ConversationId(match[1]),
+        timestamp=MessageTimestamp(thread_timestamp),
+    )
+
+
+def format_thread_id(thread: Thread) -> str:
+    return f"{thread.conversation_id}/p{thread.timestamp.replace('.', '')}"
+
+
+def list_messages(
+    slack: Slack,
+    conversation_id: ConversationId,
+    limit: int | None,
+    oldest: datetime | None,
+    latest: datetime | None,
+) -> History:
+    """Return the latest messages in a conversation, up to the limit if there is one."""
+    page_size = PAGE_SIZE if limit is None else min(limit + 1, PAGE_SIZE)
+    params = {"channel": conversation_id, "limit": str(page_size)}
+    if oldest is not None:
+        params["oldest"] = str(oldest.timestamp())
+    if latest is not None:
+        params["latest"] = str(latest.timestamp())
+    # One past the limit, to tell whether there are more
+    items = list(
+        itertools.islice(
+            slack.paginate("conversations.history", params, "messages"),
+            None if limit is None else limit + 1,
+        )
+    )
+    kept = items[:limit]
+    return History(
+        messages=tuple(parse_message(item) for item in kept),
+        has_more=len(items) > len(kept),
+    )
+
+
+def list_replies(slack: Slack, thread: Thread) -> tuple[Message, ...]:
+    """Return a thread's parent followed by its replies."""
+    params = {
+        "channel": thread.conversation_id,
+        "ts": thread.timestamp,
+        "limit": str(PAGE_SIZE),
+    }
+    items = list(slack.paginate("conversations.replies", params, "messages"))
+    return tuple(parse_message(item) for item in items)
+
+
+def list_replies_since(
+    slack: Slack, conversation_id: ConversationId, place: ReplyPlace
+) -> tuple[Message, ...]:
+    """Return the thread's replies posted after the one command saw last."""
+    replies = list_replies(slack, Thread(conversation_id, place.timestamp))
+    # Exact, since a float of a timestamp rounds off its microseconds
+    seen = Decimal(place.seen_timestamp)
+    return tuple(reply for reply in replies if Decimal(reply.post.timestamp) > seen)
+
+
+def search_messages(slack: Slack, query: str) -> Iterator[SearchResult]:
+    """Yield every match, newest first, fetching the next page only when it is reached."""
+    page = 1
+    while True:
+        params = {
+            "query": query,
+            "count": str(SEARCH_PAGE_SIZE),
+            "page": str(page),
+            "sort": "timestamp",
+        }
+        body = slack.call("search.messages", params)
+        for item in body["messages"]["matches"]:
+            yield SearchResult(
+                conversation=parse_conversation(item["channel"]),
+                post=parse_post(item),
+                shared=parse_shared_posts(item),
+                permalink=item["permalink"],
+            )
+        if page >= body["messages"]["paging"]["pages"]:
+            return
+        page += 1
+
+
+def find_recent_threads(
+    slack: Slack, oldest: datetime
+) -> Mapping[ConversationId, frozenset[MessageTimestamp]]:
+    """Return the threads with a reply since `oldest`, by conversation."""
+    # after: leaves out the day it names, so 2 days is a margin in case Slack
+    # reads the date in another timezone
+    query = f"is:thread after:{oldest.date() - timedelta(days=2)}"
+    recent = itertools.takewhile(
+        lambda result: to_datetime(result.post.timestamp) >= oldest,
+        search_messages(slack, query),
+    )
+    # A reply's link names its thread
+    threads = {parse_thread(result.permalink) for result in recent}
+    return {
+        conversation_id: frozenset(
+            thread.timestamp
+            for thread in threads
+            if thread.conversation_id == conversation_id
+        )
+        for conversation_id in {thread.conversation_id for thread in threads}
+    }
+
+
+def list_unread_conversations(
+    slack: Slack,
+    conversation_ids: Sequence[ConversationId],
+    recent_threads: Mapping[ConversationId, frozenset[MessageTimestamp]],
+) -> Unread:
+    with ThreadPoolExecutor(max_workers=PARALLEL_CALLS) as pool:
+        conversations = list(
+            pool.map(
+                lambda conversation_id: get_unread_conversation(
+                    slack,
+                    conversation_id,
+                    recent_threads.get(conversation_id, frozenset()),
+                ),
+                conversation_ids,
+            )
+        )
+    return Unread(
+        conversations=tuple(
+            sorted(
+                (conversation for conversation in conversations if conversation.items),
+                key=get_latest_timestamp,
+            )
+        ),
+        never_opened_ids=tuple(
+            conversation.conversation_id
+            for conversation in conversations
+            if not conversation.was_opened
+        ),
+    )
+
+
+def get_unread_conversation(
+    slack: Slack,
+    conversation_id: ConversationId,
+    thread_timestamps: frozenset[MessageTimestamp],
+) -> UnreadConversation:
+    """Return the messages you have not read, and the threads you follow with
+    replies you have not read, among those that start at a thread timestamp.
+    """
+    info = slack.call("conversations.info", {"channel": conversation_id})
+    last_read = info["channel"]["last_read"]
+    # Slack reports a conversation you never opened as read up to this
+    was_opened = last_read != "0000000000.000000"
+    starts = [*thread_timestamps, *([last_read] if was_opened else [])]
+    if not starts:
+        return UnreadConversation(conversation_id, was_opened, ())
+    # One read reaches both the new messages and the start of each recent thread,
+    # whose first message says whether you follow it and which reply you read
+    # last. Slack allows conversations.replies about 50 calls a minute, so only
+    # the threads with new replies get one
+    params = {
+        "channel": conversation_id,
+        "oldest": min(starts, key=Decimal),
+        "inclusive": "true",
+        "limit": str(PAGE_SIZE),
+    }
+    # Slack returns the newest first, and a conversation reads oldest first
+    items = list(slack.paginate("conversations.history", params, "messages"))[::-1]
+    new_replies = {
+        MessageTimestamp(item["ts"]): list_new_replies(
+            slack,
+            Thread(conversation_id, MessageTimestamp(item["ts"])),
+            parse_message(item),
+            is_message_new(item, last_read if was_opened else None),
+            thread_last_read,
+        )
+        for item in items
+        if (thread_last_read := get_thread_last_read(item, conversation_id)) is not None
+    }
+    return UnreadConversation(
+        conversation_id=conversation_id,
+        was_opened=was_opened,
+        items=tuple(
+            unread_item
+            for item in items
+            if (
+                unread_item := classify_message(
+                    item, last_read if was_opened else None, new_replies
+                )
+            )
+            is not None
+        ),
+    )
+
+
+def get_thread_last_read(
+    item: Mapping[str, Any], conversation_id: ConversationId
+) -> Decimal | None:
+    """Return the last reply you read in the thread the message starts, or None
+    unless you follow the thread and have not read its latest reply.
+    """
+    match item:
+        case {
+            "subscribed": True,
+            "last_read": str(last_read),
+            "latest_reply": str(latest_reply),
+        }:
+            # Exact, since a float of a timestamp rounds off its microseconds
+            if Decimal(latest_reply) > Decimal(last_read):
+                return Decimal(last_read)
+            return None
+        case {"subscribed": True}:
+            thread = Thread(conversation_id, MessageTimestamp(item["ts"]))
+            raise SlackError(
+                f"Slack sent the thread {format_thread_id(thread)}, which you follow,"
+                " without the last reply you read"
+            )
+        case _:
+            return None
+
+
+def classify_message(
+    item: Mapping[str, Any],
+    last_read: str | None,
+    new_replies: Mapping[MessageTimestamp, NewReplies],
+) -> UnreadItem | None:
+    """Return what unread shows of a message, or None if it shows nothing.
+
+    `last_read` is None for a conversation you never opened, and `new_replies`
+    holds the threads you follow with new replies, by their first message.
+    """
+    message = parse_message(item)
+    match message.thread:
+        case ThreadReply(thread_timestamp=thread_timestamp) if (
+            thread_timestamp in new_replies
+        ):
+            return None
+        case _ if message.post.timestamp in new_replies:
+            return new_replies[message.post.timestamp]
+        case _ if is_message_new(item, last_read):
+            return NewMessage(message)
+        case _:
+            return None
+
+
+def is_message_new(item: Mapping[str, Any], last_read: str | None) -> bool:
+    """Whether the message came after the last one you read in its conversation.
+
+    `last_read` is None for a conversation you never opened.
+    """
+    return (
+        last_read is not None
+        and Decimal(item["ts"]) > Decimal(last_read)
+        # Slack does not count people joining or leaving as unread
+        and item.get("subtype") not in ("channel_join", "channel_leave")
+    )
+
+
+def list_new_replies(
+    slack: Slack,
+    thread: Thread,
+    parent: Message,
+    is_parent_new: bool,
+    last_read: Decimal,
+) -> NewReplies:
+    params = {
+        "channel": thread.conversation_id,
+        "ts": thread.timestamp,
+        "limit": str(PAGE_SIZE),
+    }
+    _, *replies = slack.paginate("conversations.replies", params, "messages")
+    # Exact, since a float of a timestamp rounds off its microseconds
+    new = [reply for reply in replies if Decimal(reply["ts"]) > last_read]
+    return NewReplies(
+        parent=parent,
+        is_parent_new=is_parent_new,
+        earlier_count=len(replies) - len(new),
+        replies=tuple(parse_message(reply) for reply in new),
+    )
+
+
+def get_latest_timestamp(conversation: UnreadConversation) -> Decimal:
+    return max(
+        Decimal(get_latest_message(item).post.timestamp) for item in conversation.items
+    )
+
+
+def get_first_message(item: UnreadItem) -> Message:
+    match item:
+        case NewMessage(message=message):
+            return message
+        case NewReplies(parent=parent):
+            return parent
+        case _:
+            assert_never(item)
+
+
+def get_latest_message(item: UnreadItem) -> Message:
+    match item:
+        case NewMessage(message=message):
+            return message
+        case NewReplies(replies=replies):
+            return replies[-1]
+        case _:
+            assert_never(item)
+
+
+def get_last_full_unread_path() -> Path:
+    # Ref: https://specifications.freedesktop.org/basedir-spec/latest/
+    state_directory = Path(
+        os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state"
+    )
+    return state_directory / "slack-cli" / "last-full-unread"
+
+
+def warn_of_missed_threads(last_full_run: datetime | None, now: datetime) -> None:
+    """Warn when unread may have missed a thread you follow.
+
+    A full unread at least every RECENT_REPLY_DAYS shows every thread you follow
+    while it still has a recent reply.
+    """
+    if last_full_run is None:
+        when = "has never checked every conversation on this computer"
+    elif now - last_full_run > timedelta(days=RECENT_REPLY_DAYS):
+        when = f"last checked every conversation {(now - last_full_run).days} days ago"
+    else:
+        return
+    print(
+        f"unread {when}, so it may miss threads you follow where nobody has replied"
+        f" for over {RECENT_REPLY_DAYS} days",
+        file=sys.stderr,
+    )
+
+
+def read_modification_time(path: Path) -> datetime | None:
+    """Return when the file last changed, or None if there is no file."""
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime)
+    except FileNotFoundError:
+        return None
+
+
+def parse_user_name(member: Mapping[str, Any]) -> UserName:
+    match member:
+        case {"profile": {"display_name": "", "real_name": real_name}}:
+            return UserName(real_name)
+        case {"profile": {"display_name": display_name}}:
+            return UserName(display_name)
+        case _:
+            raise ValueError(f"User {member['id']} has no name")
+
+
+def parse_conversation(channel: Mapping[str, Any]) -> Conversation:
+    match channel:
+        # users.conversations names the other person in "user", and search in "name"
+        case {"is_im": True, "user": user_id} | {"is_im": True, "name": user_id}:
+            return DirectConversation(UserId(user_id))
+        case {"is_mpim": True, "name": name}:
+            return GroupConversation(name)
+        case {"is_private": True, "name": name}:
+            return Channel(name)
+        case {"is_private": False, "name": name}:
+            return Channel(name)
+        case _:
+            raise ValueError(f"Conversation {channel['id']} has no name")
+
+
+def parse_message(item: Mapping[str, Any]) -> Message:
+    return Message(
+        post=parse_post(item),
+        thread=parse_thread_place(item),
+        reactions=tuple(
+            Reaction(
+                emoji_name=reaction["name"],
+                user_ids=tuple(UserId(user_id) for user_id in reaction["users"]),
+            )
+            for reaction in item.get("reactions", [])
+        ),
+        shared=parse_shared_posts(item),
+    )
+
+
+def parse_thread_place(item: Mapping[str, Any]) -> ThreadStart | ThreadReply | None:
+    match item:
+        case {"reply_count": int(reply_count)} if reply_count > 0:
+            return ThreadStart(reply_count)
+        # A thread's first message carries its own timestamp as thread_ts
+        case {"thread_ts": str(thread_timestamp)} if thread_timestamp != item["ts"]:
+            return ThreadReply(MessageTimestamp(thread_timestamp))
+        case _:
+            return None
+
+
+def parse_post(item: Mapping[str, Any]) -> Post:
+    match item:
+        case {"user": user_id}:
+            author: Author = UserAuthor(UserId(user_id))
+        case {"username": name}:
+            author = NamedAuthor(name)
+        case _:
+            author = None
+    # Search returns a bot's message with empty text, and the text only in its blocks
+    sections = [
+        block["text"]["text"] for block in item.get("blocks", []) if "text" in block
+    ]
+    return Post(
+        timestamp=MessageTimestamp(item["ts"]),
+        author=author,
+        text=item["text"] if item["text"] != "" else "\n".join(sections),
+        file_names=tuple(parse_file_name(file) for file in item.get("files", [])),
+    )
+
+
+def parse_shared_posts(item: Mapping[str, Any]) -> tuple[Post, ...]:
+    # The other attachments preview a link the text already shows
+    return tuple(
+        parse_shared_post(attachment)
+        for attachment in item.get("attachments", [])
+        if attachment.get("is_msg_unfurl") is True
+    )
+
+
+def parse_shared_post(attachment: Mapping[str, Any]) -> Post:
+    match attachment:
+        case {"author_id": user_id}:
+            author: Author = UserAuthor(UserId(user_id))
+        case {"author_name": name}:
+            author = NamedAuthor(name)
+        case _:
+            author = None
+    return Post(
+        timestamp=MessageTimestamp(attachment["ts"]),
+        author=author,
+        text=attachment.get("text", ""),
+        file_names=tuple(parse_file_name(file) for file in attachment.get("files", [])),
+    )
+
+
+def parse_file_name(file: Mapping[str, Any]) -> str | None:
+    match file:
+        case {"name": str(name)}:
+            return name
+        # Slack leaves a placeholder for a file that was deleted, or that you
+        # cannot open
+        case {"mode": "tombstone"}:
+            return None
+        case _:
+            raise ValueError(f"File {file['id']} has no name")
+
+
+def is_read_by_person() -> bool:
+    """Whether output goes to a terminal, rather than to a program or an agent reading a pipe.
+
+    FORCE_COLOR keeps the terminal layout through a pager, like `| less -R`.
+    Ref: https://force-color.org
+    """
+    if os.environ.get("FORCE_COLOR", "") != "":
+        return True
+    return sys.stdout.isatty() and os.environ.get("TERM") != "dumb"
+
+
+def make_formatter(directory: Directory) -> "Formatter":
+    if not is_read_by_person():
+        return PlainFormatter(directory)
+    columns = shutil.get_terminal_size().columns
+    # Ref: https://no-color.org
+    is_colored = os.environ.get("NO_COLOR", "") == ""
+    return TerminalFormatter(directory, columns, is_colored)
+
+
+class Formatter(Protocol):
+    def format_conversation(self, conversation_id: ConversationId) -> str: ...
+
+    def format_history(
+        self, messages: Sequence[Message], conversation_id: ConversationId
+    ) -> Iterator[str]:
+        """Yield the conversation's messages, given oldest first."""
+        ...
+
+    def format_thread(
+        self, parent: Message, replies: Sequence[Message]
+    ) -> Iterator[str]: ...
+
+    def format_search_result(self, result: SearchResult) -> str: ...
+
+    def format_unread(self, conversation: UnreadConversation) -> Iterator[str]: ...
+
+
+class PlainFormatter:
+    """One message per line and every name spelled out, for programs and agents."""
+
+    def __init__(self, directory: Directory) -> None:
+        self._directory = directory
+
+    def format_conversation(self, conversation_id: ConversationId) -> str:
+        return f"{conversation_id}  {self._directory.format_conversation_id(conversation_id)}"
+
+    def format_history(
+        self, messages: Sequence[Message], conversation_id: ConversationId
+    ) -> Iterator[str]:
+        for message in messages:
+            yield format_message(message, self._directory)
+            pointer = format_thread_pointer(message, conversation_id)
+            if pointer is not None:
+                label, command = pointer
+                yield f"    [{label}: {command}]"
+
+    def format_thread(
+        self, parent: Message, replies: Sequence[Message]
+    ) -> Iterator[str]:
+        yield format_message(parent, self._directory)
+        for reply in replies:
+            yield self._format_reply(reply)
+
+    def format_search_result(self, result: SearchResult) -> str:
+        conversation_name = self._directory.format_conversation(result.conversation)
+        output = format_search_result(result, self._directory)
+        return f"{conversation_name}  {output}\n    {result.permalink}"
+
+    def format_unread(self, conversation: UnreadConversation) -> Iterator[str]:
+        conversation_id = conversation.conversation_id
+        name = self._directory.format_conversation_id(conversation_id)
+        yield f"== {name}: {format_unread_count(conversation)} =="
+        for item in conversation.items:
+            match item:
+                case NewMessage(message=message):
+                    yield from self.format_history((message,), conversation_id)
+                case NewReplies():
+                    yield from self._format_new_replies(item, conversation_id)
+                case _:
+                    assert_never(item)
+
+    def _format_new_replies(
+        self, new_replies: NewReplies, conversation_id: ConversationId
+    ) -> Iterator[str]:
+        parent = format_message(new_replies.parent, self._directory)
+        yield parent if new_replies.is_parent_new else f"[earlier message] {parent}"
+        if new_replies.earlier_count > 0:
+            label = format_earlier_reply_count(new_replies.earlier_count)
+            thread = Thread(conversation_id, new_replies.parent.post.timestamp)
+            yield f"    [{label}: command thread {format_thread_id(thread)}]"
+        for reply in new_replies.replies:
+            yield self._format_reply(reply)
+
+    def _format_reply(self, reply: Message) -> str:
+        return "    " + format_message(reply, self._directory).replace("\n", "\n    ")
+
+
+class TerminalFormatter:
+    """A layout like Slack's own, for a person at a terminal.
+
+    Each message starts with its author on a line of its own, a rule marks each
+    new day, long lines wrap under their start, and reactions show as counts.
+    Ref: https://en.wikipedia.org/wiki/ANSI_escape_code#SGR
+    """
+
+    _BOLD = "1"
+    _DIM = "2"
+    _ITALIC = "3"
+    _UNDERLINE = "4"
+    _STRIKETHROUGH = "9"
+    _MENTION = "1;33"
+    _CODE = "36"
+    # Bold red, green, blue and magenta, then their bright versions. These codes
+    # name a color, and the terminal's theme picks the shade, so the colors suit
+    # a dark or a light background. Yellow and cyan are for mentions and code
+    _AUTHOR_STYLES = ("1;31", "1;32", "1;34", "1;35", "1;91", "1;92", "1;94", "1;95")
+    # Longer lines are hard to follow back to their start
+    _MAX_LINE_WIDTH = 100
+    _BODY_INDENT = "  "
+    _REPLY_INDENT = "    "
+    _QUOTE_BAR = "| "
+
+    def __init__(self, directory: Directory, columns: int, is_colored: bool) -> None:
+        self._directory = directory
+        self._width = min(columns, self._MAX_LINE_WIDTH)
+        self._is_colored = is_colored
+
+    def format_conversation(self, conversation_id: ConversationId) -> str:
+        name = self._directory.format_conversation_id(conversation_id)
+        return f"{self._paint(conversation_id, self._DIM)}  {name}"
+
+    def format_history(
+        self, messages: Sequence[Message], conversation_id: ConversationId
+    ) -> Iterator[str]:
+        day = None
+        for message in messages:
+            message_day = to_datetime(message.post.timestamp).date()
+            if message_day != day:
+                day = message_day
+                yield self._format_rule(format_day(message.post.timestamp), "") + "\n"
+            yield self._format_message_with_pointer(message, conversation_id) + "\n"
+
+    def format_thread(
+        self, parent: Message, replies: Sequence[Message]
+    ) -> Iterator[str]:
+        yield self._format_rule(format_day(parent.post.timestamp), "") + "\n"
+        yield self._format_message(parent, "") + "\n"
+        yield self._format_rule(format_reply_count(len(replies)), "") + "\n"
+        yield from self._format_replies(parent, replies, "")
+
+    def format_search_result(self, result: SearchResult) -> str:
+        conversation_name = self._directory.format_conversation(result.conversation)
+        author = self._format_author(result.post.author)
+        at = format_timestamp(result.post.timestamp)
+        lines = [
+            f"{self._paint(conversation_name, self._MENTION)}  {author}  {self._paint(at, self._DIM)}",
+            *self._format_body(result.post, self._BODY_INDENT),
+            *self._format_shared(result.shared, self._BODY_INDENT),
+            self._BODY_INDENT + self._paint(result.permalink, self._DIM),
+        ]
+        return "\n".join(lines) + "\n"
+
+    def format_unread(self, conversation: UnreadConversation) -> Iterator[str]:
+        conversation_id = conversation.conversation_id
+        name = self._directory.format_conversation_id(conversation_id)
+        count = format_unread_count(conversation)
+        yield f"{self._paint(name, self._MENTION)}  {self._paint(count, self._DIM)}\n"
+        day = None
+        for item in conversation.items:
+            first = get_first_message(item)
+            message_day = to_datetime(first.post.timestamp).date()
+            if message_day != day:
+                day = message_day
+                rule = self._format_rule(format_day(first.post.timestamp), "")
+                yield rule + "\n"
+            match item:
+                case NewMessage(message=message):
+                    yield (
+                        self._format_message_with_pointer(message, conversation_id)
+                        + "\n"
+                    )
+                case NewReplies():
+                    yield from self._format_new_replies(item, conversation_id)
+                case _:
+                    assert_never(item)
+
+    def _format_new_replies(
+        self, new_replies: NewReplies, conversation_id: ConversationId
+    ) -> Iterator[str]:
+        if not new_replies.is_parent_new:
+            yield self._paint("earlier message", self._DIM)
+        output = self._format_message(new_replies.parent, "")
+        if new_replies.earlier_count > 0:
+            label = format_earlier_reply_count(new_replies.earlier_count)
+            thread = Thread(conversation_id, new_replies.parent.post.timestamp)
+            hint = f"-> {label}   command thread {format_thread_id(thread)}"
+            output += "\n" + self._REPLY_INDENT + self._paint(hint, self._DIM)
+        yield output + "\n"
+        yield from self._format_replies(
+            new_replies.parent, new_replies.replies, self._REPLY_INDENT
+        )
+
+    def _format_replies(
+        self, parent: Message, replies: Sequence[Message], indent: str
+    ) -> Iterator[str]:
+        day = to_datetime(parent.post.timestamp).date()
+        for reply in replies:
+            reply_day = to_datetime(reply.post.timestamp).date()
+            if reply_day != day:
+                day = reply_day
+                yield self._format_rule(format_day(reply.post.timestamp), indent) + "\n"
+            yield self._format_message(reply, indent) + "\n"
+
+    def _format_message_with_pointer(
+        self, message: Message, conversation_id: ConversationId
+    ) -> str:
+        output = self._format_message(message, "")
+        pointer = format_thread_pointer(message, conversation_id)
+        if pointer is None:
+            return output
+        label, command = pointer
+        hint = f"-> {label}   {command}"
+        return output + "\n" + self._BODY_INDENT + self._paint(hint, self._DIM)
+
+    def _format_message(self, message: Message, indent: str) -> str:
+        at = to_datetime(message.post.timestamp).strftime("%H:%M")
+        body_indent = indent + self._BODY_INDENT
+        lines = [
+            f"{indent}{self._format_author(message.post.author)}  {self._paint(at, self._DIM)}",
+            *self._format_body(message.post, body_indent),
+            *self._format_shared(message.shared, body_indent),
+        ]
+        if message.reactions:
+            counts = "  ".join(
+                f":{reaction.emoji_name}: {len(reaction.user_ids)}"
+                for reaction in message.reactions
+            )
+            lines.append(body_indent + self._paint(counts, self._DIM))
+        return "\n".join(lines)
+
+    def _format_shared(self, posts: Sequence[Post], indent: str) -> list[str]:
+        prefix = indent + self._paint(self._QUOTE_BAR, self._DIM)
+        lines = []
+        for post in posts:
+            author = self._format_author(post.author)
+            at = format_timestamp(post.timestamp)
+            lines.append(f"{prefix}{author}  {self._paint(at, self._DIM)}")
+            lines += self._format_body(post, prefix)
+        return lines
+
+    def _format_body(self, post: Post, prefix: str) -> list[str]:
+        text = self._format_text(post.text)
+        width = self._width - count_visible_characters(prefix)
+        lines = [
+            prefix + wrapped
+            for line in text.split("\n")
+            for wrapped in wrap(line, width)
+        ]
+        for name in post.file_names:
+            label = name if name is not None else "unavailable"
+            lines.append(prefix + self._paint(f"file: {label}", self._DIM))
+        return lines
+
+    def _format_text(self, text: str) -> str:
+        """Turn Slack's markup into styles.
+
+        Ref: https://docs.slack.dev/messaging/formatting-message-text
+        """
+        tokens: list[str] = []
+
+        def hold(token: re.Match[str]) -> str:
+            tokens.append(unescape(self._format_token(token[1])))
+            return f"\x00{len(tokens) - 1}\x00"
+
+        # Set the mentions and links aside, so the styles below never match inside a URL
+        text = re.sub(r"<([^>]+)>", hold, text)
+        # Without color, the markers are all that shows the emphasis
+        if self._is_colored:
+            # Styled line by line, so a wrapped code block keeps its style
+            text = re.sub(
+                r"```\n?(.*?)```",
+                lambda block: "\n".join(
+                    self._paint(line, self._CODE) for line in block[1].split("\n")
+                ),
+                text,
+                flags=re.DOTALL,
+            )
+            text = re.sub(
+                r"`([^`\n]+)`", lambda code: self._paint(code[1], self._CODE), text
+            )
+            for marker, style in (
+                ("*", self._BOLD),
+                ("_", self._ITALIC),
+                ("~", self._STRIKETHROUGH),
+            ):
+                escaped = re.escape(marker)
+                text = re.sub(
+                    rf"(?<!\w){escaped}([^{escaped}\n]+){escaped}(?!\w)",
+                    # re.sub calls it before the loop moves on to the next style
+                    lambda styled: self._paint(styled[1], style),  # noqa: B023
+                    text,
+                )
+        return re.sub(
+            r"\x00(\d+)\x00", lambda held: tokens[int(held[1])], unescape(text)
+        )
+
+    def _format_token(self, token: str) -> str:
+        """Format what Slack puts between < and >, like a mention or a link."""
+        if (user := re.fullmatch(r"@(\w+)(?:\|.*)?", token)) is not None:
+            name = self._directory.format_user(UserId(user[1]))
+            return self._paint(f"@{name}", self._MENTION)
+        if (channel := re.fullmatch(r"#\w+\|(.+)", token)) is not None:
+            return self._paint(f"#{channel[1]}", self._MENTION)
+        # Newer messages have no channel name in the markup
+        if (channel := re.fullmatch(r"#(\w+)\|?", token)) is not None:
+            name = self._directory.format_conversation_id(ConversationId(channel[1]))
+            return self._paint(name, self._MENTION)
+        if (
+            link := re.fullmatch(r"((?:https?|mailto):[^|]+)\|(.+)", token)
+        ) is not None:
+            url, label = link[1], link[2]
+            if is_shortened_url(label, url):
+                return self._paint(url, self._UNDERLINE)
+            return f"{self._paint(label, self._UNDERLINE)} {self._paint(f'({url})', self._DIM)}"
+        # User groups and dates, like <!subteam^S123|@design>
+        if (labelled := re.fullmatch(r"[^|]*\|(.+)", token)) is not None:
+            return self._paint(labelled[1], self._MENTION)
+        if (special := re.fullmatch(r"!(\w+)", token)) is not None:
+            return self._paint(f"@{special[1]}", self._MENTION)
+        return self._paint(token, self._UNDERLINE)
+
+    def _format_author(self, author: Author) -> str:
+        name = format_author(author, self._directory)
+        # crc32 rather than hash(), which Python seeds differently on every run
+        index = zlib.crc32(name.encode()) % len(self._AUTHOR_STYLES)
+        return self._paint(name, self._AUTHOR_STYLES[index])
+
+    def _format_rule(self, label: str, indent: str) -> str:
+        return indent + self._paint(f"-- {label} --", self._DIM)
+
+    def _paint(self, text: str, style: str) -> str:
+        if not self._is_colored or text == "":
+            return text
+        return f"\x1b[{style}m{text}\x1b[0m"
+
+
+def count_visible_characters(text: str) -> int:
+    return len(re.sub(r"\x1b\[[0-9;]*m", "", text))
+
+
+def wrap(line: str, width: int) -> list[str]:
+    """Break a line at spaces to fit the width, counting only the characters that show.
+
+    Wrapped lines start under the line's text, and under the text of a list item.
+    """
+    text = line.lstrip(" ")
+    indent = " " * (len(line) - len(text))
+    hanging_indent = indent + "  " if re.match(r"[•◦▪] ", text) else indent
+    first_word, *other_words = text.split(" ")
+    lines: list[str] = []
+    current = indent + first_word
+    for word in other_words:
+        if count_visible_characters(f"{current} {word}") > width:
+            lines.append(current)
+            current = hanging_indent + word
+        else:
+            current = f"{current} {word}"
+    lines.append(current)
+    return lines
+
+
+def format_unread_count(conversation: UnreadConversation) -> str:
+    message_count = sum(
+        isinstance(item, NewMessage) or item.is_parent_new
+        for item in conversation.items
+    )
+    reply_count = sum(
+        len(item.replies) for item in conversation.items if isinstance(item, NewReplies)
+    )
+    counts = (
+        (message_count, "new message", "new messages"),
+        (reply_count, "new reply", "new replies"),
+    )
+    return ", ".join(
+        f"{count} {singular if count == 1 else plural}"
+        for count, singular, plural in counts
+        if count > 0
+    )
+
+
+def format_earlier_reply_count(count: int) -> str:
+    return "1 earlier reply" if count == 1 else f"{count} earlier replies"
+
+
+def format_thread_pointer(
+    message: Message, conversation_id: ConversationId
+) -> tuple[str, str] | None:
+    """Return what a message in a conversation's history has to do with a
+    thread, and the command that prints the thread, or None outside a thread.
+    """
+    match message.thread:
+        case ThreadStart(reply_count=reply_count):
+            label = format_reply_count(reply_count)
+            thread = Thread(conversation_id, message.post.timestamp)
+        case ThreadReply(thread_timestamp=thread_timestamp):
+            label = "reply in thread"
+            thread = Thread(conversation_id, thread_timestamp)
+        case None:
+            return None
+        case _:
+            assert_never(message.thread)
+    return label, f"command thread {format_thread_id(thread)}"
+
+
+def format_reply_count(count: int) -> str:
+    return "1 reply" if count == 1 else f"{count} replies"
+
+
+def format_message(message: Message, directory: Directory) -> str:
+    reactions = ""
+    for reaction in message.reactions:
+        reactors = ", ".join(
+            directory.format_user(user_id) for user_id in reaction.user_ids
+        )
+        reactions += f" [:{reaction.emoji_name}: {reactors}]"
+    output = format_post(message.post, directory) + reactions
+    for shared in message.shared:
+        quoted = indent_continuation(format_post(shared, directory))
+        output += "\n> " + quoted.replace("\n", "\n> ")
+    return indent_continuation(output)
+
+
+def format_search_result(result: SearchResult, directory: Directory) -> str:
+    output = format_post(result.post, directory)
+    for shared in result.shared:
+        quoted = indent_continuation(format_post(shared, directory))
+        output += "\n> " + quoted.replace("\n", "\n> ")
+    return indent_continuation(output)
+
+
+def format_post(post: Post, directory: Directory) -> str:
+    at = format_timestamp(post.timestamp)
+    author = format_author(post.author, directory)
+    text = format_text(post.text, directory)
+    files = "".join(format_file_name(name) for name in post.file_names)
+    return f"{at} {author}: {text}{files}"
+
+
+def indent_continuation(output: str) -> str:
+    """Start every line after the first under the text, so each message starts at the margin."""
+    return output.replace("\n", "\n" + CONTINUATION_INDENT)
+
+
+def format_file_name(name: str | None) -> str:
+    return f" [file: {name}]" if name is not None else " [unavailable file]"
+
+
+def to_datetime(timestamp: MessageTimestamp) -> datetime:
+    return datetime.fromtimestamp(float(timestamp))
+
+
+def format_day(timestamp: MessageTimestamp) -> str:
+    return to_datetime(timestamp).strftime("%A, %d %B %Y")
+
+
+def format_timestamp(timestamp: MessageTimestamp) -> str:
+    return to_datetime(timestamp).strftime(TIMESTAMP_FORMAT)
+
+
+def format_author(author: Author, directory: Directory) -> str:
+    match author:
+        case UserAuthor(id=user_id):
+            return directory.format_user(user_id)
+        case NamedAuthor(name=name):
+            return name
+        case None:
+            return "?"
+        case _:
+            assert_never(author)
+
+
+def format_text(text: str, directory: Directory) -> str:
+    """Turn Slack's markup for mentions and links into plain text.
+
+    Ref: https://docs.slack.dev/messaging/formatting-message-text
+    """
+    text = re.sub(
+        r"<@(\w+)(?:\|[^>]*)?>",
+        lambda mention: f"@{directory.format_user(UserId(mention[1]))}",
+        text,
+    )
+    text = re.sub(r"<#\w+\|([^>]+)>", r"#\1", text)
+    # Newer messages have no channel name in the markup
+    text = re.sub(
+        r"<#(\w+)\|?>",
+        lambda mention: directory.format_conversation_id(ConversationId(mention[1])),
+        text,
+    )
+    text = re.sub(
+        r"<((?:https?|mailto):[^|>]+)\|([^>]+)>",
+        lambda link: (
+            link[1] if is_shortened_url(link[2], link[1]) else f"{link[2]} ({link[1]})"
+        ),
+        text,
+    )
+    # User groups and dates, like <!subteam^S123|@design>
+    text = re.sub(r"<[^|>]*\|([^>]+)>", r"\1", text)
+    text = re.sub(r"<!(\w+)>", r"@\1", text)
+    text = re.sub(r"<([^>]+)>", r"\1", text)
+    return unescape(text)
+
+
+def is_shortened_url(label: str, url: str) -> bool:
+    """Whether a link's label is the link itself, as Slack labels a pasted link."""
+    host = urllib.parse.urlparse(url).netloc
+    return label == url.removeprefix("mailto:") or (
+        host != "" and label.startswith(host)
+    )
+
+
+def unescape(text: str) -> str:
+    # Slack escapes only these three characters
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+if __name__ == "__main__":
+    main()

@@ -35,26 +35,35 @@ It asks with `submit <action> <arguments>`, where `<arguments>` is a JSON object
 
 A CLI installs the changes it can ask for under `~/.config/approval/clis/<cli>/`:
 
-- `submit`: a link to `,approval`, which takes the CLI from the folder the link is in, so a CLI can only ask for its own actions.
-- `describe`: an executable, not on `PATH`, that `,approval` runs when the request is submitted, with the action's name, and the arguments as a JSON object on its standard input.
+- `submit`: a link to `,claude-approval`, which takes the CLI from the folder the link is in, so a CLI can only ask for its own actions.
+- `describe`: an executable, not on `PATH`, that `,claude-approval` runs when the request is submitted, with the action's name, and the arguments as a JSON object on its standard input.
   It checks the arguments, fails with the reason for a name it does not know, one it misses, or a value it cannot use, and prints a JSON object like `{"title": "Post a message", "fields": {"To": "@alice", "Text": "Deployed"}}`: what the request does, and what it acts on, each value under a label, looking up what the arguments only name by ID, like a channel's name.
   A request it fails on is not queued.
-- `action`: an executable, not on `PATH`, that `,approval` runs the same way once the request is approved.
+- `action`: an executable, not on `PATH`, that `,claude-approval` runs the same way once the request is approved.
   It checks the arguments again, and what can change while the request waits, like whether a pod still exists.
   It makes the change, exits with 0 when it succeeded and prints the reason to stderr when not.
 - `describe` and `action` can be the CLI itself under other names, so the CLI and its changes share their code, and the arguments are read by the same function, while Claude is told only of the CLI.
-  The arguments are only what the action needs. We read the description, which comes from those same arguments, and `a` in `,approval-answer` shows the arguments, which are exactly what the action gets.
+  The arguments are only what the action needs. We read the description, which comes from those same arguments, and `a` in `,claude-approval-answer` shows the arguments, which are exactly what the action gets.
 - `auto-approved.json`: the requests that run without asking, as a list of rules like `{"action": "run", "arguments": {"environment": "dev"}}`.
   A rule matches a request for its action that has each of its arguments, with the same value.
   Rules have no patterns and no negation: a condition that needs more becomes an argument, or an action that checks it.
 
 Any other request waits until we decide on it, in the queue of the project the shell is in: `<atdir>/approval` at the project's root, so it moves with the project.
-Only `,approval-answer` decides, in any terminal: `,approval` itself only reports what waits.
-An open `,approval-answer` shows a request as soon as it is queued, since `,approval` signals it with `SIGUSR1`.
-After a queue changes, `,approval` runs `~/.config/approval/on-change <project>` if it is installed, which keeps the count in the project's tmux session, so the status line shows `y` as soon as a request waits.
-In tmux, M-y opens `,approval-answer` on the session's project in an `approval` [special pane](../tmux/README.md#special-panes) when a request waits, or moves to it if it is already open.
-Its [panel](../tmux/README.md#special-panes) shows what `,approval status` prints: what waits and what was last decided.
+Only `,claude-approval-answer` decides, in any terminal: `,claude-approval` itself only reports what waits.
+An open `,claude-approval-answer` shows a request as soon as it is queued, since `,claude-approval` signals it with `SIGUSR1`.
+After a queue changes, `,claude-approval` runs `~/.config/approval/on-change <project>` if it is installed, which keeps the count in the project's tmux session, so the status line shows `y` as soon as a request waits.
+In tmux, M-y opens `,claude-approval-answer` on the session's project in an `approval` [special pane](../tmux/README.md#special-panes) when a request waits, or moves to it if it is already open.
+Its [panel](../tmux/README.md#special-panes) shows what `,claude-approval status` prints: what waits and what was last decided.
 The `approval-status` skill, with the script it runs, shows Claude what waits and what was decided.
-`,approval` gives an action only `PATH` and `HOME`, and stops it, with every process it started, after a time limit.
+`,claude-approval` gives an action only `PATH` and `HOME`, and stops it, with every process it started, after a time limit.
 
 This steers how Claude works, and protects nothing: Claude's shell has the same logins the actions use.
+
+### CLIs
+
+`clis/` holds the CLIs we write for Claude, like `slack`, one folder each with its own README.
+Each one is installed as a Claude Code skill, with the CLI as the skill's `command`, and never on `PATH`, since a CLI that asks for its changes only makes sense with Claude asking.
+
+### Loops
+
+`,claude-loop <name>` starts Claude on a loop of tasks it repeats every 30 minutes, as [`loop/`](loop/README.md) describes.

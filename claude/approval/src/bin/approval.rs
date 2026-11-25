@@ -19,8 +19,8 @@ use clap::{Parser, Subcommand};
 
 const EXAMPLES: &str = "\
 Examples:
-  ,approval status                 what waits, and what was decided
-  ,approval count                  how many requests wait
+  ,claude-approval status         what waits, and what was decided
+  ,claude-approval count          how many requests wait
 
 A CLI requests an action with the submit link in its folder, like
   ~/.config/approval/clis/avatar/submit approve-consent '{\"environment\": \"prod\", ...}'";
@@ -31,7 +31,7 @@ const STATUS_ANSWERED_COUNT: usize = 10;
 
 /// Print what waits in the queue, and what was decided.
 #[derive(Parser)]
-#[command(name = ",approval", after_help = EXAMPLES)]
+#[command(name = ",claude-approval", after_help = EXAMPLES)]
 struct Arguments {
     #[command(subcommand)]
     command: Command,
