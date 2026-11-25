@@ -28,15 +28,17 @@ done
 ,copy-in-home "$backup_path" "$root/clis/discord/command" .claude/skills/discord/command
 ,copy-in-home "$backup_path" "$root/clis/discord/SKILL.md" .claude/skills/discord/SKILL.md
 
+# flock comes with util-linux, so both systems run the same one
+,install-package util-linux
 case "$os" in
-    debian) ;; # util-linux, which every Debian has, comes with flock
-    macos) ,install-package flock ;;
+    debian) flock_path="$(,get-package-path flock)" ;;
+    # Homebrew keeps util-linux out of its bin, since macOS has a uuid.h of its own
+    macos) flock_path="$(,get-package-prefix)/opt/util-linux/bin/flock" ;;
     *)
         >&2 echo "Unsupported system: $os"
         exit 1
         ;;
 esac
-flock_path="$(,get-package-path flock)"
 ,link-in-local-bin "$backup_path" "$flock_path" flock
 ,copy-in-home "$backup_path" "$root/loop/command" .local/bin/,claude-loop
 # A running loop rereads its loop.md when the file changes, so an install reaches the loops already running

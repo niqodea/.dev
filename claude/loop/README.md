@@ -3,14 +3,6 @@
 Named Claude loops.
 Each loop is a `bodies/<name>.md` with the tasks Claude repeats, and `,claude-loop <name>` starts Claude on them every 30 minutes.
 
-## Setup
-
-`,claude-loop` takes its lock with `flock`, which Debian has in util-linux and macOS lacks:
-
-```sh
-brew install flock
-```
-
 ## Use
 
 The module's `install-bin` installs the `,claude-loop` command and copies each `bodies/<name>.md` to `~/$DOTDEV_ATDIR/claude-loops/<name>/.claude/loop.md`, with a link to it at `~/$DOTDEV_ATDIR/claude-loops/<name>/body.md` that is easier to find.
