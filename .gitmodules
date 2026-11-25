@@ -22,3 +22,7 @@
 [submodule "claude/submodules/claudio"]
 	path = claude/submodules/claudio
 	url = https://github.com/niqodea/claudio.git
+[submodule "tmux/submodules/tmux"]
+	path = tmux/submodules/tmux
+	url = https://github.com/niqodea/tmux.git
+	branch = niqodea

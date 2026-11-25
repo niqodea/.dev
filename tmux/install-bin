@@ -2,33 +2,40 @@
 
 set -eu
 
+root="$(dirname "$(realpath "$0")")"
 backup_path="$1"
 os="$2"
 
-if [ "$os" = 'macos' ]; then
-    ,install-package tmux
-    ,link-in-local-bin "$backup_path" "$(,get-package-path tmux)" tmux
-    exit
-fi
-
-tmux_version='v3.8'
-
-# Each download's sha256 changes with the version above, and comes from the release's own digest on GitHub
-case "$(uname -m)" in
-    'aarch64')
-        tmux_platform='linux-arm64'
-        tmux_sha256='f399311b1159705e69839eaf4f6f68c8b8540dc3a8538b87c30dedb9c3c7fc23'
+case "$os" in
+    debian)
+        ,install-package autoconf automake bison make pkg-config libevent-dev libncurses-dev
         ;;
-    'x86_64')
-        tmux_platform='linux-x86_64'
-        tmux_sha256='147849ff18b62a8aa3d5d8f75dd07c3f9fdfad529f932236afdec838fc1d15e1'
+    macos)
+        # On macOS, tmux takes character widths from utf8proc, and allocates memory with jemalloc to avoid a suspected bug in calloc
+        # Ref: https://github.com/tmux/tmux/issues/5385
+        ,install-package autoconf automake pkgconf libevent ncurses utf8proc jemalloc
+        # Homebrew keeps its ncurses out of pkg-config's search path, since macOS has an older one
+        PKG_CONFIG_PATH="$(,get-package-prefix)/opt/ncurses/lib/pkgconfig"
+        export PKG_CONFIG_PATH
         ;;
     *)
-        >&2 echo "Unsupported processor: $(uname -m)"
+        >&2 echo "Unsupported system: $os"
         exit 1
         ;;
 esac
 
-# Debian's tmux is too old for this setup, and tmux's own builds are static binaries
-tmux_path="$(,download-release "https://github.com/tmux/tmux-builds/releases/download/$tmux_version/tmux-${tmux_version#v}-$tmux_platform.tar.gz" "$tmux_sha256" tmux "$tmux_version")"
-,link-in-local-bin "$backup_path" "$tmux_path/tmux" tmux
+# Built from our fork, which adds OSC 2029: a program marks a line with it, and tmux wraps that line at spaces instead of at the pane's edge, also when the pane resizes
+# No release of tmux has it
+source_path="$root/submodules/tmux"
+version="$(sed -n 's/^AC_INIT(\[tmux\], *\(.*\))$/\1/p' "$source_path/configure.ac")"
+tmux_path="$HOME/.local/opt/tmux-$version"
+
+# autogen.sh and configure work in the folder they run in
+(
+    cd "$source_path"
+    sh autogen.sh
+    ./configure --prefix="$tmux_path"
+)
+make -C "$source_path"
+make -C "$source_path" install
+,link-in-local-bin "$backup_path" "$tmux_path/bin/tmux" tmux
