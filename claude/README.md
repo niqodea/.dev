@@ -16,7 +16,7 @@ Only the Claude we open in tmux gets these hooks, through the settings file pass
 Claude Code fires no hook when we answer a permission prompt, so a mod passed with `--plugin-dir` reports Claude as working again when the call it asked about starts, which it learns from the call's row in the transcript redrawing as running.
 
 A Claude that ends its turn while work it started still runs in the background, like a shell or a subagent, counts as working, since Claude Code wakes it when that work ends.
-This assumes Claude starts no daemon in the background, since nothing tells a shell Claude waits on from one that runs forever: services run through `,dev-services`, outside Claude.
+This assumes Claude starts no daemon in the background, since nothing tells a shell Claude waits on from one that runs forever: services run detached from Claude's shell, for example through process-compose.
 A Claude that starts one anyway shows as working until the daemon exits.
 
 The status bar shows the key that reaches a waiting Claude: ; for the Claude in this session, w for the one on its [workstation](../tmux/README.md#workstation), ' for a Claude in another session.
