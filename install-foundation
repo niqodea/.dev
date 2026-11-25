@@ -51,7 +51,7 @@ esac
 mkdir -p "$HOME/.local/bin"
 
 rustup_install_script="$(curl --fail --silent --show-error --location --max-time 60 'https://raw.githubusercontent.com/rust-lang/rustup/d95a37b6ab92cc1e455d1576039333c97ca3e2c5/rustup-init.sh')"
-RUSTUP_VERSION=1.29.1 sh -c "$rustup_install_script" rustup-init -y --no-modify-path
+RUSTUP_VERSION=1.29.1 sh -c "$rustup_install_script" rustup-init -y --no-modify-path --default-toolchain 1.100.0
 "$foundation_path/bin/,link-in-local-bin" "$backup_path" "$HOME/.cargo/bin/cargo" cargo
 
 echo "Fetching the submodules of the foundation"
