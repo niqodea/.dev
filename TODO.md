@@ -12,6 +12,10 @@
 
 - Give `,claude-approval` a `status` too, like Claude's side has, if we want to see what was decided outside the answering screen
 
+- Consider making what needs `DOTDEV_PROJECT` work outside a project too, like in the tmux `~` session:
+  - approval: `read_queue_directory` in `claude/approval/src/lib.rs` puts a queue in the project's atdir and fails without a project, and `run_change_hook` skips the status line hook
+  - ports: `,get-project-port-range` picks a range from the project's name and fails without a project, and so do `,get-project-port` and `,list-project-listeners`, which call it
+
 - Move the commands no person types from `~/.local/bin` to `~/.local/libexec`, like the `,tmux-*` ones that only tmux key bindings run, as `claude-approval-request` already is
 
 - Give each Claude loop its own interval in a file next to its body, like `claude/loop/bodies/inbox.interval`, once a second loop needs another pace than 30 minutes. `CLAUDE_LOOP_COMMAND` then names only the program, like `claudio`, and `,claude-loop` adds `"/loop <interval>"` itself, since today the interval sits inside the command and so applies to every loop
