@@ -1,6 +1,12 @@
 //! Our side of approval: answers the requests waiting in an approval queue, in
 //! the terminal: y or n stages a decision on each, from the list or from a
 //! request's details, and Enter carries the staged ones out.
+//!
+//! Staging first and carrying out on one key is how Emacs's dired deletes: d
+//! flags files, u removes a flag, and x deletes the flagged ones. The keys that
+//! move and scroll are the ones less and vi use.
+//! Ref: <https://www.gnu.org/software/emacs/manual/html_node/emacs/Dired-Deletion.html>, on dired
+//! Ref: <https://man7.org/linux/man-pages/man1/less.1.html>, on less's keys
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, TryLockError};
@@ -18,7 +24,9 @@ use serde_json::Value;
 
 const GREEN: &str = "\x1b[32m";
 const YELLOW: &str = "\x1b[33m";
-// Only for failures, since red reads as an error
+// Only for failures, since red reads as an error, and a color used for
+// everything stops meaning anything
+// Ref: <https://clig.dev/#output>
 const RED: &str = "\x1b[31m";
 // For secondary text, like ages and key hints
 const DIM: &str = "\x1b[2m";
@@ -35,6 +43,10 @@ const LEAVE_ALTERNATE_SCREEN: &str = "\x1b[?1049l";
 const TAB_WIDTH: usize = 8;
 
 /// Answer the requests waiting in this project's approval queue.
+///
+/// Every command is named, with none run when the name is left out, so a
+/// command added later cannot be mistaken for the one that ran before.
+/// Ref: <https://clig.dev/#future-proofing>
 #[derive(Parser)]
 #[command(name = ",claude-approval")]
 struct Arguments {
@@ -142,7 +154,7 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
     loop {
         draw_jobs(&jobs, &answers, &BTreeMap::new(), Some(cursor), None)?;
         print_keys(
-            "j/k move   y approve   n refuse   o open details   Enter commit   N refuse all   q quit",
+            "j/k move   y approve   n refuse   u clear   o open details   Enter commit   N refuse all   q quit",
         )?;
         let decision = match read_key()? {
             Some(b'j') => {
@@ -155,6 +167,12 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
             }
             Some(b'y') => Some(Decision::Approve),
             Some(b'n') => Some(Decision::Refuse),
+            // Clearing corrects a decision instead of finishing it, so the
+            // cursor stays on the job
+            Some(b'u') => {
+                answers.remove(&cursor);
+                None
+            }
             Some(b'o') => show_details(
                 &jobs[cursor].request,
                 answers.get(&cursor).copied(),
@@ -169,6 +187,9 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
                 let outcomes = commit(queue, actions, &jobs, &answers)?;
                 return show_outcomes(&jobs, &answers, &outcomes);
             }
+            // An upper-case key acts on every job, as dired's U removes every
+            // mark
+            // Ref: <https://www.gnu.org/software/emacs/manual/html_node/emacs/Marks-vs-Flags.html>
             Some(b'N') => {
                 let refusals = (0..jobs.len())
                     .map(|index| (index, Decision::Refuse))
@@ -187,16 +208,14 @@ fn answer(queue: &Queue, actions: &Actions) -> Result<(), String> {
             }
             Some(_) => None,
         };
+        // y and n set the decision, so pressing one again keeps it, where a
+        // toggle would undo it. Each moves on to the next job, as dired's d
+        // does, so repeated presses answer the jobs in turn
+        // Ref: <https://www.unsung.aresluna.org/deterministic-vs-idempotent>, on keys that set
+        // Ref: <https://www.gnu.org/software/emacs/manual/html_node/emacs/Marks-vs-Flags.html>, on d
         if let Some(decision) = decision {
-            // Pressing y or n again on a job that already has that decision
-            // clears it, and leaves the cursor on the job, since clearing
-            // corrects it instead of finishing it
-            if answers.get(&cursor) == Some(&decision) {
-                answers.remove(&cursor);
-            } else {
-                answers.insert(cursor, decision);
-                cursor = (cursor + 1).min(jobs.len() - 1);
-            }
+            answers.insert(cursor, decision);
+            cursor = (cursor + 1).min(jobs.len() - 1);
         }
     }
 }
@@ -211,6 +230,10 @@ enum Stage<'a> {
 
 /// Show the outcome of each answered job below it, and the details of the job
 /// under the cursor on o, until the person presses q.
+///
+/// Each change is shown as it went, so the person knows what happened without
+/// reading the log.
+/// Ref: <https://clig.dev/#output>
 ///
 /// At least one job was decided on, since Enter with none closes the screen.
 fn show_outcomes(
@@ -286,6 +309,9 @@ fn draw_jobs(
 
 /// Print the keys on the terminal's last row, so they stay put however many
 /// rows the screen above them has, like a pager's.
+///
+/// The keys are shown instead of left for the person to remember.
+/// Ref: <https://www.nngroup.com/articles/recognition-and-recall/>
 ///
 /// Cut at the terminal's edge, since a line that wraps past the last row
 /// scrolls the whole screen up.
@@ -416,6 +442,8 @@ fn show_details(
             // Past the last line, which the next draw brings back to the last
             // screenful
             Some(b'G') => first_line = lines.len(),
+            // vi's paragraph moves, here from one field to the next
+            // Ref: <https://vimhelp.org/motion.txt.html#%7B>
             Some(b'}') => {
                 first_line = field_starts
                     .iter()
@@ -605,6 +633,7 @@ fn commit(
     for (&index, &decision) in answers {
         // An action can take a while, so the jobs show which one runs, and the
         // outcomes so far, instead of a screen that waits without a sign
+        // Ref: <https://www.nngroup.com/articles/visibility-system-status/>
         if decision == Decision::Approve {
             draw_jobs(jobs, answers, &outcomes, None, Some(index))?;
             print_keys("carrying out the decisions, one at a time")?;
