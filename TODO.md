@@ -45,6 +45,8 @@
 
 ### Later
 
+- Hand the input line the keys typed while claudio waits for the terminal's answers, like whether it wraps at spaces: they arrive among the answers, and `wraps_at_spaces` in `src/terminal.rs` drops them today
+
 - Ask Anthropic to add to the answer to `get_usage` when Claude Code fetched its numbers, which its `/usage` already shows, so claudio can stop reading the copy of the usage in Claude Code's config file
 
 - Consider jumping between the user's messages in the full view with less's tags, which a `/` search leaves alone: claudio notes the full view's line of each message it shows, writes a ctags file of them, newest first after a tag where the view opens, and starts less with `-T <file> -t <tag>`, so `t` goes back a message and `T` forward. Tried with less 581: `t` and `T` count from the last tag jumped to, not from the line in view, so after a scroll or a search the next jump can surprise; that limit is why it waits
