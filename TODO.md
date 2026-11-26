@@ -45,13 +45,13 @@
 
 - Go through all of the code, comments above all, and remove what does not belong in a public tool
 
+- Add a debug log that the user turns on, like `CLAUDIO_LOG=<file>`, of what claudio reads from Claude Code and from the terminal and of the session's phases, so a session that hangs or misbehaves shows where it went wrong, without adding a log to the code and taking it out again
+
+- Decide how to show tabs. claudio shows a tab as one space, so the cut at 88 columns counts right, but indentation made of tabs, as in Go code or a Makefile, shows flattened. A terminal moves a tab to its next tab stop, every 8 columns by default, so the tab's width depends on its column. less (`-x`), bat (`--tabs`) and vim (`tabstop`) replace a tab with spaces up to the next tab stop. Emoji sequences, like flags, also take different widths in different terminals
+
 ### Later
 
 - Split the biggest files, `src/input_line.rs`, `src/protocol.rs` and `src/vi.rs`, of 2,300 to 2,500 lines each, into modules by concern, since a change in any of them means reading much of the file first
-
-- Add a debug log that the user turns on, like `CLAUDIO_LOG=<file>`, of what claudio reads from Claude Code and from the terminal and of the session's phases, so a session that hangs or misbehaves shows where it went wrong, without adding a log to the code and taking it out again
-
-- Hand the input line the keys typed while claudio waits for the terminal's answers, like whether it wraps at spaces: they arrive among the answers, and `wraps_at_spaces` in `src/terminal.rs` drops them today
 
 - Ask Anthropic to add to the answer to `get_usage` when Claude Code fetched its numbers, which its `/usage` already shows, so claudio can stop reading the copy of the usage in Claude Code's config file
 
@@ -67,14 +67,12 @@
 
 - List the background tasks in the status view (Ctrl+S), each with the tag of the call that started it and its description, since the label row only counts them (`B<n>`), and let Ctrl+K there stop the one selected, once it is clear how the status view takes keys
 
-- Bound the list of subagents (`src/subagents.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent after 30 seconds and loads it back from its transcript on disk on a resume, which claudio cannot read
+- Bound the list of subagents (`Work::subagents` in `src/work.rs`), which grows by about 100 bytes for each subagent of a session, since claudio keeps an ended one so that its tag names it again if Claude resumes it. Claude Code forgets an ended subagent some time after its end and loads it back from its transcript on disk on a resume, which claudio cannot read
 
-- Name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code 2.1.322 renames a subagent whose name a running one holds, like `reviewer-2`, and frees a name only 30 seconds after its holder ends, so claudio cannot tell which subagent a name reaches. Checked on 2026-11-19: the SDK 0.3.325's types report the given name nowhere, neither `AgentOutput` in `sdk-tools.d.ts` nor `SDKTaskStartedMessage` in `sdk.d.ts`, and no issue asks for it. A lead: <https://github.com/anthropics/claude-code/issues/100198> says Claude Code writes a subagent's display name to `subagents/agent-<id>.meta.json` beside the transcript, which is undocumented, and may hold the description rather than the given name: check it before relying on it, or ask upstream on that issue
+- Name a subagent by its tag when Claude messages it by name. Today the line shows the name as written, since Claude Code renames a subagent whose name a running one holds, like `reviewer-2`, and frees a name only some time after its holder ends, so claudio cannot tell which subagent a name reaches. The SDK's types report the given name nowhere, neither `AgentOutput` in `sdk-tools.d.ts` nor `SDKTaskStartedMessage` in `sdk.d.ts`, and no issue asks for it. A lead: <https://github.com/anthropics/claude-code/issues/100198> says Claude Code writes a subagent's display name to `subagents/agent-<id>.meta.json` beside the transcript, which is undocumented, and may hold the description rather than the given name: check it before relying on it, or ask upstream on that issue
 
-- Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code 2.1.322's code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
+- Look into what SendMessage reaches and make its line unsurprising. Besides subagents, Claude Code sends it to the main agent, teammates and other Claude sessions on the machine or in the cloud, and claudio shows any target but a known subagent's id as written
 
 - Design the full view (Ctrl+O) as a whole, which grew line by line and was never laid out: what it holds for each call and result, how a subagent's calls (`#01#03`) and report read in it, and whether its tags are worth keeping
-
-- Decide how to show tabs. claudio shows a tab as one space, so the cut at 88 columns counts right, but indentation made of tabs, as in Go code or a Makefile, shows flattened. A terminal moves a tab to its next tab stop, every 8 columns by default, so the tab's width depends on its column. less (`-x`), bat (`--tabs`) and vim (`tabstop`) replace a tab with spaces up to the next tab stop. Emoji sequences, like flags, also take different widths in different terminals
 
 - Consider keeping inline code in prose whole when the terminal wraps at spaces, as if it were one word, since a break at a space inside it splits one piece of code into what reads as two. Inline code too long for a row would wrap at the edge, as code blocks do, for the reason the README's Wrapping at spaces gives. The terminal needs a way to be told which spaces it must not break at: a no-break space, U+00A0, would do it, but copies as a different character, so it likely takes a mark of its own, next to `OSC 2029`
