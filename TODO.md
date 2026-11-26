@@ -27,6 +27,8 @@
 - Replace logic that guesses a time with waiting for the event it depends on:
   - approval: polls every 10 ms whether an action ended, and stops it after 60 s
 
+- Install a debugger and a system call tracer, gdb and strace on Debian, so a process that hangs or spins can be looked into while it runs, without adding a log to its code. macOS has lldb with the command line tools, and no strace
+
 ## claudio
 
 ### Before going public
@@ -44,6 +46,10 @@
 - Go through all of the code, comments above all, and remove what does not belong in a public tool
 
 ### Later
+
+- Split the biggest files, `src/input_line.rs`, `src/protocol.rs` and `src/vi.rs`, of 2,300 to 2,500 lines each, into modules by concern, since a change in any of them means reading much of the file first
+
+- Add a debug log that the user turns on, like `CLAUDIO_LOG=<file>`, of what claudio reads from Claude Code and from the terminal and of the session's phases, so a session that hangs or misbehaves shows where it went wrong, without adding a log to the code and taking it out again
 
 - Hand the input line the keys typed while claudio waits for the terminal's answers, like whether it wraps at spaces: they arrive among the answers, and `wraps_at_spaces` in `src/terminal.rs` drops them today
 
