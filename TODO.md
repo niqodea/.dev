@@ -41,8 +41,6 @@
 
 - Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
 
-- Make AGENTS.md hold only what the code and the README already say. Most of its sources, like the NN/g, WCAG and clig.dev links, appear nowhere else: move each one next to the code it justifies, or into the README's Design section
-
 - Go through all of the code, comments above all, and remove what does not belong in a public tool
 
 ### Later
