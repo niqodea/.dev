@@ -41,9 +41,9 @@
 
 - Keep the README's note on server-side flags in view: the hermetic checks run on Claude Code's default flags, so a user's session, which gets the flags Anthropic serves, can differ with no new version of Claude Code
 
-- Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust
+- Decide how users install claudio: today `cargo install --path .` with `publish = false`, which needs a clone of the repo and Rust. Most Claude Code users have no Rust, so offer prebuilt binaries on GitHub releases, like cargo-dist builds with a one-line install script, and also publish to crates.io: check the name `claudio` is free there, and keep the test programs `fake-claude` and `pty-relay` from installing with it
 
-- Go through all of the code, comments above all, and remove what does not belong in a public tool
+- Make vi's word motions treat CJK text, emoji and accented Latin letters as vim does, by its character classes and 'iskeyword', since today `w`, `b` and `e` can stop in the wrong place in text like "café" (`src/vi.rs`, Known differences from vim)
 
 - Add a debug log that the user turns on, like `CLAUDIO_LOG=<file>`, of what claudio reads from Claude Code and from the terminal and of the session's phases, so a session that hangs or misbehaves shows where it went wrong, without adding a log to the code and taking it out again
 
@@ -52,6 +52,8 @@
 - Find an elegant way to show Claude's hint for the next message to send, and to take it as the message: Claude Code sends a `prompt_suggestion` after each turn once claudio's `initialize` asks for `promptSuggestions`, as `SDKPromptSuggestionMessage` in the SDK's `sdk.d.ts` types it, at most one a turn and after its `result`, and none on the first turn, in plan mode, or near the plan's usage limit
 
 ### Later
+
+- Make `$` in visual mode select the line break as vim does, so `v$d` joins the line with the next one, where today it stops at the last character (`src/vi.rs`, Known differences from vim)
 
 - Split the biggest files, `src/input_line.rs`, `src/protocol.rs` and `src/vi.rs`, of 2,300 to 2,500 lines each, into modules by concern, since a change in any of them means reading much of the file first
 
