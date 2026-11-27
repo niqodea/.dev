@@ -49,6 +49,8 @@
 
 - Decide how to show tabs. claudio shows a tab as one space, so the cut at 88 columns counts right, but indentation made of tabs, as in Go code or a Makefile, shows flattened. A terminal moves a tab to its next tab stop, every 8 columns by default, so the tab's width depends on its column. less (`-x`), bat (`--tabs`) and vim (`tabstop`) replace a tab with spaces up to the next tab stop. Emoji sequences, like flags, also take different widths in different terminals
 
+- Find an elegant way to show Claude's hint for the next message to send, and to take it as the message: Claude Code sends a `prompt_suggestion` after each turn once claudio's `initialize` asks for `promptSuggestions`, as `SDKPromptSuggestionMessage` in the SDK's `sdk.d.ts` types it, at most one a turn and after its `result`, and none on the first turn, in plan mode, or near the plan's usage limit
+
 ### Later
 
 - Split the biggest files, `src/input_line.rs`, `src/protocol.rs` and `src/vi.rs`, of 2,300 to 2,500 lines each, into modules by concern, since a change in any of them means reading much of the file first
