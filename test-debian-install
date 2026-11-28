@@ -6,7 +6,7 @@ root="$(dirname "$(realpath "$0")")"
 
 # Installs HEAD on a fresh Debian, as a user who can sudo, so uncommitted changes are left out
 # The repository goes in through stdin, so the container needs no folder shared with this machine
-git -C "$root" bundle create - HEAD | docker run --rm --interactive debian:13 sh -c '
+git -C "$root" bundle create - HEAD | podman run --rm --interactive debian:13 sh -c '
 set -eu
 cat >/tmp/repo.bundle
 apt-get update

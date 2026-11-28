@@ -7,4 +7,5 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-sudo apt install "$@"
+# A package already installed keeps its version, since an upgrade can restart a running service, and upgrading is left to the user
+sudo apt install --no-upgrade "$@"

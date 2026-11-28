@@ -3,6 +3,14 @@
 set -eu
 
 status=0
+# Every failure is printed where it happens, then again at the end, so a long list of programs that pass cannot hide one
+failures=''
+fail() {
+    >&2 echo "FAIL $1"
+    failures="$failures$1
+"
+    status=1
+}
 for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
     # An empty directory leaves the pattern itself in $versions_path
     if [ ! -e "$versions_path" ]; then
@@ -13,15 +21,13 @@ for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
             '' | '#'*) continue ;;
             # A path could point outside ~/.local/bin
             */*)
-                >&2 echo "$program: not a program name"
-                status=1
+                fail "$program: not a program name"
                 continue
                 ;;
             *) ;;
         esac
         if [ ! -e "$HOME/.local/bin/$program" ]; then
-            >&2 echo "$program: not in ~/.local/bin"
-            status=1
+            fail "$program: not in ~/.local/bin"
             continue
         fi
         # Reads the version from where the program is installed, so no line of the file can make this run anything
@@ -36,18 +42,23 @@ for versions_path in "$HOME/$DOTDEV_ATDIR/program-versions/"*; do
             *) version="$(echo "$path" | tr '/' '\n' | sed -n 's/^\([a-z-]*-\)\{0,1\}v\{0,1\}\([0-9][0-9]*\.[0-9][0-9a-z.]*\).*/\2/p' | head -n 1)" ;;
         esac
         if [ -z "$version" ]; then
-            >&2 echo "$program: no version in $path"
-            status=1
+            fail "$program: no version in $path"
             continue
         fi
         lowest="$(printf '%s\n%s\n' "$at_least" "$version" | sort -V | head -n 1)"
         highest="$(printf '%s\n%s\n' "$version" "$below" | sort -V | tail -n 1)"
-        if [ "$lowest" != "$at_least" ] || [ "$highest" != "$below" ] || [ "$version" = "$below" ]; then
-            >&2 echo "$program $version needs to be at least $at_least and below $below"
-            status=1
+        if [ "$lowest" != "$at_least" ]; then
+            fail "$program $version is too old, it needs to be at least $at_least: upgrade it with the package manager"
             continue
         fi
-        echo "$program $version"
+        if [ "$highest" != "$below" ] || [ "$version" = "$below" ]; then
+            fail "$program $version is too new, it needs to be below $below: check that it still works, then raise the bound in program-versions"
+            continue
+        fi
+        echo "ok   $program $version"
     done < "$versions_path"
 done
+if [ -n "$failures" ]; then
+    >&2 printf '\n%s\n%s' 'Programs that fail the check:' "$failures"
+fi
 exit "$status"

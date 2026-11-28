@@ -101,14 +101,32 @@ To install dotfiles, run:
 
 Note: both scripts install all the modules if no module is specified.
 
-`install-bin` installs a program with the package manager, unless one of our systems lacks a version that works: then it downloads the program on every system, into `~/.local/opt/<program>-<version>`, since the download works everywhere and a second way to install it would only be more to maintain.
-Programs of our own are built from their submodule, or from their folder in the module, and copied into `~/.local/bin`, and every other program is linked there.
-Each module's `program-versions` file lists the versions our setup works with, not the ones each system ships, so two systems can run different versions.
-`install-bin` ends by checking them with `,check-program-versions`, which reads each version from where the program is installed instead of running it.
-
 You can run `install-foundation`, `install-bin` and `install-dotfiles` again at any time.
 Before they replace a file with different content, they copy the old one to `~/$DOTDEV_ATDIR/backups/<date-time>`, at its path from the home folder, or from `/` for a system file.
 Files that apt, Homebrew, rustup or uv install are not backed up, because those tools manage them.
+
+### How programs are installed
+
+`install-bin` makes each program match what its module says, and changes nothing the module does not say.
+So a program changes only when it is missing or when the module changes, never because the package manager has a newer version.
+
+A module says more about some programs than about others, so the same rule acts differently on each of three kinds:
+
+| Kind | Example | The module says | `install-bin` changes the program when |
+|------|---------|-----------------|----------------------------------------|
+| Package | zsh, Podman | its name | it is missing |
+| Download | Neovim, uv | its name and exact version | it is missing or the version changes |
+| Our own | tmux, Breadcrumbs | its source | it is missing or the source changes |
+
+- **Package**: installed with apt or Homebrew, through `,install-package`, which passes `--no-upgrade` to apt and sets `HOMEBREW_NO_INSTALL_UPGRADE` for Homebrew. An upgrade can restart a running service, change how a program behaves or break what depends on it, so the user upgrades packages with `sudo apt upgrade` or `brew upgrade` at a time when that is safe. A package installed for the first time can still need a newer version of one already installed, and the package manager then upgrades that one too.
+- **Download**: used when one of our systems lacks a version of the package that works. The module pins the version and its checksum, and the program goes into `~/.local/opt/<program>-<version>` on every system, since the download works everywhere and a second way to install it would only be more to maintain.
+- **Our own**: built from its submodule, or from its folder in the module, and copied into `~/.local/bin`.
+
+Every program ends up in `~/.local/bin`: programs of our own are copied there, and the others are linked.
+
+Each module's `program-versions` file lists the versions our setup works with, not the ones each system ships, so two systems can run different versions.
+`install-bin` ends by checking them with `,check-program-versions`, which reads each version from where the program is installed instead of running it.
+A package too old for our setup stays too old until the user upgrades it, and the check reports it.
 
 ## Linting
 

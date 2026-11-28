@@ -9,4 +9,5 @@ fi
 
 prefix="$("$HOME/.local/bin/,get-package-prefix")"
 # brew is called by its full path, so it works whatever PATH holds
-"$prefix/bin/brew" install "$@"
+# A package already installed keeps its version, since an upgrade can restart a running service, and upgrading is left to the user
+HOMEBREW_NO_INSTALL_UPGRADE=1 "$prefix/bin/brew" install "$@"
